@@ -365,6 +365,31 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
 
     console.log(`Membuka Firefox dengan profil persistent: ${PROFILE_PATH}`);
     const context = await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
+    // Grab UA from the Playwright browser instance
+    const uaPage = context.pages()[0] || await context.newPage();
+    const playwrightUA = await uaPage.evaluate(() => navigator.userAgent);
+    safeSend(activeWs, { type: 'playwright-ua', ua: playwrightUA });
+    // Fetch server's public IP (the machine running Playwright)
+    const getServerPublicIp = () => {
+        return new Promise((resolve) => {
+            https.get('https://api.ipify.org?format=json', (res) => {
+                let data = '';
+                res.on('data', (chunk) => (data += chunk));
+                res.on('end', () => {
+                    try {
+                        const ip = JSON.parse(data).ip;
+                        resolve(ip);
+                    } catch (_) {
+                        resolve(null);
+                    }
+                });
+            }).on('error', () => resolve(null));
+        });
+    };
+    const serverIp = await getServerPublicIp();
+    if (serverIp) {
+        safeSend(activeWs, { type: 'server-ip', ip: serverIp });
+    }
 
     if (abortController) {
         abortController.abort = async () => {
