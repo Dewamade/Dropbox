@@ -1,0 +1,19 @@
+{
+  "name": "dropbox",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node register.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@playwright/test": "^1.61.0",
+    "playwright": "^1.61.0",
+    "proxifly": "^3.0.1"
+  }
+}
