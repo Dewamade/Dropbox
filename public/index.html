@@ -317,6 +317,14 @@
                 logPanel.innerHTML = '';
                 successCountEl.innerText = '0';
                 failedCountEl.innerText = '0';
+                
+                // Log User Agent and IP
+                appendLog('log-info', `[Info] User Agent: ${navigator.userAgent}`);
+                fetch('https://api.ipify.org?format=json')
+                    .then(res => res.json())
+                    .then(data => appendLog('log-info', `[Info] Public IP: ${data.ip}`))
+                    .catch(err => appendLog('log-warn', `[Warning] Gagal mengambil IP: ${err}`));
+
                 appendLog('log-info', '[Dashboard] Mengirimkan data formulir registrasi...');
                 
                 socket.send(JSON.stringify({
