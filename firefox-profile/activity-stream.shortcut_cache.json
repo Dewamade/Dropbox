@@ -1,1 +1,1 @@
-{"time_last_update":1781770195,"weights":{"frec":0.7,"rece":0.3},"init_weights":{"frec":0.7,"rece":0.3},"norms":{"rece":{"beta":0.001,"mean":2.2588284967797807,"var":2.8537105304052273},"frec":{"beta":0.001,"mean":20824.728471769417,"var":418.4446435273771}},"score_map":{}}
+{"time_last_update":1781770596,"weights":{"frec":0.7,"rece":0.3},"init_weights":{"frec":0.7,"rece":0.3},"norms":{"rece":{"beta":0.001,"mean":2.2588284967797807,"var":2.8537105304052273},"frec":{"beta":0.001,"mean":20824.728471769417,"var":418.4446435273771}},"score_map":{}}
