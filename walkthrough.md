@@ -133,3 +133,49 @@ Buka browser di perangkat Android dan akses:
 - Jika menemukan error terkait dependensi sistem (mis. `libc++`), instal paket yang diperlukan via `pkg install libc++`.
 - Untuk mode headless, tidak diperlukan X server; Playwright menjalankan Firefox secara headless secara native.
 - Jika ingin menggunakan proxy, pastikan koneksi internet dapat diakses; script otomatis mengunduh daftar proxy.
+
+## Alternative: Run Inside Proot‑Distro (Debian/Ubuntu)
+
+If Playwright fails with the *Unsupported platform: android* error, run the project inside a Linux distribution using `proot-distro`.
+
+### Install and launch a distro
+```bash
+pkg install -y proot-distro
+proot-distro install debian   # or ubuntu
+proot-distro login debian    # enters a Debian shell
+```
+
+Inside the proot environment you have a standard Linux userland where Playwright’s pre‑built browsers work.
+
+### Setup inside the distro
+```bash
+# 1️⃣ Update distro & install required system libraries (Playwright browsers need them)
+apt update && apt upgrade -y
+apt install -y libglib2.0-0 libnss3 libatk-bridge2.0-0 libdrm2 \
+    libxkbcommon-x11-0 libgtk-3-0 libasound2 libx11-6 libx11-xcb1 \
+    libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxfixes3 libxi6 \
+    libxrandr2 libxrender1 libxshmfence1 libgbm1
+
+# 2️⃣ Go to the project directory inside proot
+cd ~/AntiGravity/Dropbox
+
+# 3️⃣ Install Playwright locally (writes the wrapper to node_modules/.bin)
+npm install --save-dev playwright
+
+# 4️⃣ Ensure the Playwright CLI is executable (fixes "Permission denied")
+chmod -R 755 node_modules/.bin
+
+# 5️⃣ Install the browsers you need (Firefox, Chromium, etc.)
+npx playwright install firefox   # or "chromium"
+
+# 6️⃣ Start the server
+node server.js
+```
+
+Now open the Android browser and navigate to `http://127.0.0.1:3000` (the server runs inside the proot instance, exposing the same localhost).
+
+### Notes
+- This approach isolates the Linux environment, providing the necessary glibc and x86_64 binaries Playwright expects.
+- If you prefer not to use `proot-distro`, you can also run the script on a remote Linux machine and access the UI via your phone’s browser.
+
+---
