@@ -14,8 +14,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 let activeWs = null;
 const originalLog = console.log;
 const originalError = console.error;
-global.safeSend = safeSend;
-global.activeWs = null;
+const originalWarn = console.warn;
 
 function safeSend(socket, payload) {
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -26,18 +25,10 @@ function safeSend(socket, payload) {
         }
     }
 }
-// Expose helpers globally for other modules (register.js)
+
+// Expose safeSend and activeWs globally so register.js can use them
 global.safeSend = safeSend;
-global.setActiveWs = (ws) => { global.activeWs = ws; };
-global.getActiveWs = () => global.activeWs;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        try {
-            socket.send(JSON.stringify(payload));
-        } catch (e) {
-            originalError('WS send error:', e.message);
-        }
-    }
-}
+global.activeWs = null;
 
 console.log = (...args) => {
     const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
@@ -63,14 +54,14 @@ let currentAbortController = null;
 
 wss.on('connection', (ws) => {
     originalLog('Client connected via WebSocket');
-    
+
     // Send current status
     safeSend(ws, { type: 'status', status: isRunning ? 'running' : 'idle' });
 
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
-            
+
             if (data.action === 'stop') {
                 if (!isRunning) return;
                 shouldStop = true;
@@ -90,27 +81,29 @@ wss.on('connection', (ws) => {
                     safeSend(ws, { type: 'log', message: '⚠️ Pendaftaran sedang berjalan!' });
                     return;
                 }
-                
+
                 isRunning = true;
                 shouldStop = false;
                 activeWs = ws;
+                global.activeWs = ws; // sync global for register.js
                 safeSend(ws, { type: 'status', status: 'running' });
-                
+
                 const { url, emails: emailsRaw, useProxy, useHeadless } = data;
                 const emails = emailsRaw.split(';')
                                         .map(e => e.trim())
                                         .filter(e => e.length > 0);
-                                        
+
                 if (emails.length === 0) {
                     safeSend(ws, { type: 'log', message: 'Error: Tidak ada email valid!' });
                     safeSend(ws, { type: 'status', status: 'error' });
                     isRunning = false;
                     activeWs = null;
+                    global.activeWs = null;
                     return;
                 }
 
                 console.log(`[Server] Memulai pendaftaran massal untuk ${emails.length} email.`);
-                
+
                 let successCount = 0;
                 let failedCount = 0;
                 let processedCount = 0;
@@ -140,7 +133,7 @@ wss.on('connection', (ws) => {
                         // Retry logic for proxy errors or "Too many attempts"
                         let registrationSuccess = false;
                         let attempts = 0;
-                        const maxAttempts = 3; 
+                        const maxAttempts = 3;
                         let currentProxy = proxy;
 
                         while (!registrationSuccess && attempts < maxAttempts) {
@@ -174,7 +167,7 @@ wss.on('connection', (ws) => {
                                     break;
                                 }
                                 console.log(`\n⚠️ Terjadi kesalahan saat registrasi: ${error.message}`);
-                                
+
                                 const errorMsg = (error.message || '').toLowerCase();
                                 const isConnectionError = [
                                     'net::err',
@@ -210,14 +203,14 @@ wss.on('connection', (ws) => {
                             }
                         }
                     }
-                    
+
                     if (activeWs === ws) {
                         const finalStatus = shouldStop ? 'stopped' : 'success';
                         safeSend(ws, { type: 'status', status: finalStatus });
-                        safeSend(ws, { 
-                            type: 'progress', 
-                            current: processedCount, 
-                            total: emails.length, 
+                        safeSend(ws, {
+                            type: 'progress',
+                            current: processedCount,
+                            total: emails.length,
                             status: shouldStop ? 'Proses dihentikan oleh pengguna.' : 'Semua email selesai diproses.',
                             successCount,
                             failedCount
@@ -231,6 +224,7 @@ wss.on('connection', (ws) => {
                 } finally {
                     isRunning = false;
                     activeWs = null;
+                    global.activeWs = null;
                 }
             }
         } catch (err) {
@@ -242,6 +236,7 @@ wss.on('connection', (ws) => {
         originalLog('Client disconnected');
         if (activeWs === ws) {
             activeWs = null;
+            global.activeWs = null;
         }
     });
 });
