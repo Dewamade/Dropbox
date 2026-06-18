@@ -165,9 +165,21 @@
         function connectWebSocket() {
             socket = new WebSocket(wsUrl);
 
-            socket.onopen = () => {
-                appendLog('log-success', '[System] Terhubung ke WebSockets server.');
-            };
+                socket.onopen = () => {
+                    appendLog('log-success', '[System] Terhubung ke WebSockets server.');
+                    // Log User Agent
+                    const ua = navigator.userAgent;
+                    appendLog('log-info', `[Info] User Agent: ${ua}`);
+                    // Fetch and log public IP
+                    fetch('https://api.ipify.org?format=json')
+                        .then(res => res.json())
+                        .then(data => {
+                            appendLog('log-info', `[Info] Public IP: ${data.ip}`);
+                        })
+                        .catch(err => {
+                            appendLog('log-warn', `[Warning] Unable to fetch public IP: ${err}`);
+                        });
+                };
 
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
