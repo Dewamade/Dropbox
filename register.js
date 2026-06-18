@@ -1,6 +1,9 @@
-const { chromium, devices } = require('playwright');
+const { firefox } = require('playwright');
 const readline = require('readline');
 const https = require('https');
+const path = require('path');
+const fs = require('fs');
+const PROFILE_PATH = path.join(__dirname, 'firefox-profile');
 
 // Helper function to get user input from the console
 function askQuestion(query) {
@@ -94,88 +97,6 @@ async function checkTooManyAttempts(page) {
             throw e;
         }
     }
-}
-
-// List of emulated mobile devices in Playwright
-const MOBILE_DEVICE_NAMES = [
-    'iPhone 12',
-    'iPhone 13',
-    'iPhone 14',
-    'iPhone 12 Pro Max',
-    'iPhone 13 Pro Max',
-    'iPhone 14 Pro Max',
-    'Pixel 5',
-    'Pixel 7',
-    'Galaxy S20',
-    'Galaxy S21',
-    'Galaxy S22 Ultra'
-];
-
-// List of emulated tablet devices in Playwright
-const TABLET_DEVICE_NAMES = [
-    'iPad Mini',
-    'iPad (gen 7)',
-    'iPad Pro 11',
-    'Galaxy Tab S4'
-];
-
-// Helper function to randomize OS and browser versions inside base user agents to keep them highly varied
-function randomizeUserAgent(baseUserAgent) {
-    let ua = baseUserAgent;
-
-    if (ua.includes('iPhone') || ua.includes('iPad')) {
-        // Randomize iOS version (15.0 to 17.5)
-        const major = Math.floor(Math.random() * 3) + 15; // 15, 16, 17
-        const minor = Math.floor(Math.random() * 6); // 0 to 5
-        const iosVer = `${major}_${minor}`;
-        const safariVer = `${major}.${minor}`;
-        
-        ua = ua.replace(/iPhone OS \d+_\d+/, `iPhone OS ${iosVer}`)
-               .replace(/CPU OS \d+_\d+/, `CPU OS ${iosVer}`)
-               .replace(/Version\/\d+\.\d+(\.\d+)?/, `Version/${safariVer}`);
-    } else if (ua.includes('Android')) {
-        // Randomize Android version (12 to 14)
-        const androidVer = Math.floor(Math.random() * 3) + 12; // 12, 13, 14
-        
-        // Randomize Chrome version (122 to 125)
-        const chromeMajor = Math.floor(Math.random() * 4) + 122; // 122, 123, 124, 125
-        const chromeBuild = Math.floor(Math.random() * 100);
-        const chromePatch = Math.floor(Math.random() * 150);
-        const chromeVer = `${chromeMajor}.0.${6000 + chromeBuild}.${chromePatch}`;
-        
-        ua = ua.replace(/Android \d+/, `Android ${androidVer}`)
-               .replace(/Chrome\/\d+\.\d+\.\d+\.\d+/, `Chrome/${chromeVer}`);
-    }
-
-    return ua;
-}
-
-function getRandomBrowserProfile() {
-    const deviceName = 'Galaxy S21';
-    // Galaxy S21 tidak terdefinisi secara bawaan di Playwright, sehingga kita buat profilnya secara manual
-    const deviceProfile = {
-        userAgent: 'Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36',
-        viewport: { width: 360, height: 800 },
-        deviceScaleFactor: 3,
-        isMobile: true,
-        hasTouch: true,
-        defaultBrowserType: 'chromium'
-    };
-
-    const ua = randomizeUserAgent(deviceProfile.userAgent);
-    console.log(`Menggunakan Profil Perangkat: ${deviceName}`);
-    console.log(`User-Agent: ${ua}`);
-    return {
-        isMobile: true,
-        isTablet: false,
-        deviceName: deviceName,
-        contextOptions: {
-            ...deviceProfile,
-            userAgent: ua,
-            locale: 'en-US',
-            timezoneId: 'America/New_York'
-        }
-    };
 }
 
 // Helper function to generate a natural-looking random name
@@ -295,8 +216,102 @@ async function getProxiflyProxy() {
     });
 }
 
+// Helper to recursively delete directories
+function deleteDirRecursive(dirPath) {
+    if (fs.existsSync(dirPath)) {
+        try {
+            fs.readdirSync(dirPath).forEach((file) => {
+                const curPath = path.join(dirPath, file);
+                if (fs.lstatSync(curPath).isDirectory()) {
+                    deleteDirRecursive(curPath);
+                } else {
+                    try {
+                        fs.unlinkSync(curPath);
+                    } catch (e) {}
+                }
+            });
+            fs.rmdirSync(dirPath);
+        } catch (e) {}
+    }
+}
+
+// Function to clear browser cache, cookies, history, and site storage
+// while preserving extensions and their settings
+function clearProfileData(profilePath) {
+    if (!fs.existsSync(profilePath)) return;
+
+    console.log('Membersihkan cookies, cache, dan data penyimpanan situs...');
+
+    // Files to delete (including locks)
+    const filesToDelete = [
+        'cookies.sqlite',
+        'cookies.sqlite-wal',
+        'cookies.sqlite-shm',
+        'places.sqlite',
+        'places.sqlite-wal',
+        'places.sqlite-shm',
+        'formhistory.sqlite',
+        'sessionstore.jsonlz4',
+        'permissions.sqlite',
+        'content-prefs.sqlite',
+        'webappsstore.sqlite',
+        'favicons.sqlite',
+        'parent.lock',
+        'lock',
+        '.parentlock'
+    ];
+
+    // Directories to delete entirely
+    const dirsToDelete = [
+        'cache2',
+        'sessionstore-backups',
+        'startupCache',
+        'jumpListCache',
+        'entries',
+    ];
+
+    // Delete files
+    for (const file of filesToDelete) {
+        const filePath = path.join(profilePath, file);
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        } catch (e) {}
+    }
+
+    // Delete directories entirely
+    for (const dir of dirsToDelete) {
+        const dirPath = path.join(profilePath, dir);
+        try {
+            if (fs.existsSync(dirPath)) {
+                deleteDirRecursive(dirPath);
+            }
+        } catch (e) {}
+    }
+
+    // Clean storage default directory while preserving moz-extensions (extension settings)
+    const storagePath = path.join(profilePath, 'storage', 'default');
+    if (fs.existsSync(storagePath)) {
+        try {
+            const items = fs.readdirSync(storagePath);
+            for (const item of items) {
+                if (!item.startsWith('moz-extension+++')) {
+                    const itemPath = path.join(storagePath, item);
+                    if (fs.lstatSync(itemPath).isDirectory()) {
+                        deleteDirRecursive(itemPath);
+                    } else {
+                        fs.unlinkSync(itemPath);
+                    }
+                }
+            }
+            console.log('✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.');
+        } catch (e) {}
+    }
+}
+
 // Single registration process for one email
-async function registerSingleEmail(url, email, browser, proxyServer) {
+async function registerSingleEmail(url, email, proxyServer, isInit, abortController, headless) {
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
     if (proxyServer) {
@@ -313,79 +328,92 @@ async function registerSingleEmail(url, email, browser, proxyServer) {
     console.log(`- Last Name : ${lastName}`);
     console.log(`- Password  : ${password}`);
 
-    // Create a new browser context with a random device profile (Mobile/Desktop)
-    const profile = getRandomBrowserProfile();
-    const contextOptions = { ...profile.contextOptions };
+    const contextOptions = {
+        headless: headless !== undefined ? !!headless : false,
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
+        args: [
+            '--start-maximized',
+        ]
+    };
 
     // Inject proxy into this context if one is available
     if (proxyServer) {
         contextOptions.proxy = { server: proxyServer };
     }
 
-    const context = await browser.newContext(contextOptions);
+    if (abortController && abortController.shouldStop) {
+        throw new Error("Pendaftaran dihentikan oleh pengguna.");
+    }
 
-    const userAgent = contextOptions.userAgent || '';
-    const isApple = userAgent.includes('Macintosh') || userAgent.includes('iPhone') || userAgent.includes('iPad');
-    const isAndroid = userAgent.includes('Android');
-    const isMobileDevice = !!profile.isMobile;
+    if (!isInit) {
+        // Full clean for normal registration run
+        clearProfileData(PROFILE_PATH);
+    } else {
+        // In initialization mode, only clean lock files to allow configuration retention
+        const lockFiles = ['parent.lock', 'lock', '.parentlock'];
+        for (const file of lockFiles) {
+            const filePath = path.join(PROFILE_PATH, file);
+            try {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`✓ Membersihkan file lock profil: ${file}`);
+                }
+            } catch (e) {}
+        }
+    }
+
+    console.log(`Membuka Firefox dengan profil persistent: ${PROFILE_PATH}`);
+    const context = await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
+
+    if (abortController) {
+        abortController.abort = async () => {
+            try {
+                console.log("[Abort] Menutup browser context secara paksa karena perintah berhenti...");
+                await context.close();
+            } catch (e) {}
+        };
+        // If stopped while launching, abort immediately
+        if (abortController.shouldStop) {
+            await abortController.abort();
+            throw new Error("Pendaftaran dihentikan oleh pengguna.");
+        }
+    }
+    
+    if (isInit) {
+        console.log("\n========================================================");
+        console.log("MODE INISIALISASI AKTIF (-init=true)");
+        console.log("Silakan pasang ekstensi dan lakukan konfigurasi secara manual.");
+        console.log("Tutup jendela browser Firefox setelah Anda selesai untuk melanjutkan.");
+        console.log("========================================================\n");
+        
+        await new Promise(resolve => {
+            context.on('close', resolve);
+        });
+        return true;
+    }
+
+    // Clear cookies for this session to ensure a clean registration session
+    await context.clearCookies();
 
     // Advanced evasions to make browser tracking significantly harder
-    await context.addInitScript(({ isApple, isAndroid, isMobileDevice }) => {
+    await context.addInitScript(() => {
         // 1. Evade navigator.webdriver
         try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) {}
 
-        // 2. Mock Plugins list (only on desktop to match genuine browsers)
-        if (!isMobileDevice) {
-            try {
-                const pluginData = [
-                    { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
-                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgieooff', description: 'Portable Document Format', version: '' },
-                    { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
-                    { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
-                ];
-                Object.defineProperty(navigator, 'plugins', { get: () => pluginData });
-                Object.defineProperty(navigator, 'mimeTypes', { get: () => [{ type: 'application/pdf', suffixes: 'pdf', description: '', enabledPlugin: pluginData[0] }] });
-            } catch (e) {}
-        } else {
-            // Mobile Safari / Chrome has empty or different plugins
-            try {
-                Object.defineProperty(navigator, 'plugins', { get: () => [] });
-                Object.defineProperty(navigator, 'mimeTypes', { get: () => [] });
-            } catch (e) {}
-        }
-
-        // 3. Obfuscate Canvas fingerprinting (Universal)
+        // 2. Mock Plugins list (biasanya 0 pada headless/bot)
         try {
-            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function(type) {
-                if (type === 'image/png' && this.width === 220 && this.height === 30) {
-                    const ctx = this.getContext('2d');
-                    const r = Math.floor(Math.random() * 3) - 1;
-                    ctx.fillStyle = `rgba(0,0,0,0.0${r})`;
-                    ctx.fillRect(0, 0, 1, 1);
-                }
-                return originalToDataURL.apply(this, arguments);
-            };
+            const pluginData = [
+                { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
+                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgieooff', description: 'Portable Document Format', version: '' },
+                { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
+                { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
+            ];
+            Object.defineProperty(navigator, 'plugins', { get: () => pluginData });
+            Object.defineProperty(navigator, 'mimeTypes', { get: () => [{ type: 'application/pdf', suffixes: 'pdf', description: '', enabledPlugin: pluginData[0] }] });
         } catch (e) {}
 
-        // 4. Custom chrome object presence (Only for Non-Apple desktop / Android browsers)
-        if (!isApple) {
-            try {
-                if (!window.chrome) {
-                    window.chrome = {
-                        app: { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } },
-                        runtime: { PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' }, PlatformArch: { ARM: 'arm', ARM64: 'arm64', X86_32: 'x86-32', X86_64: 'x86-64' }, RequestUpdateCheckStatus: { THROTTLED: 'throttled', NO_UPDATE: 'no_update', UPDATE_AVAILABLE: 'update_available' } },
-                        loadTimes: function() { return { commitLoadTime: Date.now() / 1000, finishDocumentLoadTime: Date.now() / 1000, finishLoadTime: Date.now() / 1000 }; },
-                        csi: function() { return { startE: Date.now(), onloadT: Date.now(), pageT: Date.now() / 1000, tran: 15 }; }
-                    };
-                }
-            } catch (e) {}
-        } else {
-            // Delete chrome object on Apple devices if somehow injected
-            try { delete window.chrome; } catch (e) {}
-        }
-
-        // 5. Override permissions API
+        // 3. Override permissions API
         try {
             const originalQuery = navigator.permissions.query;
             navigator.permissions.query = (parameters) =>
@@ -393,101 +421,36 @@ async function registerSingleEmail(url, email, browser, proxyServer) {
                     Promise.resolve({ state: Notification.permission }) :
                     originalQuery(parameters);
         } catch (e) {}
+    });
 
-        // 6. Spoof hardwareConcurrency & deviceMemory
-        if (isApple && isMobileDevice) {
-            try { Object.defineProperty(navigator, 'deviceMemory', { get: () => undefined }); } catch (e) {}
-            try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 6 }); } catch (e) {}
-        } else {
-            try { Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 }); } catch (e) {}
-            try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 }); } catch (e) {}
-        }
+    // launchPersistentContext secara bawaan sudah membuka 1 halaman kosong.
+    // Kita gunakan halaman pertama yang sudah terbuka agar tidak meluncurkan 2 jendela browser.
+    const pages = context.pages();
+    const page = pages.length > 0 ? pages[0] : await context.newPage();
 
-        // 7. Spoof WebGL Vendor/Renderer to match platform
-        try {
-            const getParameterOriginal = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
-                    return isApple ? 'Apple Inc.' : 'Intel Inc.';
-                }
-                if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
-                    return isApple ? 'Apple GPU' : 'Intel Iris OpenGL Engine';
-                }
-                return getParameterOriginal.apply(this, [parameter]);
-            };
-        } catch (e) {}
-
-        // 8. AudioContext fingerprint noise (Universal)
-        try {
-            const AudioCtxOrig = window.AudioContext || window.webkitAudioContext;
-            if (AudioCtxOrig) {
-                const createOscillatorOrig = AudioCtxOrig.prototype.createOscillator;
-                AudioCtxOrig.prototype.createOscillator = function() {
-                    const osc = createOscillatorOrig.apply(this, arguments);
-                    const originalConnect = osc.connect.bind(osc);
-                    osc.connect = function(dest) {
-                        return originalConnect(dest);
-                    };
-                    return osc;
-                };
-            }
-        } catch (e) {}
-
-        // 9. Spoof screen dimensions ONLY for desktop (Playwright mobile emulation handles mobile dimensions natively)
-        if (!isMobileDevice) {
-            try {
-                Object.defineProperty(screen, 'width', { get: () => window.innerWidth || 1920 });
-                Object.defineProperty(screen, 'height', { get: () => window.innerHeight || 1080 });
-                Object.defineProperty(screen, 'availWidth', { get: () => window.innerWidth || 1920 });
-                Object.defineProperty(screen, 'availHeight', { get: () => (window.innerHeight - 40) || 1040 });
-            } catch (e) {}
-        }
-    }, { isApple, isAndroid, isMobileDevice });
-
-    const page = await context.newPage();
-
-    // Helper to simulate human-like typing (random delay between each keypress)
+    // Helper to fill input directly
     async function humanType(selector, text) {
-        await page.click(selector);
-        await page.waitForTimeout(200 + Math.random() * 300);
-        // Clear any existing value first
-        await page.fill(selector, '');
-        for (const char of text) {
-            await page.type(selector, char, { delay: 80 + Math.random() * 120 });
-        }
+        await page.fill(selector, text);
     }
 
-    // Helper to simulate a random mouse movement before clicking
+    // Helper to click directly
     async function humanClick(selector) {
-        const el = page.locator(selector).first();
-        const box = await el.boundingBox();
-        if (box) {
-            // Move mouse to a random starting position first
-            await page.mouse.move(
-                Math.random() * 300,
-                Math.random() * 300
-            );
-            await page.waitForTimeout(100 + Math.random() * 200);
-            // Move gradually toward the target
-            await page.mouse.move(
-                box.x + box.width / 2 + (Math.random() * 6 - 3),
-                box.y + box.height / 2 + (Math.random() * 6 - 3),
-                { steps: 15 + Math.floor(Math.random() * 10) }
-            );
-            await page.waitForTimeout(80 + Math.random() * 150);
-            await page.mouse.click(
-                box.x + box.width / 2 + (Math.random() * 4 - 2),
-                box.y + box.height / 2 + (Math.random() * 4 - 2)
-            );
-        } else {
-            await el.click();
-        }
+        await page.click(selector);
     }
 
     try {
         console.log(`Navigasi ke URL: ${url}...`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await checkTooManyAttempts(page);
+
+        // Clear local/session storage to avoid cross-session tracking
+        try {
+            await page.evaluate(() => {
+                localStorage.clear();
+                sessionStorage.clear();
+            });
+            console.log("✓ Menghapus sisa local/session storage");
+        } catch (e) {}
 
         console.log("Mencari form input pendaftaran...");
         // More human-like: random wait before starting
@@ -504,28 +467,36 @@ async function registerSingleEmail(url, email, browser, proxyServer) {
         } catch (e) {}
 
         // --- STEP 1: Fill Email & Click Continue ---
-        console.log("\n[Langkah 1] Mengisi email...");
+        console.log("\n[Langkah 1] Menunggu field email muncul (timeout 60 detik)...");
         const emailSelectors = [
             'input[id^="susi_email"]',
             'input[type="email"]',
             'input[name="email"]',
             'input[placeholder*="Email"]'
         ];
-        let emailFilled = false;
-        for (const selector of emailSelectors) {
-            try {
-                if (await page.isVisible(selector)) {
-                    await humanType(selector, email);
-                    emailFilled = true;
-                    console.log("✓ Mengisi Email (human-typed)");
-                    break;
-                }
-            } catch (e) {}
+        
+        let activeEmailSelector = null;
+        const startTime = Date.now();
+        while (Date.now() - startTime < 60000) {
+            for (const selector of emailSelectors) {
+                try {
+                    const isVisible = await page.locator(selector).first().isVisible();
+                    if (isVisible) {
+                        activeEmailSelector = selector;
+                        break;
+                    }
+                } catch (e) {}
+            }
+            if (activeEmailSelector) break;
+            await page.waitForTimeout(1000); // Check every 1 second
         }
 
-        if (!emailFilled) {
-            throw new Error("Tidak dapat menemukan field Email untuk Langkah 1!");
+        if (!activeEmailSelector) {
+            throw new Error("Tidak dapat menemukan field Email untuk Langkah 1 dalam 60 detik!");
         }
+
+        await humanType(activeEmailSelector, email);
+        console.log("✓ Mengisi Email");
 
         await page.waitForTimeout(500 + Math.random() * 800);
 
@@ -551,7 +522,19 @@ async function registerSingleEmail(url, email, browser, proxyServer) {
 
         if (!clickedContinue) {
             console.log("Peringatan: Tombol Continue tidak terdeteksi, mencoba menekan Enter...");
-            await page.keyboard.press('Enter');
+            let enterPressed = false;
+            for (const selector of emailSelectors) {
+                try {
+                    if (await page.isVisible(selector)) {
+                        await page.locator(selector).press('Enter');
+                        enterPressed = true;
+                        break;
+                    }
+                } catch (e) {}
+            }
+            if (!enterPressed) {
+                await page.keyboard.press('Enter');
+            }
         }
 
         // Wait for Step 2 fields to load and be visible
@@ -679,7 +662,19 @@ async function registerSingleEmail(url, email, browser, proxyServer) {
 
         if (!clickedSubmit) {
             console.log("Mencoba mengirimkan form dengan menekan Enter...");
-            await page.keyboard.press('Enter');
+            let enterPressed = false;
+            for (const selector of passwordSelectors) {
+                try {
+                    if (await page.isVisible(selector)) {
+                        await page.locator(selector).press('Enter');
+                        enterPressed = true;
+                        break;
+                    }
+                } catch (e) {}
+            }
+            if (!enterPressed) {
+                await page.keyboard.press('Enter');
+            }
             clickedSubmit = true;
         }
 
@@ -687,16 +682,16 @@ async function registerSingleEmail(url, email, browser, proxyServer) {
         console.log("Catatan: Jika ada CAPTCHA yang muncul di layar browser, silakan selesaikan secara manual.");
         console.log("Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...");
 
-        // Loop to check if the user has successfully registered
+        // Loop to check if the user has successfully registered (max 60 seconds)
         let isRegistered = false;
-        for (let i = 0; i < 90; i++) { // Polling up to 180 seconds (2s * 90)
+        for (let i = 0; i < 30; i++) { // Polling up to 60 seconds (2s * 30)
             await page.waitForTimeout(2000);
             await checkTooManyAttempts(page);
             const currentUrl = page.url();
             
-            // Check for trial_first or general successful redirection strings
-            if (currentUrl.includes('trial_first') || (!currentUrl.includes('/register') && !currentUrl.includes('/login') && (currentUrl.includes('/home') || currentUrl.includes('/personal') || currentUrl.includes('/dashboard') || currentUrl.includes('dropbox.com/h')))) {
-                console.log(`\n✓ Pendaftaran berhasil terdeteksi! URL saat ini: ${currentUrl}`);
+            // Check for trial_first, verify_email, or general successful redirection strings
+            if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') || (!currentUrl.includes('/register') && !currentUrl.includes('/login') && (currentUrl.includes('/home') || currentUrl.includes('/personal') || currentUrl.includes('/dashboard') || currentUrl.includes('dropbox.com/h')))) {
+                console.log(`\n✓ Pendaftaran/Verifikasi terdeteksi! URL saat ini: ${currentUrl}`);
                 isRegistered = true;
                 break;
             }
@@ -710,27 +705,22 @@ async function registerSingleEmail(url, email, browser, proxyServer) {
             await page.waitForTimeout(2000);
             return true;
         } else {
-            console.log("\nInformasi: Waktu tunggu habis. Registrasi belum selesai atau dialihkan secara manual.");
-            // Wait for user to tell the script when they're done or close the page manually if they want
-            console.log("Menunggu halaman ditutup atau diselesaikan secara manual oleh pengguna...");
-            await new Promise(resolve => {
-                const interval = setInterval(async () => {
-                    if (page.isClosed()) {
-                        clearInterval(interval);
-                        resolve();
-                    }
-                }, 2000);
-            });
-            return false;
+            console.log("\n⚠️ URL tidak berubah dalam 60 detik setelah menekan tombol daftar.");
+            throw new Error("Timeout: URL tidak berubah setelah 60 detik.");
         }
 
     } catch (error) {
         console.error(`Terjadi error untuk email ${email}:`, error);
         throw error;
     } finally {
+        if (abortController) {
+            abortController.abort = null;
+        }
         // Always close the browser context to clear cookies, session data, and anti-fingerprinting details before the next iteration
         console.log(`Menutup browser context untuk ${email}...`);
-        await context.close();
+        try {
+            await context.close();
+        } catch (e) {}
     }
 }
 
@@ -741,6 +731,16 @@ async function run() {
     // Mencari argumen seperti -proxy=true atau --proxy=true
     const useProxyArg = process.argv.find(arg => arg.startsWith('-proxy=') || arg.startsWith('--proxy='));
     const useProxy = useProxyArg ? useProxyArg.split('=')[1] === 'true' : false;
+
+    const useInitArg = process.argv.find(arg => arg.startsWith('-init=') || arg.startsWith('--init='));
+    const useInit = useInitArg ? useInitArg.split('=')[1] === 'true' : false;
+
+    if (useInit) {
+        console.log("Status Inisialisasi: AKTIF");
+        await registerSingleEmail("https://www.dropbox.com/register", "init@init.com", null, true);
+        console.log("Inisialisasi selesai. Silakan jalankan script kembali tanpa parameter -init.");
+        return;
+    }
 
     if (useProxy) {
         console.log("Status Proxy: AKTIF (Menggunakan rotasi proxy SG dari Proxifly)");
@@ -773,18 +773,7 @@ async function run() {
     }
 
     console.log(`\nDitemukan ${emails.length} email yang akan didaftarkan.`);
-    console.log("Sedang membuka browser...");
-
-    // Launch single browser instance in headed mode
-    const browser = await chromium.launch({
-        headless: false,
-        channel: 'chrome', // Gunakan Google Chrome resmi yang terpasang di Windows
-        args: [
-            '--start-maximized',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-webrtc', // Menonaktifkan WebRTC agar tidak bocor IP asli
-        ]
-    });
+    console.log("Memulai proses pendaftaran...");
 
     // Run registration for each email sequentially
     for (let i = 0; i < emails.length; i++) {
@@ -803,22 +792,22 @@ async function run() {
         // Retry logic for proxy errors or "Too many attempts"
         let registrationSuccess = false;
         let attempts = 0;
-        const maxAttempts = 3; // Selalu coba sampai 3 kali untuk rotasi user-agent jika terdeteksi 'Too many attempts'
+        const maxAttempts = 3; 
         let currentProxy = proxy;
 
         while (!registrationSuccess && attempts < maxAttempts) {
             attempts++;
             if (attempts > 1) {
                 if (useProxy) {
-                    console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} dengan proxy baru & User-Agent acak (Percobaan ke-${attempts} dari ${maxAttempts})...`);
+                    console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} dengan proxy baru (Percobaan ke-${attempts} dari ${maxAttempts})...`);
                     currentProxy = await getProxiflyProxy();
                 } else {
-                    console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} dengan rotasi User-Agent/Perangkat baru (Percobaan ke-${attempts} dari ${maxAttempts})...`);
+                    console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} (Percobaan ke-${attempts} dari ${maxAttempts})...`);
                 }
             }
 
             try {
-                const result = await registerSingleEmail(url, email, browser, currentProxy);
+                const result = await registerSingleEmail(url, email, currentProxy, false);
                 if (result) {
                     registrationSuccess = true;
                 } else {
@@ -840,7 +829,7 @@ async function run() {
                 const isTooManyAttempts = errorMsg.includes('too many attempts') || errorMsg.includes('please try later') || errorMsg.includes('terlalu banyak percobaan') || errorMsg.includes('coba lagi nanti');
 
                 if (isTooManyAttempts && attempts < maxAttempts) {
-                    console.log(`Terdeteksi pesan "Too many attempts". Merotasi User-Agent / Profil Browser dan mencoba kembali...`);
+                    console.log(`Terdeteksi pesan "Too many attempts". Mencoba kembali...`);
                 } else if (useProxy && isConnectionError && attempts < maxAttempts) {
                     console.log(`Terdeteksi masalah koneksi/proxy. Mengambil proxy baru dan mencoba kembali...`);
                 } else {
@@ -859,8 +848,15 @@ async function run() {
     }
 
     console.log("\nSemua email dalam daftar telah diproses.");
-    await browser.close();
     console.log("Script selesai dijalankan.");
 }
 
-run();
+if (require.main === module) {
+    run();
+} else {
+    module.exports = {
+        registerSingleEmail,
+        getProxiflyProxy,
+        PROFILE_PATH
+    };
+}
