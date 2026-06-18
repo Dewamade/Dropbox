@@ -368,7 +368,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
     // Grab UA from the Playwright browser instance
     const uaPage = context.pages()[0] || await context.newPage();
     const playwrightUA = await uaPage.evaluate(() => navigator.userAgent);
-    safeSend(activeWs, { type: 'playwright-ua', ua: playwrightUA });
+    console.log(`[Playwright] User Agent: ${playwrightUA}`);
     // Fetch server's public IP (the machine running Playwright)
     const getServerPublicIp = () => {
         return new Promise((resolve) => {
@@ -388,7 +388,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
     };
     const serverIp = await getServerPublicIp();
     if (serverIp) {
-        safeSend(activeWs, { type: 'server-ip', ip: serverIp });
+        console.log(`[Server] Public IP: ${serverIp}`);
     }
 
     if (abortController) {

@@ -14,9 +14,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 let activeWs = null;
 const originalLog = console.log;
 const originalError = console.error;
-const originalWarn = console.warn;
+global.safeSend = safeSend;
+global.activeWs = null;
 
 function safeSend(socket, payload) {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        try {
+            socket.send(JSON.stringify(payload));
+        } catch (e) {
+            originalError('WS send error:', e.message);
+        }
+    }
+}
+// Expose helpers globally for other modules (register.js)
+global.safeSend = safeSend;
+global.setActiveWs = (ws) => { global.activeWs = ws; };
+global.getActiveWs = () => global.activeWs;
     if (socket && socket.readyState === WebSocket.OPEN) {
         try {
             socket.send(JSON.stringify(payload));
