@@ -727,15 +727,25 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
             console.log('✅ Pendaftaran berhasil! Browser tetap terbuka — memulai Dropbox daemon...');
             await page.waitForTimeout(1500);
 
-            // ── Spawn dropboxd via box64 ──────────────────────────────────────────
-            const { spawn } = require('child_process');
+            // ── Spawn dropboxd via bash (avoids ELF header warning) ──────────────
+            const { spawn, execSync } = require('child_process');
             const homeDir = process.env.HOME || '/root';
             let dropboxProc = null;
             let cliLinkUrl  = null;
 
+            const killDropbox = () => {
+                if (dropboxProc) {
+                    try { dropboxProc.kill('SIGTERM'); } catch (_) {}
+                }
+                try {
+                    execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' });
+                    console.log('[dropboxd] ✓ Proses dropbox lama berhasil dihentikan (pkill).');
+                } catch (_) {}
+            };
+
             try {
-                console.log(`[dropboxd] Menjalankan: box64 ./.dropbox-dist/dropboxd (HOME=${homeDir})`);
-                dropboxProc = spawn('box64', ['./.dropbox-dist/dropboxd'], {
+                console.log(`[dropboxd] Menjalankan via bash: box64 ./.dropbox-dist/dropboxd (HOME=${homeDir})`);
+                dropboxProc = spawn('bash', ['-c', 'box64 ./.dropbox-dist/dropboxd'], {
                     cwd: homeDir,
                     env: { ...process.env, HOME: homeDir },
                 });
@@ -748,11 +758,9 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
 
                     const scanForLink = (chunk) => {
                         const text = chunk.toString();
-                        // Log every line to UI via console.log (already intercepted by server.js)
                         text.split('\n').forEach(line => {
                             if (line.trim()) console.log(`[dropboxd] ${line.trim()}`);
                         });
-                        // Look for the Dropbox CLI link URL
                         const match = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
                         if (match && !cliLinkUrl) {
                             cliLinkUrl = match[0];
@@ -767,7 +775,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                     dropboxProc.on('close', (code) => {
                         if (!cliLinkUrl) {
                             clearTimeout(deadline);
-                            reject(new Error(`[dropboxd] Proses berhenti dengan kode ${code} sebelum URL ditemukan`));
+                            reject(new Error(`[dropboxd] Proses berhenti (kode ${code}) sebelum URL ditemukan`));
                         }
                     });
                 });
@@ -783,21 +791,20 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                 console.log('[Browser] Menunggu tombol Connect...');
                 const connectSelectors = [
                     'button:has-text("Connect")',
+                    'button[aria-label="Connect"]',
                     'button:has-text("Hubungkan")',
                     'input[type="submit"][value*="Connect"]',
                     'a:has-text("Connect")',
-                    '[data-testid*="connect"]',
-                    'button[class*="connect"]',
                 ];
 
                 let connected = false;
-                const connectDeadline = Date.now() + 60000; // 60 s
+                const connectDeadline = Date.now() + 60000;
                 while (Date.now() < connectDeadline && !connected) {
                     for (const sel of connectSelectors) {
                         try {
                             if (await page.isVisible(sel)) {
                                 await page.click(sel);
-                                console.log(`[Browser] ✓ Tombol Connect berhasil ditekan! (selector: ${sel})`);
+                                console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
                                 connected = true;
                                 break;
                             }
@@ -807,14 +814,12 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                 }
 
                 if (!connected) {
-                    throw new Error('[Browser] Timeout 60 detik — tombol Connect tidak ditemukan di halaman CLI Link');
+                    throw new Error('[Browser] Timeout 60 detik — tombol Connect tidak ditemukan');
                 }
 
                 // ── Wait for "successfully" confirmation ──────────────────────────
                 console.log('[Browser] Menunggu konfirmasi berhasil dihubungkan...');
-                const successKeywords = [
-                    'successfully', 'berhasil', 'linked', 'connected', 'you can now close',
-                ];
+                const successKeywords = ['successfully', 'berhasil', 'linked', 'connected', 'you can now close'];
                 let confirmedSuccess = false;
                 const successDeadline = Date.now() + 60000;
                 while (Date.now() < successDeadline && !confirmedSuccess) {
@@ -829,17 +834,121 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                 if (confirmedSuccess) {
                     console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
                 } else {
-                    console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi dalam 60 detik, lanjut ke email berikutnya.`);
+                    console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi dalam 60 detik, melanjutkan...`);
                 }
 
-            } finally {
-                // Kill daemon — it stays resident normally; clean up per-email
-                if (dropboxProc) {
-                    try { dropboxProc.kill('SIGTERM'); } catch (_) {}
+                // ── Open Account menu → Settings → Verify email → Send email ──────
+                console.log('[Browser] Membuka menu akun (pojok kanan atas)...');
+                await page.waitForTimeout(1000);
+
+                // Navigate to home first so the account menu is available
+                await page.goto('https://www.dropbox.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.waitForTimeout(2000);
+
+                // Click account menu button (aria-label="Account menu")
+                const accountMenuSelectors = [
+                    'button[aria-label="Account menu"]',
+                    'button[aria-label="Akun"]',
+                    '[aria-label="Account menu"]',
+                ];
+                let accountMenuOpened = false;
+                for (const sel of accountMenuSelectors) {
+                    try {
+                        if (await page.isVisible(sel)) {
+                            await page.click(sel);
+                            console.log('[Browser] ✓ Menu akun dibuka.');
+                            accountMenuOpened = true;
+                            break;
+                        }
+                    } catch (e) {}
                 }
+                if (!accountMenuOpened) {
+                    console.log('[Browser] ⚠️ Tombol menu akun tidak ditemukan, melewati langkah verify email.');
+                }
+
+                if (accountMenuOpened) {
+                    await page.waitForTimeout(1500);
+
+                    // Click Settings link (href="/account" or role="menuitem" with text Settings)
+                    const settingsSelectors = [
+                        'a[href="https://www.dropbox.com/account"]',
+                        'a[href="/account"]',
+                        '[role="menuitem"]:has-text("Settings")',
+                        '[role="menuitem"]:has-text("Pengaturan")',
+                        'a:has-text("Settings")',
+                    ];
+                    let settingsOpened = false;
+                    for (const sel of settingsSelectors) {
+                        try {
+                            if (await page.isVisible(sel)) {
+                                await page.click(sel);
+                                console.log('[Browser] ✓ Halaman Settings dibuka.');
+                                settingsOpened = true;
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (settingsOpened) {
+                        await page.waitForTimeout(3000);
+
+                        // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
+                        const verifySelectors = [
+                            'button[aria-label="Verify email"]',
+                            'button.account-key-value-block__link:has-text("Verify email")',
+                            'button:has-text("Verify email")',
+                            'button:has-text("Verifikasi email")',
+                        ];
+                        let verifyClicked = false;
+                        for (const sel of verifySelectors) {
+                            try {
+                                if (await page.isVisible(sel)) {
+                                    await page.click(sel);
+                                    console.log('[Browser] ✓ Tombol Verify email diklik, menunggu modal...');
+                                    verifyClicked = true;
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+
+                        if (verifyClicked) {
+                            await page.waitForTimeout(2000);
+
+                            // Click Send email button inside the modal (class contains js-email-modal-button)
+                            const sendEmailSelectors = [
+                                'button.js-email-modal-button',
+                                'button:has-text("Send email")',
+                                'button:has-text("Kirim email")',
+                            ];
+                            let emailSent = false;
+                            for (const sel of sendEmailSelectors) {
+                                try {
+                                    if (await page.isVisible(sel)) {
+                                        await page.click(sel);
+                                        console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+                                        emailSent = true;
+                                        break;
+                                    }
+                                } catch (e) {}
+                            }
+                            if (!emailSent) {
+                                console.log('[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.');
+                            }
+                        } else {
+                            console.log('[Browser] ⚠️ Tombol Verify email tidak ditemukan di halaman Settings.');
+                        }
+                    }
+                }
+
+                await page.waitForTimeout(1500);
+
+            } finally {
+                // Kill daemon + any lingering dropbox processes
+                killDropbox();
             }
 
             return { success: true, password };
+
 
         } else {
             console.log('\n⚠️ URL tidak berubah dalam 60 detik setelah menekan tombol daftar.');
