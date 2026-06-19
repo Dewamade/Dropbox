@@ -879,9 +879,9 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                         if (verifyClicked) {
                             await page.waitForTimeout(2000);
 
-                            // Click Send email button inside the modal (class contains js-email-modal-button)
+                            // Click Send email button inside the modal (class contains js-email-modal-button and dig-Button--primary)
                             const sendEmailSelectors = [
-                                'button.js-email-modal-button',
+                                'button.js-email-modal-button.dig-Button--primary',
                                 'button:has-text("Send email")',
                                 'button:has-text("Kirim email")',
                             ];
