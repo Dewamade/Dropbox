@@ -13,7 +13,7 @@
     <div class="container">
         <header>
             <h1>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bot">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 8V4H8"/>
                     <rect width="16" height="12" x="4" y="8" rx="2"/>
                     <path d="M2 14h2"/>
@@ -23,7 +23,17 @@
                 </svg>
                 Dropbox Bulk Signup
             </h1>
-            <div class="version">v1.2.0 (Firefox)</div>
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+                <button class="btn-history" id="history-btn">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                        <path d="M12 7v5l4 2"/>
+                    </svg>
+                    Riwayat
+                </button>
+                <div class="version">v1.3.0 (Firefox)</div>
+            </div>
         </header>
 
         <main class="grid">
@@ -45,6 +55,25 @@
                 <div class="form-group">
                     <label for="emails-list">Daftar Email Bulk (Pisahkan dengan titik koma ';')</label>
                     <textarea id="emails-list" placeholder="email1@domain.com; email2@domain.com; email3@domain.com;"></textarea>
+                </div>
+
+                <!-- Password Mode -->
+                <div class="form-group">
+                    <label>Mode Password</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="password-mode" value="random" id="pw-random" checked>
+                            🎲 Acak (Random)
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="password-mode" value="fixed" id="pw-fixed">
+                            🔒 Tetap (Fixed)
+                        </label>
+                    </div>
+                    <div class="fixed-password-wrap" id="fixed-password-wrap">
+                        <label for="fixed-password-input">Password Tetap</label>
+                        <input type="text" id="fixed-password-input" value="Aa12345678*" placeholder="Masukkan password tetap...">
+                    </div>
                 </div>
 
                 <div class="form-group checkbox-group">
@@ -140,24 +169,125 @@
         </main>
     </div>
 
-    <script>
-        const dropboxUrlInput = document.getElementById('dropbox-url');
-        const emailsListInput = document.getElementById('emails-list');
-        const useProxyCheckbox = document.getElementById('use-proxy');
-        const startBtn = document.getElementById('start-btn');
-        const stopBtn = document.getElementById('stop-btn');
-        const clearBtn = document.getElementById('clear-btn');
-        const logPanel = document.getElementById('log-panel');
-        const progressIndicator = document.getElementById('progress-indicator');
-        const progressPercentage = document.getElementById('progress-percentage');
-        const statusBadge = document.getElementById('status-badge');
-        const statusText = document.getElementById('status-text');
-        const progressDetail = document.getElementById('progress-detail');
-        const successCountEl = document.getElementById('stat-success-count');
-        const failedCountEl = document.getElementById('stat-failed-count');
-        const useHeadlessCheckbox = document.getElementById('use-headless');
+    <!-- ── History Modal ─────────────────────────────────── -->
+    <div class="modal-backdrop" id="history-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📋 Riwayat Pendaftaran</h2>
+                <button class="modal-close" id="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="history-content">
+                    <div class="empty-state">Memuat riwayat...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline btn-sm" id="history-clear-btn">🗑 Hapus Semua Riwayat</button>
+                <button class="btn btn-sm" id="history-refresh-btn">↻ Perbarui</button>
+            </div>
+        </div>
+    </div>
 
-        // WebSocket Connection
+    <script>
+        const dropboxUrlInput     = document.getElementById('dropbox-url');
+        const emailsListInput     = document.getElementById('emails-list');
+        const useProxyCheckbox    = document.getElementById('use-proxy');
+        const useHeadlessCheckbox = document.getElementById('use-headless');
+        const startBtn            = document.getElementById('start-btn');
+        const stopBtn             = document.getElementById('stop-btn');
+        const clearBtn            = document.getElementById('clear-btn');
+        const logPanel            = document.getElementById('log-panel');
+        const progressIndicator   = document.getElementById('progress-indicator');
+        const progressPercentage  = document.getElementById('progress-percentage');
+        const statusBadge         = document.getElementById('status-badge');
+        const statusText          = document.getElementById('status-text');
+        const progressDetail      = document.getElementById('progress-detail');
+        const successCountEl      = document.getElementById('stat-success-count');
+        const failedCountEl       = document.getElementById('stat-failed-count');
+
+        // Password mode
+        const pwRandomRadio        = document.getElementById('pw-random');
+        const pwFixedRadio         = document.getElementById('pw-fixed');
+        const fixedPasswordWrap    = document.getElementById('fixed-password-wrap');
+        const fixedPasswordInput   = document.getElementById('fixed-password-input');
+
+        // History modal
+        const historyBtn           = document.getElementById('history-btn');
+        const historyModal         = document.getElementById('history-modal');
+        const modalCloseBtn        = document.getElementById('modal-close-btn');
+        const historyContent       = document.getElementById('history-content');
+        const historyRefreshBtn    = document.getElementById('history-refresh-btn');
+        const historyClearBtn      = document.getElementById('history-clear-btn');
+
+        // ── Password mode toggle ──────────────────────────────
+        function updatePasswordModeUI() {
+            const isFixed = pwFixedRadio.checked;
+            fixedPasswordWrap.classList.toggle('visible', isFixed);
+        }
+        pwRandomRadio.addEventListener('change', updatePasswordModeUI);
+        pwFixedRadio.addEventListener('change', updatePasswordModeUI);
+        updatePasswordModeUI();
+
+        // ── History modal ─────────────────────────────────────
+        function formatDate(iso) {
+            try {
+                const d = new Date(iso);
+                return d.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+            } catch (_) { return iso; }
+        }
+
+        async function loadHistory() {
+            historyContent.innerHTML = '<div class="empty-state">Memuat riwayat...</div>';
+            try {
+                const res = await fetch('/api/history');
+                const data = await res.json();
+                if (!data.length) {
+                    historyContent.innerHTML = '<div class="empty-state">Belum ada riwayat pendaftaran.</div>';
+                    return;
+                }
+                const rows = data.map(r => `
+                    <tr>
+                        <td>${formatDate(r.timestamp)}</td>
+                        <td>${r.email}</td>
+                        <td>${r.password}</td>
+                        <td><span class="badge-${r.status}">${r.status}</span></td>
+                        <td style="font-size:0.75rem;color:#71717a;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.url}">${r.url}</td>
+                    </tr>`).join('');
+                historyContent.innerHTML = `
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Email</th>
+                                <th>Password</th>
+                                <th>Status</th>
+                                <th>URL</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>`;
+            } catch (e) {
+                historyContent.innerHTML = `<div class="empty-state">Gagal memuat riwayat: ${e.message}</div>`;
+            }
+        }
+
+        historyBtn.addEventListener('click', () => {
+            historyModal.classList.add('open');
+            loadHistory();
+        });
+
+        modalCloseBtn.addEventListener('click', () => historyModal.classList.remove('open'));
+        historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.remove('open'); });
+
+        historyRefreshBtn.addEventListener('click', loadHistory);
+
+        historyClearBtn.addEventListener('click', async () => {
+            if (!confirm('Hapus semua riwayat pendaftaran?')) return;
+            await fetch('/api/history', { method: 'DELETE' });
+            loadHistory();
+        });
+
+        // ── WebSocket Connection ──────────────────────────────
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}`;
         let socket;
@@ -165,21 +295,14 @@
         function connectWebSocket() {
             socket = new WebSocket(wsUrl);
 
-                socket.onopen = () => {
-                    appendLog('log-success', '[System] Terhubung ke WebSockets server.');
-                    // Log User Agent
-                    const ua = navigator.userAgent;
-                    appendLog('log-info', `[Info] User Agent: ${ua}`);
-                    // Fetch and log public IP
-                    fetch('https://api.ipify.org?format=json')
-                        .then(res => res.json())
-                        .then(data => {
-                            appendLog('log-info', `[Info] Public IP: ${data.ip}`);
-                        })
-                        .catch(err => {
-                            appendLog('log-warn', `[Warning] Unable to fetch public IP: ${err}`);
-                        });
-                };
+            socket.onopen = () => {
+                appendLog('log-success', '[System] Terhubung ke WebSockets server.');
+                appendLog('log-info', `[Info] User Agent: ${navigator.userAgent}`);
+                fetch('https://api.ipify.org?format=json')
+                    .then(res => res.json())
+                    .then(data => appendLog('log-info', `[Info] Public IP (client): ${data.ip}`))
+                    .catch(() => {});
+            };
 
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
@@ -229,7 +352,7 @@
                 className = 'log-success';
             } else if (lower.includes('peringatan') || lower.includes('warning')) {
                 className = 'log-warn';
-            } else if (lower.includes('===' || lower.includes('---'))) {
+            } else if (lower.includes('===') || lower.includes('---')) {
                 className = 'log-divider';
             }
 
@@ -240,7 +363,6 @@
             const pct = Math.round((current / total) * 100);
             progressPercentage.innerText = `${pct}%`;
 
-            // Circle perimeter is 2 * PI * r = 2 * 3.14159 * 50 = 314.16
             const offset = 314.16 - (314.16 * pct) / 100;
             progressIndicator.style.strokeDashoffset = offset;
 
@@ -250,62 +372,59 @@
             if (failedCount !== undefined) failedCountEl.innerText = failedCount;
         }
 
+        function setFormDisabled(disabled) {
+            emailsListInput.disabled = disabled;
+            dropboxUrlInput.disabled = disabled;
+            useProxyCheckbox.disabled = disabled;
+            useHeadlessCheckbox.disabled = disabled;
+            pwRandomRadio.disabled = disabled;
+            pwFixedRadio.disabled = disabled;
+            fixedPasswordInput.disabled = disabled;
+        }
+
         function updateStatus(status) {
             statusBadge.className = 'status-badge';
-            
+
             if (status === 'running') {
                 statusBadge.classList.add('status-running');
                 statusText.innerText = 'Memproses';
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
-                emailsListInput.disabled = true;
-                dropboxUrlInput.disabled = true;
-                useProxyCheckbox.disabled = true;
-                useHeadlessCheckbox.disabled = true;
+                setFormDisabled(true);
             } else if (status === 'success') {
                 statusBadge.classList.add('status-success');
                 statusText.innerText = 'Selesai';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
-                emailsListInput.disabled = false;
-                dropboxUrlInput.disabled = false;
-                useProxyCheckbox.disabled = false;
-                useHeadlessCheckbox.disabled = false;
+                setFormDisabled(false);
             } else if (status === 'idle') {
                 statusBadge.classList.add('status-idle');
                 statusText.innerText = 'Standby';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
-                emailsListInput.disabled = false;
-                dropboxUrlInput.disabled = false;
-                useProxyCheckbox.disabled = false;
-                useHeadlessCheckbox.disabled = false;
+                setFormDisabled(false);
             } else if (status === 'error') {
                 statusBadge.classList.add('status-error');
                 statusText.innerText = 'Error';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
-                emailsListInput.disabled = false;
-                dropboxUrlInput.disabled = false;
-                useProxyCheckbox.disabled = false;
-                useHeadlessCheckbox.disabled = false;
+                setFormDisabled(false);
             } else if (status === 'stopped') {
                 statusBadge.className = 'status-badge status-idle';
                 statusText.innerText = 'Dihentikan';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
-                emailsListInput.disabled = false;
-                dropboxUrlInput.disabled = false;
-                useProxyCheckbox.disabled = false;
-                useHeadlessCheckbox.disabled = false;
+                setFormDisabled(false);
             }
         }
 
         startBtn.addEventListener('click', () => {
-            const url = dropboxUrlInput.value.trim();
-            const emails = emailsListInput.value.trim();
-            const useProxy = useProxyCheckbox.checked;
-            const useHeadless = useHeadlessCheckbox.checked;
+            const url          = dropboxUrlInput.value.trim();
+            const emails       = emailsListInput.value.trim();
+            const useProxy     = useProxyCheckbox.checked;
+            const useHeadless  = useHeadlessCheckbox.checked;
+            const passwordMode = pwFixedRadio.checked ? 'fixed' : 'random';
+            const fixedPassword = fixedPasswordInput.value.trim() || 'Aa12345678*';
 
             if (!emails) {
                 alert('Silakan masukkan minimal satu alamat email!');
@@ -313,26 +432,28 @@
             }
 
             if (socket && socket.readyState === WebSocket.OPEN) {
-                // Clear UI logs and reset counters before starting new run
                 logPanel.innerHTML = '';
                 successCountEl.innerText = '0';
                 failedCountEl.innerText = '0';
-                
-                // Log User Agent and IP
+
+                // Log client info
                 appendLog('log-info', `[Info] User Agent: ${navigator.userAgent}`);
                 fetch('https://api.ipify.org?format=json')
                     .then(res => res.json())
-                    .then(data => appendLog('log-info', `[Info] Public IP: ${data.ip}`))
-                    .catch(err => appendLog('log-warn', `[Warning] Gagal mengambil IP: ${err}`));
+                    .then(data => appendLog('log-info', `[Info] Public IP (client): ${data.ip}`))
+                    .catch(() => {});
 
+                appendLog('log-info', `[Dashboard] Mode Password: ${passwordMode === 'fixed' ? 'Fixed (' + fixedPassword + ')' : 'Random'}`);
                 appendLog('log-info', '[Dashboard] Mengirimkan data formulir registrasi...');
-                
+
                 socket.send(JSON.stringify({
                     action: 'start',
                     url,
                     emails,
                     useProxy,
-                    useHeadless
+                    useHeadless,
+                    passwordMode,
+                    fixedPassword
                 }));
             } else {
                 alert('WebSocket belum siap. Silakan muat ulang halaman.');
@@ -342,15 +463,11 @@
         stopBtn.addEventListener('click', () => {
             if (socket && socket.readyState === WebSocket.OPEN) {
                 appendLog('log-warn', '[Dashboard] Mengirimkan perintah berhenti...');
-                socket.send(JSON.stringify({
-                    action: 'stop'
-                }));
+                socket.send(JSON.stringify({ action: 'stop' }));
             }
         });
 
-        clearBtn.addEventListener('click', () => {
-            logPanel.innerHTML = '';
-        });
+        clearBtn.addEventListener('click', () => { logPanel.innerHTML = ''; });
     </script>
 </body>
 </html>

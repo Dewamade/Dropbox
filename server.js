@@ -3,12 +3,25 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const { registerSingleEmail, getProxiflyProxy } = require('./register.js');
+const { saveRegistration, getAllRegistrations, clearRegistrations } = require('./db.js');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+// ── History REST endpoints ──────────────────────────────────────────────────
+app.get('/api/history', (_req, res) => {
+    res.json(getAllRegistrations());
+});
+
+app.delete('/api/history', (_req, res) => {
+    clearRegistrations();
+    res.json({ ok: true });
+});
+// ────────────────────────────────────────────────────────────────────────────
 
 // Keep track of active connection for console redirection
 let activeWs = null;
@@ -26,7 +39,7 @@ function safeSend(socket, payload) {
     }
 }
 
-// Expose safeSend and activeWs globally so register.js can use them
+// Expose globally so register.js can use them via console.log
 global.safeSend = safeSend;
 global.activeWs = null;
 
@@ -85,10 +98,10 @@ wss.on('connection', (ws) => {
                 isRunning = true;
                 shouldStop = false;
                 activeWs = ws;
-                global.activeWs = ws; // sync global for register.js
+                global.activeWs = ws;
                 safeSend(ws, { type: 'status', status: 'running' });
 
-                const { url, emails: emailsRaw, useProxy, useHeadless } = data;
+                const { url, emails: emailsRaw, useProxy, useHeadless, passwordMode, fixedPassword } = data;
                 const emails = emailsRaw.split(';')
                                         .map(e => e.trim())
                                         .filter(e => e.length > 0);
@@ -103,6 +116,7 @@ wss.on('connection', (ws) => {
                 }
 
                 console.log(`[Server] Memulai pendaftaran massal untuk ${emails.length} email.`);
+                console.log(`[Server] Mode Password: ${passwordMode === 'fixed' ? `Fixed (${fixedPassword})` : 'Random'}`);
 
                 let successCount = 0;
                 let failedCount = 0;
@@ -150,15 +164,40 @@ wss.on('connection', (ws) => {
 
                             try {
                                 currentAbortController = { shouldStop: false, abort: null };
-                                const result = await registerSingleEmail(url, email, currentProxy, false, currentAbortController, useHeadless);
-                                if (result) {
+                                const result = await registerSingleEmail(
+                                    url, email, currentProxy, false,
+                                    currentAbortController, useHeadless,
+                                    passwordMode, fixedPassword
+                                );
+                                if (result && result.success) {
                                     registrationSuccess = true;
                                     successCount++;
+                                    console.log(`✓ Pendaftaran sukses untuk ${email} (password: ${result.password})`);
+                                    safeSend(ws, { type: 'email_success', email: email });
+                                    // Save to history DB
+                                    try {
+                                        saveRegistration(email, result.password, 'success', url);
+                                    } catch (dbErr) {
+                                        originalError('DB save error:', dbErr.message);
+                                    }
+                                } else if (result === true) {
+                                    // backward compat: result is plain boolean true
+                                    registrationSuccess = true;
+                                    successCount++;
+                                    const usedPwd = passwordMode === 'fixed' ? fixedPassword : '(random)';
                                     console.log(`✓ Pendaftaran sukses untuk ${email}`);
                                     safeSend(ws, { type: 'email_success', email: email });
+                                    try {
+                                        saveRegistration(email, usedPwd, 'success', url);
+                                    } catch (dbErr) {
+                                        originalError('DB save error:', dbErr.message);
+                                    }
                                 } else {
                                     failedCount++;
                                     console.log(`Pendaftaran untuk ${email} selesai dengan status tidak berhasil (halaman ditutup/timeout).`);
+                                    try {
+                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', url);
+                                    } catch (_) {}
                                     break;
                                 }
                             } catch (error) {
@@ -170,11 +209,7 @@ wss.on('connection', (ws) => {
 
                                 const errorMsg = (error.message || '').toLowerCase();
                                 const isConnectionError = [
-                                    'net::err',
-                                    'timeout',
-                                    'connection',
-                                    'proxy',
-                                    'tunnel'
+                                    'net::err', 'timeout', 'connection', 'proxy', 'tunnel'
                                 ].some(keyword => errorMsg.includes(keyword));
 
                                 const isTooManyAttempts = errorMsg.includes('too many attempts') || errorMsg.includes('please try later') || errorMsg.includes('terlalu banyak percobaan') || errorMsg.includes('coba lagi nanti');
@@ -186,6 +221,9 @@ wss.on('connection', (ws) => {
                                 } else {
                                     console.log(`Sudah mencapai batas maksimal percobaan atau kesalahan permanen. Melewati email ini.`);
                                     failedCount++;
+                                    try {
+                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', url);
+                                    } catch (_) {}
                                     break;
                                 }
                             } finally {
@@ -193,7 +231,7 @@ wss.on('connection', (ws) => {
                             }
                         }
 
-                        // Anti-tracking delay: Add a random delay between 5 to 15 seconds between registrations
+                        // Anti-tracking delay
                         if (i < emails.length - 1 && activeWs === ws && !shouldStop) {
                             const delay = Math.floor(Math.random() * 10000) + 5000;
                             console.log(`Jeda anti-tracking: Menunggu selama ${(delay/1000).toFixed(1)} detik sebelum memproses email berikutnya...`);

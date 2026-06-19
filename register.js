@@ -311,7 +311,7 @@ function clearProfileData(profilePath) {
 }
 
 // Single registration process for one email
-async function registerSingleEmail(url, email, proxyServer, isInit, abortController, headless) {
+async function registerSingleEmail(url, email, proxyServer, isInit, abortController, headless, passwordMode, fixedPassword) {
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
     if (proxyServer) {
@@ -322,7 +322,8 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
     console.log(`==========================================`);
 
     const { first: firstName, last: lastName } = getRandomName();
-    const password = generatePassword();
+    // Use fixed or random password based on mode
+    const password = (passwordMode === 'fixed' && fixedPassword) ? fixedPassword : generatePassword();
 
     console.log(`- First Name: ${firstName}`);
     console.log(`- Last Name : ${lastName}`);
@@ -728,7 +729,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
             await page.goto("https://www.dropbox.com/logout", { waitUntil: 'domcontentloaded', timeout: 30000 });
             console.log("✓ Berhasil logout untuk email ini.");
             await page.waitForTimeout(2000);
-            return true;
+            return { success: true, password };
         } else {
             console.log("\n⚠️ URL tidak berubah dalam 60 detik setelah menekan tombol daftar.");
             throw new Error("Timeout: URL tidak berubah setelah 60 detik.");
