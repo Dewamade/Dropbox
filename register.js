@@ -724,15 +724,126 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
         }
 
         if (isRegistered) {
-            console.log("Melakukan navigasi otomatis ke halaman Logout...");
-            await page.waitForTimeout(2000);
-            await page.goto("https://www.dropbox.com/logout", { waitUntil: 'domcontentloaded', timeout: 30000 });
-            console.log("✓ Berhasil logout untuk email ini.");
-            await page.waitForTimeout(2000);
+            console.log('✅ Pendaftaran berhasil! Browser tetap terbuka — memulai Dropbox daemon...');
+            await page.waitForTimeout(1500);
+
+            // ── Spawn dropboxd via box64 ──────────────────────────────────────────
+            const { spawn } = require('child_process');
+            const homeDir = process.env.HOME || '/root';
+            let dropboxProc = null;
+            let cliLinkUrl  = null;
+
+            try {
+                console.log(`[dropboxd] Menjalankan: box64 ./.dropbox-dist/dropboxd (HOME=${homeDir})`);
+                dropboxProc = spawn('box64', ['./.dropbox-dist/dropboxd'], {
+                    cwd: homeDir,
+                    env: { ...process.env, HOME: homeDir },
+                });
+
+                // Wait up to 120 s for a CLI link URL in the daemon output
+                await new Promise((resolve, reject) => {
+                    const deadline = setTimeout(() => {
+                        reject(new Error('[dropboxd] Timeout 120 detik — URL cli_link tidak muncul'));
+                    }, 120000);
+
+                    const scanForLink = (chunk) => {
+                        const text = chunk.toString();
+                        // Log every line to UI via console.log (already intercepted by server.js)
+                        text.split('\n').forEach(line => {
+                            if (line.trim()) console.log(`[dropboxd] ${line.trim()}`);
+                        });
+                        // Look for the Dropbox CLI link URL
+                        const match = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
+                        if (match && !cliLinkUrl) {
+                            cliLinkUrl = match[0];
+                            clearTimeout(deadline);
+                            resolve();
+                        }
+                    };
+
+                    dropboxProc.stdout.on('data', scanForLink);
+                    dropboxProc.stderr.on('data', scanForLink);
+                    dropboxProc.on('error', (err) => { clearTimeout(deadline); reject(err); });
+                    dropboxProc.on('close', (code) => {
+                        if (!cliLinkUrl) {
+                            clearTimeout(deadline);
+                            reject(new Error(`[dropboxd] Proses berhenti dengan kode ${code} sebelum URL ditemukan`));
+                        }
+                    });
+                });
+
+                console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
+
+                // ── Navigate browser to CLI link ──────────────────────────────────
+                console.log('[Browser] Navigasi ke URL CLI Link...');
+                await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.waitForTimeout(2000);
+
+                // ── Wait for Connect button and click it ──────────────────────────
+                console.log('[Browser] Menunggu tombol Connect...');
+                const connectSelectors = [
+                    'button:has-text("Connect")',
+                    'button:has-text("Hubungkan")',
+                    'input[type="submit"][value*="Connect"]',
+                    'a:has-text("Connect")',
+                    '[data-testid*="connect"]',
+                    'button[class*="connect"]',
+                ];
+
+                let connected = false;
+                const connectDeadline = Date.now() + 60000; // 60 s
+                while (Date.now() < connectDeadline && !connected) {
+                    for (const sel of connectSelectors) {
+                        try {
+                            if (await page.isVisible(sel)) {
+                                await page.click(sel);
+                                console.log(`[Browser] ✓ Tombol Connect berhasil ditekan! (selector: ${sel})`);
+                                connected = true;
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+                    if (!connected) await page.waitForTimeout(1500);
+                }
+
+                if (!connected) {
+                    throw new Error('[Browser] Timeout 60 detik — tombol Connect tidak ditemukan di halaman CLI Link');
+                }
+
+                // ── Wait for "successfully" confirmation ──────────────────────────
+                console.log('[Browser] Menunggu konfirmasi berhasil dihubungkan...');
+                const successKeywords = [
+                    'successfully', 'berhasil', 'linked', 'connected', 'you can now close',
+                ];
+                let confirmedSuccess = false;
+                const successDeadline = Date.now() + 60000;
+                while (Date.now() < successDeadline && !confirmedSuccess) {
+                    try {
+                        const bodyText = (await page.innerText('body')).toLowerCase();
+                        confirmedSuccess = successKeywords.some(kw => bodyText.includes(kw));
+                        if (confirmedSuccess) break;
+                    } catch (e) {}
+                    await page.waitForTimeout(1500);
+                }
+
+                if (confirmedSuccess) {
+                    console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
+                } else {
+                    console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi dalam 60 detik, lanjut ke email berikutnya.`);
+                }
+
+            } finally {
+                // Kill daemon — it stays resident normally; clean up per-email
+                if (dropboxProc) {
+                    try { dropboxProc.kill('SIGTERM'); } catch (_) {}
+                }
+            }
+
             return { success: true, password };
+
         } else {
-            console.log("\n⚠️ URL tidak berubah dalam 60 detik setelah menekan tombol daftar.");
-            throw new Error("Timeout: URL tidak berubah setelah 60 detik.");
+            console.log('\n⚠️ URL tidak berubah dalam 60 detik setelah menekan tombol daftar.');
+            throw new Error('Timeout: URL tidak berubah setelah 60 detik.');
         }
 
     } catch (error) {
