@@ -72,8 +72,49 @@ h1 {
 }
 
 @media (max-width: 768px) {
+    .container {
+        padding: 1.5rem 1rem;
+    }
+
+    header h1 {
+        font-size: 1.5rem;
+    }
+
     .grid {
         grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+
+    .panel {
+        padding: 1.25rem;
+        border-radius: 12px;
+    }
+
+    .form-group.horizontal {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+
+    .btn, .btn-history {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .modal-content {
+        width: 95%;
+        padding: 1.25rem;
+        margin: 1rem;
+    }
+
+    .history-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
+    .terminal-container {
+        max-height: 400px;
     }
 }
 

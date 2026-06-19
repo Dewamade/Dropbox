@@ -738,7 +738,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                     try { dropboxProc.kill('SIGTERM'); } catch (_) {}
                 }
                 try {
-                    execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' });
+                    execSync('pkill -9 -f dropbox-lnx.x86_64-256.4.3790', { stdio: 'ignore' });
                     console.log('[dropboxd] ✓ Proses dropbox lama berhasil dihentikan (pkill).');
                 } catch (_) {}
             };
@@ -759,19 +759,29 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                     const scanForLink = (chunk) => {
                         const text = chunk.toString();
                         text.split('\n').forEach(line => {
-                            if (line.trim()) console.log(`[dropboxd] ${line.trim()}`);
+                            const trimmed = line.trim();
+                            if (trimmed) {
+                                // Hide the BOX64 ELF header warning
+                                if (trimmed.includes('Reading elf header of') && trimmed.includes('Try to launch using bash instead')) {
+                                    return;
+                                }
+                                console.log(`[dropboxd] ${trimmed}`);
+                            }
                         });
                         const match = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
                         if (match && !cliLinkUrl) {
                             cliLinkUrl = match[0];
                             clearTimeout(deadline);
+                            console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
+                            // Terminate immediately as requested
+                            killDropbox();
                             resolve();
                         }
                     };
 
                     dropboxProc.stdout.on('data', scanForLink);
                     dropboxProc.stderr.on('data', scanForLink);
-                    dropboxProc.on('error', (err) => { clearTimeout(deadline); reject(err); });
+                    dropboxProc.on('error', (err) => { clearTimeout(deadline); killDropbox(); reject(err); });
                     dropboxProc.on('close', (code) => {
                         if (!cliLinkUrl) {
                             clearTimeout(deadline);
@@ -779,8 +789,6 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                         }
                     });
                 });
-
-                console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
 
                 // ── Navigate browser to CLI link ──────────────────────────────────
                 console.log('[Browser] Navigasi ke URL CLI Link...');
