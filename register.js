@@ -895,7 +895,6 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                             console.log('[Browser] ⚠️ Tombol Verify email tidak ditemukan di halaman Settings.');
                         }
                     }
-                }
 
                 await page.waitForTimeout(1500);
 
