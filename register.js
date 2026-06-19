@@ -837,59 +837,16 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                     console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi dalam 60 detik, melanjutkan...`);
                 }
 
-                // ── Open Account menu → Settings → Verify email → Send email ──────
-                console.log('[Browser] Membuka menu akun (pojok kanan atas)...');
-                await page.waitForTimeout(1000);
+                // ── Verify email flow ──────
+                console.log('[Browser] Membuka halaman Settings untuk verifikasi email...');
+                
+                // Direct navigation to settings bypasses the need to click the account menu
+                await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.waitForTimeout(4000);
+                
+                let settingsOpened = true; // Assume true since we navigated directly
 
-                // Navigate to home first so the account menu is available
-                await page.goto('https://www.dropbox.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
-                await page.waitForTimeout(2000);
-
-                // Click account menu button (aria-label="Account menu")
-                const accountMenuSelectors = [
-                    'button[aria-label="Account menu"]',
-                    'button[aria-label="Akun"]',
-                    '[aria-label="Account menu"]',
-                ];
-                let accountMenuOpened = false;
-                for (const sel of accountMenuSelectors) {
-                    try {
-                        if (await page.isVisible(sel)) {
-                            await page.click(sel);
-                            console.log('[Browser] ✓ Menu akun dibuka.');
-                            accountMenuOpened = true;
-                            break;
-                        }
-                    } catch (e) {}
-                }
-                if (!accountMenuOpened) {
-                    console.log('[Browser] ⚠️ Tombol menu akun tidak ditemukan, melewati langkah verify email.');
-                }
-
-                if (accountMenuOpened) {
-                    await page.waitForTimeout(1500);
-
-                    // Click Settings link (href="/account" or role="menuitem" with text Settings)
-                    const settingsSelectors = [
-                        'a[href="https://www.dropbox.com/account"]',
-                        'a[href="/account"]',
-                        '[role="menuitem"]:has-text("Settings")',
-                        '[role="menuitem"]:has-text("Pengaturan")',
-                        'a:has-text("Settings")',
-                    ];
-                    let settingsOpened = false;
-                    for (const sel of settingsSelectors) {
-                        try {
-                            if (await page.isVisible(sel)) {
-                                await page.click(sel);
-                                console.log('[Browser] ✓ Halaman Settings dibuka.');
-                                settingsOpened = true;
-                                break;
-                            }
-                        } catch (e) {}
-                    }
-
-                    if (settingsOpened) {
+                if (settingsOpened) {
                         await page.waitForTimeout(3000);
 
                         // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
