@@ -144,6 +144,19 @@ pkg install -y proot-distro
 proot-distro install debian   # or ubuntu
 proot-distro login debian    # enters a Debian shell
 ```
+### Node Install
+
+# Remove existing node
+apt remove nodejs npm -y
+
+# Add NodeSource repository
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+
+# Install Node.js
+apt install nodejs -y
+
+# npm comes bundled with this installation
+npm -v
 
 Inside the proot environment you have a standard Linux userland where Playwright’s pre‑built browsers work.
 
