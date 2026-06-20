@@ -119,6 +119,10 @@
                         <label for="global-retry">Global Retry (percobaan)</label>
                         <input type="number" id="global-retry" value="3" min="0" max="10">
                     </div>
+                    <div class="form-group" style="gap: 0.4rem; grid-column: 1 / -1;">
+                        <label for="daemon-timeout">Daemon Timeout (detik)</label>
+                        <input type="number" id="daemon-timeout" value="120" min="30" max="600">
+                    </div>
                 </div>
 
 
@@ -268,6 +272,7 @@
         // Advanced Settings
         const globalTimeoutInput   = document.getElementById('global-timeout');
         const globalRetryInput     = document.getElementById('global-retry');
+        const daemonTimeoutInput   = document.getElementById('daemon-timeout');
 
         // History modal
         const historyBtn           = document.getElementById('history-btn');
@@ -312,7 +317,8 @@
                 fixedPassword: fixedPasswordInput.value,
                 emailMode: emAutoRadio.checked ? 'auto' : 'manual',
                 globalTimeout: globalTimeoutInput.value,
-                globalRetry: globalRetryInput.value
+                globalRetry: globalRetryInput.value,
+                daemonTimeout: daemonTimeoutInput.value
             };
             localStorage.setItem('dropbox_signup_settings', JSON.stringify(settings));
         }
@@ -328,6 +334,7 @@
                     if (settings.count) autoCountInput.value = settings.count;
                     if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
                     if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
+                    if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
                     
                     if (settings.useProxy !== undefined) useProxyCheckbox.checked = settings.useProxy;
                     if (settings.useHeadless !== undefined) useHeadlessCheckbox.checked = settings.useHeadless;
@@ -354,7 +361,7 @@
         // Save settings on any change
         const inputsToSave = [
             dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
-            globalTimeoutInput, globalRetryInput, useProxyCheckbox, useHeadlessCheckbox, 
+            globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useProxyCheckbox, useHeadlessCheckbox, 
             pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
@@ -566,6 +573,7 @@
             const count        = parseInt(autoCountInput.value) || 10;
             const globalTimeout = parseInt(globalTimeoutInput.value) || 30;
             const globalRetry  = parseInt(globalRetryInput.value) || 3;
+            const daemonTimeout = parseInt(daemonTimeoutInput.value) || 120;
 
             if (emailMode === 'manual' && !emails) {
                 alert('Silakan masukkan minimal satu alamat email!');
@@ -589,7 +597,7 @@
                     .catch(() => {});
 
                 appendLog('log-info', `[Dashboard] Mode Email: ${emailMode === 'auto' ? 'Auto Generate (' + count + ' @' + domain + ')' : 'Manual Input'}`);
-                appendLog('log-info', `[Dashboard] Pengaturan: Timeout ${globalTimeout}s, Retry ${globalRetry}x`);
+                appendLog('log-info', `[Dashboard] Pengaturan: Timeout ${globalTimeout}s, Retry ${globalRetry}x, Daemon ${daemonTimeout}s`);
                 appendLog('log-info', `[Dashboard] Mode Password: ${passwordMode === 'fixed' ? 'Fixed (' + fixedPassword + ')' : 'Random'}`);
                 appendLog('log-info', '[Dashboard] Mengirimkan data formulir registrasi...');
 
@@ -602,6 +610,7 @@
                     count,
                     globalTimeout,
                     globalRetry,
+                    daemonTimeout,
                     useProxy,
                     useHeadless,
                     passwordMode,

@@ -103,7 +103,7 @@ wss.on('connection', (ws) => {
 
                 const { 
                     url, emails: emailsRaw, emailMode, domain, count, 
-                    globalTimeout, globalRetry, 
+                    globalTimeout, globalRetry, daemonTimeout,
                     useProxy, useHeadless, passwordMode, fixedPassword 
                 } = data;
                 
@@ -181,7 +181,7 @@ wss.on('connection', (ws) => {
                                 const result = await registerSingleEmail(
                                     url, email, currentProxy, false,
                                     currentAbortController, useHeadless,
-                                    passwordMode, fixedPassword, globalTimeout
+                                    passwordMode, fixedPassword, globalTimeout, daemonTimeout
                                 );
                                 if (result && result.success) {
                                     registrationSuccess = true;
@@ -230,8 +230,12 @@ wss.on('connection', (ws) => {
 
                                 if (isTooManyAttempts && attempts < maxAttempts) {
                                     console.log(`Terdeteksi pesan "Too many attempts". Mencoba kembali...`);
-                                } else if (useProxy && isConnectionError && attempts < maxAttempts) {
-                                    console.log(`Terdeteksi masalah koneksi/proxy. Mengambil proxy baru dan mencoba kembali...`);
+                                } else if (isConnectionError && attempts < maxAttempts) {
+                                    if (useProxy) {
+                                        console.log(`Terdeteksi masalah koneksi/timeout. Mengambil proxy baru dan mencoba kembali...`);
+                                    } else {
+                                        console.log(`Terdeteksi masalah koneksi/timeout. Mencoba kembali...`);
+                                    }
                                 } else {
                                     console.log(`Sudah mencapai batas maksimal percobaan atau kesalahan permanen. Melewati email ini.`);
                                     failedCount++;

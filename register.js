@@ -311,7 +311,7 @@ function clearProfileData(profilePath) {
 }
 
 // Single registration process for one email
-async function registerSingleEmail(url, email, proxyServer, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30) {
+async function registerSingleEmail(url, email, proxyServer, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120) {
     const gtMs = globalTimeout * 1000;
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
@@ -753,12 +753,13 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                     env: { ...process.env, HOME: homeDir },
                 });
 
-                // Wait up to gtMs * 4 for a CLI link URL in the daemon output
+                // Wait up to dtMs for a CLI link URL in the daemon output
+                const dtMs = daemonTimeout * 1000;
                 await new Promise((resolve, reject) => {
                     const deadline = setTimeout(() => {
                         killDropbox();
-                        reject(new Error(`[dropboxd] Timeout ${globalTimeout * 4} detik — URL cli_link tidak muncul`));
-                    }, gtMs * 4);
+                        reject(new Error(`[dropboxd] Timeout ${daemonTimeout} detik — URL cli_link tidak muncul`));
+                    }, dtMs);
 
                     const scanForLink = (chunk) => {
                         const text = chunk.toString();
