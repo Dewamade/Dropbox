@@ -311,7 +311,8 @@ function clearProfileData(profilePath) {
 }
 
 // Single registration process for one email
-async function registerSingleEmail(url, email, proxyServer, isInit, abortController, headless, passwordMode, fixedPassword) {
+async function registerSingleEmail(url, email, proxyServer, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30) {
+    const gtMs = globalTimeout * 1000;
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
     if (proxyServer) {
@@ -466,7 +467,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
 
     try {
         console.log(`Navigasi ke URL: ${url}...`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs * 2 });
         await checkTooManyAttempts(page);
 
         // Clear local/session storage to avoid cross-session tracking
@@ -493,7 +494,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
         } catch (e) {}
 
         // --- STEP 1: Fill Email & Click Continue ---
-        console.log("\n[Langkah 1] Menunggu field email muncul (timeout 60 detik)...");
+        console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout * 2} detik)...`);
         const emailSelectors = [
             'input[id^="susi_email"]',
             'input[type="email"]',
@@ -503,7 +504,8 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
         
         let activeEmailSelector = null;
         const startTime = Date.now();
-        while (Date.now() - startTime < 60000) {
+        const emailDeadline = Date.now() + (gtMs * 2);
+        while (Date.now() < emailDeadline) {
             for (const selector of emailSelectors) {
                 try {
                     const isVisible = await page.locator(selector).first().isVisible();
@@ -518,7 +520,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
         }
 
         if (!activeEmailSelector) {
-            throw new Error("Tidak dapat menemukan field Email untuk Langkah 1 dalam 60 detik!");
+            throw new Error(`Tidak dapat menemukan field Email untuk Langkah 1 dalam ${globalTimeout * 2} detik!`);
         }
 
         await humanType(activeEmailSelector, email);
@@ -569,7 +571,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
         console.log("\n[Langkah 2] Menunggu form detail nama dan password muncul...");
         const firstNameSelector = 'input[id^="fname"], input[name="fname"]';
         try {
-            await page.waitForSelector(firstNameSelector, { state: 'visible', timeout: 15000 });
+            await page.waitForSelector(firstNameSelector, { state: 'visible', timeout: gtMs / 2 });
             console.log("✓ Form Langkah 2 terdeteksi!");
         } catch (e) {
             console.log("Form Langkah 2 tidak muncul otomatis. Menunggu 5 detik tambahan...");
@@ -708,9 +710,10 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
         console.log("Catatan: Jika ada CAPTCHA yang muncul di layar browser, silakan selesaikan secara manual.");
         console.log("Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...");
 
-        // Loop to check if the user has successfully registered (max 60 seconds)
+        // Loop to check if the user has successfully registered
         let isRegistered = false;
-        for (let i = 0; i < 30; i++) { // Polling up to 60 seconds (2s * 30)
+        const regDeadline = Date.now() + (gtMs * 2);
+        while (Date.now() < regDeadline) {
             await page.waitForTimeout(2000);
             await checkTooManyAttempts(page);
             const currentUrl = page.url();
@@ -750,11 +753,12 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                     env: { ...process.env, HOME: homeDir },
                 });
 
-                // Wait up to 120 s for a CLI link URL in the daemon output
+                // Wait up to gtMs * 4 for a CLI link URL in the daemon output
                 await new Promise((resolve, reject) => {
                     const deadline = setTimeout(() => {
-                        reject(new Error('[dropboxd] Timeout 120 detik — URL cli_link tidak muncul'));
-                    }, 120000);
+                        killDropbox();
+                        reject(new Error(`[dropboxd] Timeout ${globalTimeout * 4} detik — URL cli_link tidak muncul`));
+                    }, gtMs * 4);
 
                     const scanForLink = (chunk) => {
                         const text = chunk.toString();
@@ -792,7 +796,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
 
                 // ── Navigate browser to CLI link ──────────────────────────────────
                 console.log('[Browser] Navigasi ke URL CLI Link...');
-                await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
                 await page.waitForTimeout(2000);
 
                 // ── Wait for Connect button and click it ──────────────────────────
@@ -806,7 +810,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                 ];
 
                 let connected = false;
-                const connectDeadline = Date.now() + 60000;
+                const connectDeadline = Date.now() + (gtMs * 2);
                 while (Date.now() < connectDeadline && !connected) {
                     for (const sel of connectSelectors) {
                         try {
@@ -822,14 +826,14 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                 }
 
                 if (!connected) {
-                    throw new Error('[Browser] Timeout 60 detik — tombol Connect tidak ditemukan');
+                    throw new Error(`[Browser] Timeout ${globalTimeout * 2} detik — tombol Connect tidak ditemukan`);
                 }
 
                 // ── Wait for "successfully" confirmation ──────────────────────────
                 console.log('[Browser] Menunggu konfirmasi berhasil dihubungkan...');
                 const successKeywords = ['successfully', 'berhasil', 'linked', 'connected', 'you can now close'];
                 let confirmedSuccess = false;
-                const successDeadline = Date.now() + 60000;
+                const successDeadline = Date.now() + (gtMs * 2);
                 while (Date.now() < successDeadline && !confirmedSuccess) {
                     try {
                         const bodyText = (await page.innerText('body')).toLowerCase();
@@ -849,7 +853,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                 console.log('[Browser] Membuka halaman Settings untuk verifikasi email...');
                 
                 // Direct navigation to settings bypasses the need to click the account menu
-                await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
                 await page.waitForTimeout(4000);
                 
                 let settingsOpened = true; // Assume true since we navigated directly
@@ -915,8 +919,8 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
 
 
         } else {
-            console.log('\n⚠️ URL tidak berubah dalam 60 detik setelah menekan tombol daftar.');
-            throw new Error('Timeout: URL tidak berubah setelah 60 detik.');
+            console.log(`\n⚠️ URL tidak berubah dalam ${globalTimeout * 2} detik setelah menekan tombol daftar.`);
+            throw new Error(`Timeout: URL tidak berubah setelah ${globalTimeout * 2} detik.`);
         }
 
     } catch (error) {

@@ -101,10 +101,24 @@ wss.on('connection', (ws) => {
                 global.activeWs = ws;
                 safeSend(ws, { type: 'status', status: 'running' });
 
-                const { url, emails: emailsRaw, useProxy, useHeadless, passwordMode, fixedPassword } = data;
-                const emails = emailsRaw.split(';')
-                                        .map(e => e.trim())
-                                        .filter(e => e.length > 0);
+                const { 
+                    url, emails: emailsRaw, emailMode, domain, count, 
+                    globalTimeout, globalRetry, 
+                    useProxy, useHeadless, passwordMode, fixedPassword 
+                } = data;
+                
+                let emails = [];
+                if (emailMode === 'auto') {
+                    // Generate random emails
+                    for (let i = 0; i < count; i++) {
+                        const randomString = Math.random().toString(36).substring(2, 8 + Math.floor(Math.random() * 3)); // 6-8 chars
+                        emails.push(`${randomString}@${domain}`);
+                    }
+                } else {
+                    emails = emailsRaw.split(';')
+                                      .map(e => e.trim())
+                                      .filter(e => e.length > 0);
+                }
 
                 if (emails.length === 0) {
                     safeSend(ws, { type: 'log', message: 'Error: Tidak ada email valid!' });
@@ -147,7 +161,7 @@ wss.on('connection', (ws) => {
                         // Retry logic for proxy errors or "Too many attempts"
                         let registrationSuccess = false;
                         let attempts = 0;
-                        const maxAttempts = 3;
+                        const maxAttempts = globalRetry || 3;
                         let currentProxy = proxy;
 
                         while (!registrationSuccess && attempts < maxAttempts) {
@@ -167,7 +181,7 @@ wss.on('connection', (ws) => {
                                 const result = await registerSingleEmail(
                                     url, email, currentProxy, false,
                                     currentAbortController, useHeadless,
-                                    passwordMode, fixedPassword
+                                    passwordMode, fixedPassword, globalTimeout
                                 );
                                 if (result && result.success) {
                                     registrationSuccess = true;

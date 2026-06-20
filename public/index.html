@@ -52,13 +52,39 @@
                     <input type="text" id="dropbox-url" value="https://www.dropbox.com/register" placeholder="Masukkan URL Dropbox...">
                 </div>
 
+                <!-- Email Source Mode -->
                 <div class="form-group">
+                    <label>Sumber Email</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="email-mode" value="manual" id="em-manual" checked>
+                            📝 Manual Input
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="email-mode" value="auto" id="em-auto">
+                            ⚡ Auto Generate
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group" id="manual-email-wrap">
                     <label for="emails-list">Daftar Email Bulk (Pisahkan dengan titik koma ';')</label>
                     <textarea id="emails-list" placeholder="email1@domain.com; email2@domain.com; email3@domain.com;"></textarea>
                 </div>
 
+                <div class="form-group" id="auto-email-wrap" style="display: none; flex-direction: column; gap: 0.75rem;">
+                    <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                        <label for="auto-domain">Nama Domain</label>
+                        <input type="text" id="auto-domain" placeholder="kywa.uk" value="kywa.uk">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                        <label for="auto-count">Jumlah Email</label>
+                        <input type="number" id="auto-count" value="10" min="1" max="1000">
+                    </div>
+                </div>
+
                 <!-- Password Mode -->
-                <div class="form-group">
+                <div class="form-group" style="margin-top: 0.5rem;">
                     <label>Mode Password</label>
                     <div class="radio-group">
                         <label class="radio-option">
@@ -75,6 +101,26 @@
                         <input type="text" id="fixed-password-input" value="Aa12345678*" placeholder="Masukkan password tetap...">
                     </div>
                 </div>
+
+                <div class="panel-title" style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Pengaturan Lanjutan
+                </div>
+
+                <div class="grid" style="gap: 1rem;">
+                    <div class="form-group" style="gap: 0.4rem;">
+                        <label for="global-timeout">Global Timeout (detik)</label>
+                        <input type="number" id="global-timeout" value="30" min="10" max="300">
+                    </div>
+                    <div class="form-group" style="gap: 0.4rem;">
+                        <label for="global-retry">Global Retry (percobaan)</label>
+                        <input type="number" id="global-retry" value="3" min="0" max="10">
+                    </div>
+                </div>
+
 
                 <div class="form-group checkbox-group">
                     <input type="checkbox" id="use-proxy">
@@ -211,6 +257,18 @@
         const fixedPasswordWrap    = document.getElementById('fixed-password-wrap');
         const fixedPasswordInput   = document.getElementById('fixed-password-input');
 
+        // Email Source mode
+        const emManualRadio        = document.getElementById('em-manual');
+        const emAutoRadio          = document.getElementById('em-auto');
+        const manualEmailWrap      = document.getElementById('manual-email-wrap');
+        const autoEmailWrap        = document.getElementById('auto-email-wrap');
+        const autoDomainInput      = document.getElementById('auto-domain');
+        const autoCountInput       = document.getElementById('auto-count');
+
+        // Advanced Settings
+        const globalTimeoutInput   = document.getElementById('global-timeout');
+        const globalRetryInput     = document.getElementById('global-retry');
+
         // History modal
         const historyBtn           = document.getElementById('history-btn');
         const historyModal         = document.getElementById('history-modal');
@@ -219,7 +277,7 @@
         const historyRefreshBtn    = document.getElementById('history-refresh-btn');
         const historyClearBtn      = document.getElementById('history-clear-btn');
 
-        // ── Password mode toggle ──────────────────────────────
+        // ── UI Toggles ─────────────────────────────────────────
         function updatePasswordModeUI() {
             const isFixed = pwFixedRadio.checked;
             fixedPasswordWrap.classList.toggle('visible', isFixed);
@@ -227,6 +285,83 @@
         pwRandomRadio.addEventListener('change', updatePasswordModeUI);
         pwFixedRadio.addEventListener('change', updatePasswordModeUI);
         updatePasswordModeUI();
+
+        function updateEmailModeUI() {
+            if (emManualRadio.checked) {
+                manualEmailWrap.style.display = 'block';
+                autoEmailWrap.style.display = 'none';
+            } else {
+                manualEmailWrap.style.display = 'none';
+                autoEmailWrap.style.display = 'flex';
+            }
+        }
+        emManualRadio.addEventListener('change', updateEmailModeUI);
+        emAutoRadio.addEventListener('change', updateEmailModeUI);
+        updateEmailModeUI();
+
+        // ── LocalStorage Settings ──────────────────────────────
+        function saveSettings() {
+            const settings = {
+                url: dropboxUrlInput.value,
+                emails: emailsListInput.value,
+                domain: autoDomainInput.value,
+                count: autoCountInput.value,
+                useProxy: useProxyCheckbox.checked,
+                useHeadless: useHeadlessCheckbox.checked,
+                passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
+                fixedPassword: fixedPasswordInput.value,
+                emailMode: emAutoRadio.checked ? 'auto' : 'manual',
+                globalTimeout: globalTimeoutInput.value,
+                globalRetry: globalRetryInput.value
+            };
+            localStorage.setItem('dropbox_signup_settings', JSON.stringify(settings));
+        }
+
+        function loadSettings() {
+            try {
+                const raw = localStorage.getItem('dropbox_signup_settings');
+                if (raw) {
+                    const settings = JSON.parse(raw);
+                    if (settings.url) dropboxUrlInput.value = settings.url;
+                    if (settings.emails) emailsListInput.value = settings.emails;
+                    if (settings.domain) autoDomainInput.value = settings.domain;
+                    if (settings.count) autoCountInput.value = settings.count;
+                    if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
+                    if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
+                    
+                    if (settings.useProxy !== undefined) useProxyCheckbox.checked = settings.useProxy;
+                    if (settings.useHeadless !== undefined) useHeadlessCheckbox.checked = settings.useHeadless;
+                    
+                    if (settings.passwordMode === 'fixed') {
+                        pwFixedRadio.checked = true;
+                    } else {
+                        pwRandomRadio.checked = true;
+                    }
+                    if (settings.fixedPassword) fixedPasswordInput.value = settings.fixedPassword;
+
+                    if (settings.emailMode === 'auto') {
+                        emAutoRadio.checked = true;
+                    } else {
+                        emManualRadio.checked = true;
+                    }
+
+                    updatePasswordModeUI();
+                    updateEmailModeUI();
+                }
+            } catch (e) {}
+        }
+        
+        // Save settings on any change
+        const inputsToSave = [
+            dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
+            globalTimeoutInput, globalRetryInput, useProxyCheckbox, useHeadlessCheckbox, 
+            pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio
+        ];
+        inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
+        inputsToSave.forEach(el => el.addEventListener('keyup', saveSettings));
+
+        // Load settings on boot
+        loadSettings();
 
         // ── History modal ─────────────────────────────────────
         function formatDate(iso) {
@@ -425,9 +560,19 @@
             const useHeadless  = useHeadlessCheckbox.checked;
             const passwordMode = pwFixedRadio.checked ? 'fixed' : 'random';
             const fixedPassword = fixedPasswordInput.value.trim() || 'Aa12345678*';
+            
+            const emailMode    = emAutoRadio.checked ? 'auto' : 'manual';
+            const domain       = autoDomainInput.value.trim();
+            const count        = parseInt(autoCountInput.value) || 10;
+            const globalTimeout = parseInt(globalTimeoutInput.value) || 30;
+            const globalRetry  = parseInt(globalRetryInput.value) || 3;
 
-            if (!emails) {
+            if (emailMode === 'manual' && !emails) {
                 alert('Silakan masukkan minimal satu alamat email!');
+                return;
+            }
+            if (emailMode === 'auto' && (!domain || count < 1)) {
+                alert('Silakan masukkan nama domain dan jumlah email yang valid!');
                 return;
             }
 
@@ -443,6 +588,8 @@
                     .then(data => appendLog('log-info', `[Info] Public IP (client): ${data.ip}`))
                     .catch(() => {});
 
+                appendLog('log-info', `[Dashboard] Mode Email: ${emailMode === 'auto' ? 'Auto Generate (' + count + ' @' + domain + ')' : 'Manual Input'}`);
+                appendLog('log-info', `[Dashboard] Pengaturan: Timeout ${globalTimeout}s, Retry ${globalRetry}x`);
                 appendLog('log-info', `[Dashboard] Mode Password: ${passwordMode === 'fixed' ? 'Fixed (' + fixedPassword + ')' : 'Random'}`);
                 appendLog('log-info', '[Dashboard] Mengirimkan data formulir registrasi...');
 
@@ -450,6 +597,11 @@
                     action: 'start',
                     url,
                     emails,
+                    emailMode,
+                    domain,
+                    count,
+                    globalTimeout,
+                    globalRetry,
                     useProxy,
                     useHeadless,
                     passwordMode,
