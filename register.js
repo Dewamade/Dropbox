@@ -128,17 +128,31 @@ function getRandomName() {
     return { first, last };
 }
 
-// Helper to fetch server public IP
+// Helper to fetch server public IP (with explicit timeout)
 function getServerPublicIp(agentOptions = {}) {
     return new Promise((resolve) => {
-        const req = https.get('https://api.ipify.org?format=json', agentOptions, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                try { resolve(JSON.parse(data).ip); } catch (e) { resolve(null); }
+        // Hard timeout: resolve null after 8 seconds no matter what
+        const timer = setTimeout(() => {
+            console.log('[IP] Timeout mendapatkan IP publik, lanjut...');
+            resolve(null);
+        }, 8000);
+
+        try {
+            const req = https.get('https://api.ipify.org?format=json', agentOptions, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    clearTimeout(timer);
+                    try { resolve(JSON.parse(data).ip); } catch (e) { resolve(null); }
+                });
+                res.on('error', () => { clearTimeout(timer); resolve(null); });
             });
-        });
-        req.on('error', () => resolve(null));
+            req.setTimeout(7000, () => { req.destroy(); clearTimeout(timer); resolve(null); });
+            req.on('error', () => { clearTimeout(timer); resolve(null); });
+        } catch(e) {
+            clearTimeout(timer);
+            resolve(null);
+        }
     });
 }
 
@@ -324,23 +338,42 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
     }
 
     console.log(`Membuka Firefox dengan profil persistent: ${PROFILE_PATH}`);
-    const context = await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
-    // Grab UA from the Playwright browser instance
-    const uaPage = context.pages()[0] || await context.newPage();
-    const playwrightUA = await uaPage.evaluate(() => navigator.userAgent);
-    console.log(`[Playwright] User Agent: ${playwrightUA}`);
     
-    let agentOptions = {};
-    if (proxyServer && proxyServer.startsWith('socks5://')) {
-        try {
-            const { SocksProxyAgent } = require('socks-proxy-agent');
-            agentOptions = { agent: new SocksProxyAgent(proxyServer) };
-        } catch(e) {
-            console.log(`⚠️ socks-proxy-agent tidak terinstall, pengecekan IP public akan dilakukan via direct connection.`);
+    // Launch with timeout to avoid hanging if proxy is not ready
+    const launchTimeout = Math.max(gtMs, 60000);
+    let context;
+    try {
+        context = await Promise.race([
+            firefox.launchPersistentContext(PROFILE_PATH, contextOptions),
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`[Firefox] Launch timeout ${launchTimeout/1000}s — proxy mungkin tidak tersedia`)), launchTimeout))
+        ]);
+    } catch (launchErr) {
+        // If warp proxy caused a hang, retry without proxy
+        if (proxyType === 'warp') {
+            console.log(`[Firefox] Gagal launch dengan Warp proxy: ${launchErr.message}`);
+            console.log(`[Firefox] Mencoba ulang tanpa proxy sebagai fallback...`);
+            delete contextOptions.proxy;
+            context = await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
+        } else {
+            throw launchErr;
         }
     }
+
+    // Grab UA safely with timeout
+    let playwrightUA = 'Unknown';
+    try {
+        const uaPage = context.pages()[0] || await context.newPage();
+        playwrightUA = await Promise.race([
+            uaPage.evaluate(() => navigator.userAgent),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('UA timeout')), 10000))
+        ]);
+        console.log(`[Playwright] User Agent: ${playwrightUA}`);
+    } catch(e) {
+        console.log(`[Playwright] Gagal mendapatkan User Agent: ${e.message}`);
+    }
     
-    const serverIp = await getServerPublicIp(agentOptions);
+    // Fetch public IP always via direct connection (faster, no proxy dependency for this)
+    const serverIp = await getServerPublicIp();
     if (serverIp) {
         console.log(`[Server] Public IP: ${serverIp}`);
     } else {
