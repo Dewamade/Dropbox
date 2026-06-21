@@ -1022,59 +1022,82 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                     });
                 });
 
-                // ── Navigate browser to CLI link ──────────────────────────────────
-                console.log(`[Browser] Navigasi ke URL CLI Link (timeout ${globalTimeout} detik)...`);
-                await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-                await page.waitForTimeout(2000);
-
-                // ── Wait for Connect button and click it ──────────────────────────
-                console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout * 2} detik)...`);
-                const connectSelectors = [
-                    'button:has-text("Connect")',
-                    'button[aria-label="Connect"]',
-                    'button:has-text("Hubungkan")',
-                    'input[type="submit"][value*="Connect"]',
-                    'a:has-text("Connect")',
-                ];
-
+                // ── Navigate browser to CLI link (retry loop, no browser kill) ────────
                 let connected = false;
-                const connectDeadline = Date.now() + (gtMs * 2);
-                while (Date.now() < connectDeadline && !connected) {
-                    for (const sel of connectSelectors) {
-                        try {
-                            if (await page.isVisible(sel)) {
-                                await page.click(sel);
-                                console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
-                                connected = true;
-                                break;
-                            }
-                        } catch (e) {}
+                let cliAttempt = 0;
+                const maxCliAttempts = maxTabAttempts; // reuse globalRetry
+
+                while (!connected && cliAttempt < maxCliAttempts) {
+                    cliAttempt++;
+                    if (cliAttempt > 1) {
+                        console.log(`\n[CLI Reload] Memuat ulang URL CLI Link (Percobaan ${cliAttempt}/${maxCliAttempts})...`);
                     }
-                    if (!connected) await page.waitForTimeout(1500);
-                }
 
-                if (!connected) {
-                    throw new Error(`[Browser] Timeout ${globalTimeout * 2} detik — tombol Connect tidak ditemukan`);
-                }
-
-                // ── Wait for "successfully" confirmation ──────────────────────────
-                console.log('[Browser] Menunggu konfirmasi berhasil dihubungkan...');
-                const successKeywords = ['successfully', 'berhasil', 'linked', 'connected', 'you can now close'];
-                let confirmedSuccess = false;
-                const successDeadline = Date.now() + (gtMs * 2);
-                while (Date.now() < successDeadline && !confirmedSuccess) {
                     try {
-                        const bodyText = (await page.innerText('body')).toLowerCase();
-                        confirmedSuccess = successKeywords.some(kw => bodyText.includes(kw));
-                        if (confirmedSuccess) break;
-                    } catch (e) {}
-                    await page.waitForTimeout(1500);
+                        console.log(`[Browser] Navigasi ke URL CLI Link (timeout ${globalTimeout} detik)...`);
+                        await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
+                        await page.waitForTimeout(2000);
+
+                        // ── Wait for Connect button and click it ─────────────────────
+                        console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout * 2} detik)...`);
+                        const connectSelectors = [
+                            'button:has-text("Connect")',
+                            'button[aria-label="Connect"]',
+                            'button:has-text("Hubungkan")',
+                            'input[type="submit"][value*="Connect"]',
+                            'a:has-text("Connect")',
+                        ];
+
+                        const connectDeadline = Date.now() + (gtMs * 2);
+                        while (Date.now() < connectDeadline && !connected) {
+                            for (const sel of connectSelectors) {
+                                try {
+                                    if (await page.isVisible(sel)) {
+                                        await page.click(sel);
+                                        console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
+                                        connected = true;
+                                        break;
+                                    }
+                                } catch (e) {}
+                            }
+                            if (!connected) await page.waitForTimeout(1500);
+                        }
+
+                        if (!connected) {
+                            throw new Error(`[Browser] Timeout ${globalTimeout * 2} detik — tombol Connect tidak ditemukan`);
+                        }
+
+                    } catch (cliErr) {
+                        console.log(`\n⚠️ Error saat navigasi CLI Link (Percobaan ${cliAttempt}/${maxCliAttempts}): ${cliErr.message.split('\n')[0]}`);
+                        if (cliAttempt >= maxCliAttempts) {
+                            console.log(`[CLI] Batas ${maxCliAttempts} percobaan habis. Melanjutkan tanpa konfirmasi Connect...`);
+                            break;
+                        }
+                        await page.waitForTimeout(2000);
+                        // Loop will retry by reloading the CLI URL — browser stays open
+                    }
                 }
 
-                if (confirmedSuccess) {
-                    console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
-                } else {
-                    console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi dalam 60 detik, melanjutkan...`);
+                // ── Wait for "successfully" confirmation ──────────────────────────────
+                if (connected) {
+                    console.log('[Browser] Menunggu konfirmasi berhasil dihubungkan...');
+                    const successKeywords = ['successfully', 'berhasil', 'linked', 'connected', 'you can now close'];
+                    let confirmedSuccess = false;
+                    const successDeadline = Date.now() + (gtMs * 2);
+                    while (Date.now() < successDeadline && !confirmedSuccess) {
+                        try {
+                            const bodyText = (await page.innerText('body')).toLowerCase();
+                            confirmedSuccess = successKeywords.some(kw => bodyText.includes(kw));
+                            if (confirmedSuccess) break;
+                        } catch (e) {}
+                        await page.waitForTimeout(1500);
+                    }
+
+                    if (confirmedSuccess) {
+                        console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
+                    } else {
+                        console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi, melanjutkan...`);
+                    }
                 }
 
             } finally {
