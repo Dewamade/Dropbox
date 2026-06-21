@@ -133,16 +133,11 @@ function getRandomName() {
 }
 
 // Helper to fetch server public IP (with explicit timeout)
-function getServerPublicIp(agentOptions = {}) {
+function getServerPublicIp() {
     return new Promise((resolve) => {
-        // Hard timeout: resolve null after 8 seconds no matter what
-        const timer = setTimeout(() => {
-            console.log('[IP] Timeout mendapatkan IP publik, lanjut...');
-            resolve(null);
-        }, 8000);
-
+        const timer = setTimeout(() => { resolve(null); }, 8000);
         try {
-            const req = https.get('https://api.ipify.org?format=json', agentOptions, (res) => {
+            const req = https.get('https://api.ipify.org?format=json', (res) => {
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
@@ -153,10 +148,21 @@ function getServerPublicIp(agentOptions = {}) {
             });
             req.setTimeout(7000, () => { req.destroy(); clearTimeout(timer); resolve(null); });
             req.on('error', () => { clearTimeout(timer); resolve(null); });
-        } catch(e) {
-            clearTimeout(timer);
-            resolve(null);
-        }
+        } catch(e) { clearTimeout(timer); resolve(null); }
+    });
+}
+
+// Check if a TCP port is accepting connections
+function checkPort(host, port, timeoutMs = 3000) {
+    return new Promise((resolve) => {
+        const net = require('net');
+        const socket = new net.Socket();
+        let done = false;
+        socket.setTimeout(timeoutMs);
+        socket.on('connect', () => { done = true; socket.destroy(); resolve(true); });
+        socket.on('timeout', () => { socket.destroy(); if (!done) resolve(false); });
+        socket.on('error', () => { if (!done) resolve(false); });
+        socket.connect(port, host);
     });
 }
 
@@ -263,8 +269,17 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         proxyServer = 'socks5://127.0.0.1:8086';
 
         if (warpActive) {
-            console.log(`\n[Warp] Koneksi Warp+Socks5 sudah aktif, menggunakan sesi yang ada di 127.0.0.1:8086`);
-        } else {
+            // Verify port is still open before reusing
+            const portOk = await checkPort('127.0.0.1', 8086, 2000);
+            if (portOk) {
+                console.log(`\n[Warp] Koneksi Warp+Socks5 sudah aktif, menggunakan sesi yang ada di 127.0.0.1:8086`);
+            } else {
+                console.log(`\n[Warp] Port 8086 tidak lagi tersedia, restart Warp...`);
+                warpActive = false;
+            }
+        }
+
+        if (!warpActive) {
             const { exec } = require('child_process');
             console.log(`\nMengaktifkan koneksi Warp+Socks5...`);
 
@@ -285,10 +300,22 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                 await runCmd('warp-ctl start', 6000);
                 console.log(`[Warp] Menunggu 10 detik agar koneksi stabil...`);
                 await new Promise(r => setTimeout(r, 10000));
-                console.log(`[Warp] Koneksi Warp+Socks5 siap di 127.0.0.1:8086`);
-                warpActive = true;
+
+                // Verify port is actually open after starting
+                const portReady = await checkPort('127.0.0.1', 8086, 3000);
+                if (portReady) {
+                    console.log(`[Warp] ✓ Port 8086 aktif. Koneksi Warp+Socks5 siap.`);
+                    warpActive = true;
+                } else {
+                    console.log(`[Warp] ⚠️ Port 8086 tidak tersedia setelah warp-ctl start. Kemungkinan port berbeda atau Warp tidak mendukung SOCKS5.`);
+                    console.log(`[Warp] Melanjutkan tanpa proxy (Direct Connection)...`);
+                    proxyServer = null;
+                    warpActive = false;
+                }
             } catch(e) {
-                console.log(`⚠️ Gagal menjalankan perintah warp-ctl: ${e.message}. Pastikan warp-cli sudah terinstall.`);
+                console.log(`⚠️ Gagal menjalankan perintah warp-ctl: ${e.message}. Melanjutkan tanpa proxy.`);
+                proxyServer = null;
+                warpActive = false;
             }
         }
     } else {
@@ -376,29 +403,34 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         }
     }
 
-    // Grab UA safely with timeout
+    // Grab UA and IP via browser (goes through the actual proxy/direct used by Firefox)
     let playwrightUA = 'Unknown';
     let serverIp = 'Unknown';
     try {
         const infoPage = context.pages()[0] || await context.newPage();
-        // Get UA
+
+        // Get UA from browser context
         playwrightUA = await Promise.race([
             infoPage.evaluate(() => navigator.userAgent),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('UA timeout')), 10000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('UA timeout')), 8000))
         ]).catch(() => 'Unknown');
         console.log(`[Playwright] User Agent: ${playwrightUA}`);
 
-        // Fetch IP via the browser (through the actual proxy/direct connection used by Firefox)
-        console.log(`[Playwright] Memeriksa IP publik via browser...`);
-        await infoPage.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 15000 });
-        const ipJson = await infoPage.innerText('body').catch(() => '{}');
+        // Fetch IP via browser so it reflects the actual exit IP (through proxy or direct)
         try {
-            serverIp = JSON.parse(ipJson).ip || 'Unknown';
-        } catch (_) { serverIp = ipJson.trim() || 'Unknown'; }
-        console.log(`[Server] Public IP (via browser): ${serverIp}`);
+            console.log(`[Playwright] Memeriksa IP publik via browser...`);
+            await infoPage.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 12000 });
+            const ipJson = await infoPage.innerText('body').catch(() => '{}');
+            serverIp = JSON.parse(ipJson).ip || ipJson.trim() || 'Unknown';
+            console.log(`[Server] Public IP (via browser/${proxyServer ? 'Warp' : 'Direct'}): ${serverIp}`);
+        } catch(ipErr) {
+            console.log(`[Playwright] Gagal cek IP via browser: ${ipErr.message.split('\n')[0]}`);
+            // Fallback: Node.js direct IP
+            serverIp = await getServerPublicIp() || 'Unknown';
+            console.log(`[Server] Public IP (fallback/direct): ${serverIp}`);
+        }
     } catch(e) {
-        console.log(`[Playwright] Gagal mendapatkan UA/IP: ${e.message}`);
-        // Fallback: try Node.js direct IP
+        console.log(`[Playwright] Gagal mendapatkan UA: ${e.message}`);
         serverIp = await getServerPublicIp() || 'Unknown';
     }
 
@@ -408,7 +440,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             type: 'info',
             info: {
                 alias: alias || '-',
-                mode: proxyType === 'warp' ? 'Warp+Socks5' : 'Direct Connection',
+                mode: proxyServer ? 'Warp+Socks5' : (proxyType === 'warp' ? 'Warp→Direct(fallback)' : 'Direct Connection'),
                 email: email,
                 ip: serverIp,
                 ua: playwrightUA
