@@ -929,6 +929,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                 } catch (_) {}
             };
 
+            let finalStatus = 'VERIF';
             try {
                 console.log(`[dropboxd] Menjalankan via bash: box64 ./.dropbox-dist/dropboxd (HOME=${homeDir})`);
                 dropboxProc = spawn('bash', ['-c', 'box64 ./.dropbox-dist/dropboxd'], {
@@ -1195,9 +1196,8 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                     await page.waitForTimeout(2000);
                 }
             }
-
-            const finalStatus = verifyClicked ? 'success' : 'VERIF';
-
+            const finalStatusVal = verifyClicked ? 'success' : 'VERIF';
+            finalStatus = finalStatusVal;
             } finally {
                 // Kill daemon + any lingering dropbox processes
                 killDropbox();
