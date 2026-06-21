@@ -156,10 +156,8 @@ wss.on('connection', (ws) => {
 
                         let registrationSuccess = false;
                         const maxAttempts = globalRetry || 3;
-                        const maxWarpRetries = useWarp ? maxAttempts : 0;
-                        let proxyType = useWarp ? 'warp' : 'direct';
 
-                        // Warp restart helper
+                        // ── Warp restart helper ───────────────────────────────────────────
                         const runWarpRestart = async () => {
                             const { exec } = require('child_process');
                             const runCmd = (cmd, tms = 8000) => new Promise(resolve => {
@@ -174,29 +172,18 @@ wss.on('connection', (ws) => {
                             await runCmd('warp-ctl start', 6000);
                             console.log(`[Warp Restart] Menunggu 10 detik agar koneksi stabil...`);
                             await new Promise(r => setTimeout(r, 10000));
-                            // Force warp state to reset so register.js will re-init
-                            const regMod = require('./register.js');
                         };
 
-                        // \u2550\u2550 OUTER WARP RETRY LOOP \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-                        let warpRetryCount = 0;
-                        let outerDone = false;
-
-                        while (!outerDone) {
-                            if (shouldStop || activeWs !== ws) break;
-
-                            // \u2550\u2550 INNER BROWSER RETRY LOOP \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+                        // ── Helper: run inner browser retry loop for a given proxyType ───
+                        const runBrowserLoop = async (proxyType, phaseLabel, isPhaseRetry) => {
                             let attempts = 0;
-
                             while (!registrationSuccess && attempts < maxAttempts) {
                                 if (shouldStop || activeWs !== ws) break;
                                 attempts++;
 
-                                const isWarpRetry = warpRetryCount > 0;
-                                const isBrowserRetry = attempts > 1;
-
-                                if (isBrowserRetry || isWarpRetry) {
-                                    console.log(`\n[Mencoba Kembali] Browser Attempt ${attempts}/${maxAttempts}${isWarpRetry ? ` (Warp Restart ke-${warpRetryCount}/${maxWarpRetries})` : ''} — ${email}`);
+                                const isRetry = isPhaseRetry || attempts > 1;
+                                if (attempts > 1 || isPhaseRetry) {
+                                    console.log(`\n[Mencoba Kembali] ${phaseLabel} — Attempt ${attempts}/${maxAttempts} untuk ${email}`);
                                 }
 
                                 try {
@@ -204,19 +191,18 @@ wss.on('connection', (ws) => {
                                     const result = await registerSingleEmail(
                                         url, email, proxyType, false,
                                         currentAbortController, useHeadless,
-                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isBrowserRetry || isWarpRetry
+                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry
                                     );
 
                                     if (result && result.success) {
                                         registrationSuccess = true;
-                                        outerDone = true;
                                         const finalStatus = result.status || 'success';
                                         if (finalStatus === 'VERIF') {
                                             verifCount++;
                                         } else {
                                             successCount++;
                                         }
-                                        console.log(`\u2713 Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
+                                        console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
                                         safeSend(ws, { type: 'email_success', email: email });
                                         try {
                                             saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua);
@@ -226,86 +212,101 @@ wss.on('connection', (ws) => {
                                     } else if (result === true) {
                                         // backward compat
                                         registrationSuccess = true;
-                                        outerDone = true;
                                         successCount++;
                                         const usedPwd = passwordMode === 'fixed' ? fixedPassword : '(random)';
-                                        console.log(`\u2713 Pendaftaran sukses untuk ${email}`);
+                                        console.log(`✓ Pendaftaran sukses untuk ${email}`);
                                         safeSend(ws, { type: 'email_success', email: email });
-                                        try {
-                                            saveRegistration(email, usedPwd, 'success', alias, '', '');
-                                        } catch (dbErr) {
-                                            originalError('DB save error:', dbErr.message);
-                                        }
+                                        try { saveRegistration(email, usedPwd, 'success', alias, '', ''); } catch (_) {}
                                     } else {
-                                        // Result false/null — treat as failure needing retry
-                                        console.log(`\u26a0\ufe0f Pendaftaran untuk ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
+                                        console.log(`⚠️ Pendaftaran ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
                                         if (global.killAllBrowsers) global.killAllBrowsers();
                                         if (global.killAllBox64) global.killAllBox64();
                                     }
 
                                 } catch (error) {
-                                    if (shouldStop) { outerDone = true; break; }
-
+                                    if (shouldStop) break;
                                     const errMsg = (error.message || '');
-                                    const needsKill = errMsg.startsWith('BROWSER_KILL_REQUIRED') ||
-                                        errMsg.toLowerCase().includes('timeout') ||
-                                        errMsg.toLowerCase().includes('net::err') ||
-                                        errMsg.toLowerCase().includes('connection') ||
-                                        errMsg.toLowerCase().includes('proxy') ||
-                                        errMsg.toLowerCase().includes('ns_error');
-
-                                    console.log(`\n\u274c Error attempt ${attempts}/${maxAttempts}: ${errMsg.replace('BROWSER_KILL_REQUIRED: ', '').split('\\n')[0]}`);
-
+                                    console.log(`\n❌ Error attempt ${attempts}/${maxAttempts} [${phaseLabel}]: ${errMsg.replace('BROWSER_KILL_REQUIRED: ', '').split('\n')[0]}`);
                                     // Always kill browsers after any failure
                                     if (global.killAllBrowsers) global.killAllBrowsers();
                                     if (global.killAllBox64) global.killAllBox64();
-
                                     if (attempts < maxAttempts) {
-                                        console.log(`\ud83d\udd04 Kill browser selesai, meluncurkan browser baru untuk percobaan ${attempts + 1}/${maxAttempts}...`);
+                                        console.log(`🔄 Kill selesai, meluncurkan browser baru untuk percobaan ${attempts + 1}/${maxAttempts}...`);
                                         await new Promise(r => setTimeout(r, 2000));
-                                        // continue inner loop
                                     } else {
-                                        console.log(`\ud83d\uded1 Batas ${maxAttempts} percobaan browser tercapai untuk ${email}.`);
-                                        // Fall through to warp retry check below
+                                        console.log(`🛑 Batas ${maxAttempts} percobaan browser tercapai untuk fase ${phaseLabel}.`);
                                     }
-
                                 } finally {
                                     currentAbortController = null;
                                 }
-                            } // end inner browser loop
+                            }
+                        };
 
-                            if (registrationSuccess) break; // done
+                        // ── Build phase list: Direct first, then Warp ─────────────────────
+                        const phases = [];
+                        if (useDirect) phases.push('direct');
+                        if (useWarp)   phases.push('warp');
+                        if (phases.length === 0) phases.push('direct'); // safety fallback
+
+                        let globalDone = false;
+
+                        for (let phaseIdx = 0; phaseIdx < phases.length && !globalDone; phaseIdx++) {
                             if (shouldStop || activeWs !== ws) break;
 
-                            // \u2550\u2550 Check warp retry \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-                            if (useWarp && warpRetryCount < maxWarpRetries) {
-                                warpRetryCount++;
-                                console.log(`\n\ud83d\udd01 [Warp Retry ${warpRetryCount}/${maxWarpRetries}] Semua percobaan browser habis. Restart Warp dan coba ulang...`);
-                                try { await runWarpRestart(); } catch (e) {
-                                    console.log(`\u26a0\ufe0f Gagal restart Warp: ${e.message}`);
+                            const currentPhase = phases[phaseIdx];
+                            const phaseLabel = currentPhase === 'warp' ? 'Warp+Socks5' : 'Direct Connection';
+                            console.log(`\n[Phase ${phaseIdx + 1}/${phases.length}] Memulai dengan mode: ${phaseLabel}`);
+
+                            if (currentPhase === 'warp') {
+                                const maxWarpRestarts = maxAttempts;
+                                let warpRestartCount = 0;
+
+                                while (!registrationSuccess && !shouldStop) {
+                                    if (warpRestartCount > 0) {
+                                        if (warpRestartCount > maxWarpRestarts) break;
+                                        console.log(`\n🔁 [Warp Restart ${warpRestartCount}/${maxWarpRestarts}] Restart Warp sebelum mencoba ulang...`);
+                                        try { await runWarpRestart(); } catch (e) {
+                                            console.log(`⚠️ Gagal restart Warp: ${e.message}`);
+                                        }
+                                    }
+
+                                    await runBrowserLoop('warp', `Warp+Socks5${warpRestartCount > 0 ? ` (Restart ${warpRestartCount})` : ''}`, warpRestartCount > 0);
+
+                                    if (registrationSuccess) break;
+
+                                    warpRestartCount++;
+                                    if (warpRestartCount > maxWarpRestarts) {
+                                        console.log(`\n❌ GAGAL TOTAL [Warp+Socks5]: Semua ${maxAttempts} percobaan browser × ${maxWarpRestarts} Warp Restart sudah habis untuk ${email}.`);
+                                        break;
+                                    }
                                 }
-                                // Reset warp state so register.js will re-init on next attempt
-                                const regModule = require('./register.js');
-                                // Continue outer loop
                             } else {
-                                // \u2550\u2550 Total failure \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-                                console.log(`\n\u274c GAGAL TOTAL: Semua percobaan browser${useWarp ? ` dan Warp Restart (${maxWarpRetries}x)` : ''} untuk ${email} sudah habis.`);
-                                console.log(`\ud83d\udee0\ufe0f Kill paksa semua proses browser dan box64...`);
-                                if (global.killAllBrowsers) global.killAllBrowsers();
-                                if (global.killAllBox64) global.killAllBox64();
-
-                                failedCount++;
-                                try {
-                                    saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '');
-                                } catch (_) {}
-
-                                console.log(`\ud83d\udead Menghentikan semua proses pendaftaran dan masuk ke mode IDLE.`);
-                                shouldStop = true;  // Stop entire batch → idle
-                                outerDone = true;
+                                await runBrowserLoop('direct', 'Direct Connection', phaseIdx > 0);
                             }
 
-                        } // end outer warp loop
+                            if (registrationSuccess) { globalDone = true; break; }
 
+                            if (phaseIdx < phases.length - 1) {
+                                console.log(`\n⚠️ Fase ${phaseLabel} habis. Beralih ke fase berikutnya...`);
+                            }
+                        }
+
+                        // ── Handle total failure ──────────────────────────────────────────
+                        if (!registrationSuccess && !shouldStop) {
+                            const phaseSummary = phases.map(p => p === 'warp' ? 'Warp+Socks5' : 'Direct Connection').join(' → ');
+                            console.log(`\n❌ GAGAL TOTAL [${phaseSummary}]: Semua percobaan untuk ${email} sudah habis.`);
+                            console.log(`🛠️ Kill paksa semua proses browser dan box64...`);
+                            if (global.killAllBrowsers) global.killAllBrowsers();
+                            if (global.killAllBox64) global.killAllBox64();
+
+                            failedCount++;
+                            try {
+                                saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '');
+                            } catch (_) {}
+
+                            console.log(`🚫 Menghentikan semua proses pendaftaran dan masuk ke mode IDLE.`);
+                            shouldStop = true;  // stop entire batch → idle
+                        }
 
                     }
 
