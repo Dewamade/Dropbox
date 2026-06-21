@@ -573,6 +573,16 @@ textarea {
     font-weight: 600;
 }
 
+.badge-VERIF {
+    color: #fbbf24;
+    background: rgba(251,191,36,0.1);
+    border: 1px solid rgba(251,191,36,0.2);
+    border-radius: 12px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
 .btn-outline {
     background: transparent;
     border: 1px solid rgba(255,255,255,0.15);

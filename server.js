@@ -195,7 +195,8 @@ wss.on('connection', (ws) => {
                                     safeSend(ws, { type: 'email_success', email: email });
                                     // Save to history DB
                                     try {
-                                        saveRegistration(email, result.password, 'success', alias, result.ip, result.ua);
+                                        const finalStatus = result.status || 'success';
+                                        saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua);
                                     } catch (dbErr) {
                                         originalError('DB save error:', dbErr.message);
                                     }
