@@ -195,7 +195,7 @@ wss.on('connection', (ws) => {
                                     safeSend(ws, { type: 'email_success', email: email });
                                     // Save to history DB
                                     try {
-                                        saveRegistration(email, result.password, 'success', alias, result.ip);
+                                        saveRegistration(email, result.password, 'success', alias, result.ip, result.ua);
                                     } catch (dbErr) {
                                         originalError('DB save error:', dbErr.message);
                                     }
@@ -207,7 +207,7 @@ wss.on('connection', (ws) => {
                                     console.log(`✓ Pendaftaran sukses untuk ${email}`);
                                     safeSend(ws, { type: 'email_success', email: email });
                                     try {
-                                        saveRegistration(email, usedPwd, 'success', alias, '');
+                                        saveRegistration(email, usedPwd, 'success', alias, '', '');
                                     } catch (dbErr) {
                                         originalError('DB save error:', dbErr.message);
                                     }
@@ -215,7 +215,7 @@ wss.on('connection', (ws) => {
                                     failedCount++;
                                     console.log(`Pendaftaran untuk ${email} selesai dengan status tidak berhasil (halaman ditutup/timeout).`);
                                     try {
-                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '');
+                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '');
                                     } catch (_) {}
                                     break;
                                 }
@@ -241,7 +241,7 @@ wss.on('connection', (ws) => {
                                     console.log(`Sudah mencapai batas maksimal percobaan atau kesalahan permanen. Melewati email ini.`);
                                     failedCount++;
                                     try {
-                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '');
+                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '');
                                     } catch (_) {}
                                     break;
                                 }

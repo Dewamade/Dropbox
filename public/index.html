@@ -423,6 +423,7 @@
                         <td><span class="badge-${r.status}">${r.status}</span></td>
                         <td style="font-size:0.75rem;color:#71717a;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.alias}">${r.alias || '-'}</td>
                         <td style="font-size:0.75rem;color:#71717a;">${r.ip || '-'}</td>
+                        <td style="font-size:0.72rem;color:#a1a1aa;max-width:220px;word-break:break-word;white-space:normal;line-height:1.4;">${r.ua || '-'}</td>
                     </tr>`).join('');
                 historyContent.innerHTML = `
                     <table class="history-table">
@@ -434,6 +435,7 @@
                                 <th>Status</th>
                                 <th>Alias</th>
                                 <th>IP</th>
+                                <th>User Agent</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>

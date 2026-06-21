@@ -413,7 +413,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         // Reading navigator.userAgent on about:blank returns the raw browser UA before extension activates.
         try {
             console.log(`[Playwright] Navigasi ke ipify untuk cek IP dan UA (via ekstensi)...`);
-            await infoPage.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 12000 });
+            await infoPage.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: gtMs });
 
             // Small wait for extension content scripts to settle
             await infoPage.waitForTimeout(800);
@@ -977,7 +977,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                 killDropbox();
             }
 
-            return { success: true, password, ip: serverIp || '' };
+            return { success: true, password, ip: serverIp || '', ua: playwrightUA || '' };
 
 
         } else {
