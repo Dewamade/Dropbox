@@ -186,7 +186,7 @@ wss.on('connection', (ws) => {
                                 const result = await registerSingleEmail(
                                     url, email, proxyType, false,
                                     currentAbortController, useHeadless,
-                                    passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias
+                                    passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, attempts > 1
                                 );
                                 if (result && result.success) {
                                     registrationSuccess = true;

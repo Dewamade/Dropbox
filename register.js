@@ -261,12 +261,18 @@ function clearProfileData(profilePath) {
 }
 
 // Single registration process for one email
-async function registerSingleEmail(url, email, proxyType, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '') {
+async function registerSingleEmail(url, email, proxyType, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false) {
     const gtMs = globalTimeout * 1000;
     
     let proxyServer = null;
     if (proxyType === 'warp') {
         proxyServer = 'socks5://127.0.0.1:8086';
+
+        // Force restart warp if this is a retry
+        if (isRetry && warpActive) {
+            console.log(`\n[Warp] Retry terdeteksi, memaksa restart Warp...`);
+            warpActive = false;
+        }
 
         if (warpActive) {
             // Verify port is still open before reusing
@@ -296,6 +302,9 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             try {
                 console.log(`[Warp] Menjalankan: warp-ctl stop`);
                 await runCmd('warp-ctl stop', 6000);
+                console.log(`[Warp] Menunggu 2 detik...`);
+                await new Promise(r => setTimeout(r, 2000));
+                
                 console.log(`[Warp] Menjalankan: warp-ctl start`);
                 await runCmd('warp-ctl start', 6000);
                 console.log(`[Warp] Menunggu 10 detik agar koneksi stabil...`);
@@ -526,10 +535,20 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         await page.click(selector);
     }
 
-    try {
-        console.log(`Navigasi ke URL: ${url}...`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs * 2 });
-        await checkTooManyAttempts(page);
+    let isRegistered = false;
+    let tabAttempt = 0;
+    const maxTabAttempts = globalRetry || 3;
+
+    while (tabAttempt < maxTabAttempts && !isRegistered) {
+        tabAttempt++;
+        if (tabAttempt > 1) {
+            console.log(`\n[Tab Reload] Mencoba ulang proses pendaftaran di tab yang sama (Percobaan ${tabAttempt}/${maxTabAttempts})...`);
+        }
+        
+        try {
+            console.log(`Navigasi ke URL: ${url}...`);
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs });
+            await checkTooManyAttempts(page);
 
         // Clear local/session storage to avoid cross-session tracking
         try {
@@ -555,7 +574,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         } catch (e) {}
 
         // --- STEP 1: Fill Email & Click Continue ---
-        console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout * 2} detik)...`);
+        console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout} detik)...`);
         const emailSelectors = [
             'input[id^="susi_email"]',
             'input[type="email"]',
@@ -565,7 +584,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         
         let activeEmailSelector = null;
         const startTime = Date.now();
-        const emailDeadline = Date.now() + (gtMs * 2);
+        const emailDeadline = Date.now() + gtMs;
         while (Date.now() < emailDeadline) {
             for (const selector of emailSelectors) {
                 try {
@@ -581,7 +600,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         }
 
         if (!activeEmailSelector) {
-            throw new Error(`Tidak dapat menemukan field Email untuk Langkah 1 dalam ${globalTimeout * 2} detik!`);
+            throw new Error(`Tidak dapat menemukan field Email untuk Langkah 1 dalam ${globalTimeout} detik!`);
         }
 
         await humanType(activeEmailSelector, email);
@@ -772,8 +791,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         console.log("Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...");
 
         // Loop to check if the user has successfully registered
-        let isRegistered = false;
-        const regDeadline = Date.now() + (gtMs * 2);
+        const regDeadline = Date.now() + gtMs;
         while (Date.now() < regDeadline) {
             await page.waitForTimeout(2000);
             await checkTooManyAttempts(page);
@@ -787,6 +805,26 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             }
         }
 
+        if (!isRegistered) {
+            console.log(`\n⚠️ URL tidak berubah dalam ${globalTimeout} detik setelah menekan tombol daftar.`);
+            throw new Error("NO_URL_CHANGE");
+        }
+
+        } catch (innerError) {
+            if (innerError.message === "NO_URL_CHANGE") {
+                // Jangan reload tab jika URL stuck di akhir (teruskan ke log atas agar browser di-restart)
+                throw new Error(`Timeout: URL tidak berubah setelah ${globalTimeout} detik.`);
+            }
+            console.log(`\n⚠️ Error pada proses pendaftaran tab (Percobaan ${tabAttempt}): ${innerError.message}`);
+            if (tabAttempt >= maxTabAttempts) {
+                throw innerError;
+            }
+            console.log(`Memuat ulang tab dan mengulangi proses pendaftaran...`);
+            await page.waitForTimeout(2000);
+        }
+    }
+
+    try {
         if (isRegistered) {
             console.log('✅ Pendaftaran berhasil! Browser tetap terbuka — memulai Dropbox daemon...');
             await page.waitForTimeout(1500);
@@ -981,8 +1019,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
 
 
         } else {
-            console.log(`\n⚠️ URL tidak berubah dalam ${globalTimeout * 2} detik setelah menekan tombol daftar.`);
-            throw new Error(`Timeout: URL tidak berubah setelah ${globalTimeout * 2} detik.`);
+            throw new Error(`Pendaftaran gagal setelah mencoba ${maxTabAttempts} kali reload tab.`);
         }
 
     } catch (error) {
