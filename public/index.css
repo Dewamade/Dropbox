@@ -242,7 +242,7 @@ textarea {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 1rem;
     width: 100%;
     margin-top: 1rem;
@@ -278,6 +278,15 @@ textarea {
 
 .stat-card.stat-failed .stat-value {
     color: #f87171;
+}
+
+.stat-card.stat-verif {
+    border-color: rgba(251, 191, 36, 0.15);
+    background: rgba(251, 191, 36, 0.02);
+}
+
+.stat-card.stat-verif .stat-value {
+    color: #fbbf24;
 }
 
 .stat-label {

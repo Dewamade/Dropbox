@@ -134,6 +134,7 @@ wss.on('connection', (ws) => {
 
                 let successCount = 0;
                 let failedCount = 0;
+                let verifCount = 0;
                 let processedCount = 0;
 
                 try {
@@ -149,7 +150,8 @@ wss.on('connection', (ws) => {
                             total: emails.length,
                             status: `Memproses email ke-${i+1} dari ${emails.length} (${email})`,
                             successCount,
-                            failedCount
+                            failedCount,
+                            verifCount
                         });
 
                         let registrationSuccess = false;
@@ -190,12 +192,16 @@ wss.on('connection', (ws) => {
                                 );
                                 if (result && result.success) {
                                     registrationSuccess = true;
-                                    successCount++;
-                                    console.log(`✓ Pendaftaran sukses untuk ${email} (password: ${result.password})`);
+                                    const finalStatus = result.status || 'success';
+                                    if (finalStatus === 'VERIF') {
+                                        verifCount++;
+                                    } else {
+                                        successCount++;
+                                    }
+                                    console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
                                     safeSend(ws, { type: 'email_success', email: email });
                                     // Save to history DB
                                     try {
-                                        const finalStatus = result.status || 'success';
                                         saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua);
                                     } catch (dbErr) {
                                         originalError('DB save error:', dbErr.message);
