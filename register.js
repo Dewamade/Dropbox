@@ -949,32 +949,31 @@ async function run() {
         console.log(`Memproses email ke-${i+1} dari ${emails.length}`);
         console.log(`---------------------------------------------------------`);
 
-        // Fetch a fresh proxy from Proxifly if proxy is enabled
-        let proxy = null;
+        // Proxy type
+        let proxyType = 'direct';
         if (useProxy) {
-            console.log('Mengambil proxy baru dari Proxifly...');
-            proxy = await getProxiflyProxy();
+            proxyType = 'warp';
         }
         
         // Retry logic for proxy errors or "Too many attempts"
         let registrationSuccess = false;
         let attempts = 0;
         const maxAttempts = 3; 
-        let currentProxy = proxy;
+        let currentProxyType = proxyType;
 
         while (!registrationSuccess && attempts < maxAttempts) {
             attempts++;
             if (attempts > 1) {
                 if (useProxy) {
                     console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} dengan proxy baru (Percobaan ke-${attempts} dari ${maxAttempts})...`);
-                    currentProxy = await getProxiflyProxy();
+                    currentProxyType = 'warp';
                 } else {
                     console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} (Percobaan ke-${attempts} dari ${maxAttempts})...`);
                 }
             }
 
             try {
-                const result = await registerSingleEmail(url, email, currentProxy, false);
+                const result = await registerSingleEmail(url, email, currentProxyType, false);
                 if (result) {
                     registrationSuccess = true;
                 } else {
@@ -1023,7 +1022,6 @@ if (require.main === module) {
 } else {
     module.exports = {
         registerSingleEmail,
-        getProxiflyProxy,
         PROFILE_PATH
     };
 }

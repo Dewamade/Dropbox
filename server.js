@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { registerSingleEmail, getProxiflyProxy } = require('./register.js');
+const { registerSingleEmail } = require('./register.js');
 const { saveRegistration, getAllRegistrations, clearRegistrations } = require('./db.js');
 
 const app = express();
