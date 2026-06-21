@@ -242,18 +242,34 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
     
     let proxyServer = null;
     if (proxyType === 'warp') {
-        const { execSync } = require('child_process');
+        const { exec } = require('child_process');
         console.log(`\nMengaktifkan koneksi Warp+Socks5...`);
+
+        const runCmd = (cmd, timeoutMs = 8000) => new Promise((resolve) => {
+            const proc = exec(cmd, { timeout: timeoutMs }, (err) => {
+                if (err && !err.killed) {
+                    console.log(`[Warp] Perintah '${cmd}' selesai dengan peringatan: ${err.message.split('\n')[0]}`);
+                }
+                resolve();
+            });
+            // Force-resolve after timeout as a safety net
+            setTimeout(resolve, timeoutMs + 500);
+        });
+
         try {
-            execSync('warp-ctl stop', { stdio: 'ignore' });
-            execSync('warp-ctl start', { stdio: 'ignore' });
-            console.log(`Menunggu 10 detik agar koneksi Warp stabil...`);
+            console.log(`[Warp] Menjalankan: warp-ctl stop`);
+            await runCmd('warp-ctl stop', 6000);
+            console.log(`[Warp] Menjalankan: warp-ctl start`);
+            await runCmd('warp-ctl start', 6000);
+            console.log(`[Warp] Menunggu 10 detik agar koneksi stabil...`);
             await new Promise(r => setTimeout(r, 10000));
+            console.log(`[Warp] Koneksi Warp+Socks5 siap di 127.0.0.1:8086`);
         } catch(e) {
-            console.log(`⚠️ Gagal menjalankan perintah warp-ctl: ${e.message}. Pastikan warp-cli sudah terinstall dan tersedia di sistem.`);
+            console.log(`⚠️ Gagal menjalankan perintah warp-ctl: ${e.message}. Pastikan warp-cli sudah terinstall.`);
         }
         proxyServer = 'socks5://127.0.0.1:8086';
     }
+
 
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
