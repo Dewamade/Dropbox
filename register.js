@@ -409,30 +409,36 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
     try {
         const infoPage = context.pages()[0] || await context.newPage();
 
-        // Get UA from browser context
-        playwrightUA = await Promise.race([
-            infoPage.evaluate(() => navigator.userAgent),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('UA timeout')), 8000))
-        ]).catch(() => 'Unknown');
-        console.log(`[Playwright] User Agent: ${playwrightUA}`);
-
-        // Fetch IP via browser so it reflects the actual exit IP (through proxy or direct)
+        // Navigate to a real page first so the UA Switcher extension content script can inject.
+        // Reading navigator.userAgent on about:blank returns the raw browser UA before extension activates.
         try {
-            console.log(`[Playwright] Memeriksa IP publik via browser...`);
+            console.log(`[Playwright] Navigasi ke ipify untuk cek IP dan UA (via ekstensi)...`);
             await infoPage.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 12000 });
+
+            // Small wait for extension content scripts to settle
+            await infoPage.waitForTimeout(800);
+
+            // Read IP from page body
             const ipJson = await infoPage.innerText('body').catch(() => '{}');
             serverIp = JSON.parse(ipJson).ip || ipJson.trim() || 'Unknown';
             console.log(`[Server] Public IP (via browser/${proxyServer ? 'Warp' : 'Direct'}): ${serverIp}`);
+
+            // Read UA AFTER navigation — extension has had time to inject its content script
+            playwrightUA = await infoPage.evaluate(() => navigator.userAgent).catch(() => 'Unknown');
+            console.log(`[Playwright] User Agent (post-nav): ${playwrightUA}`);
+
         } catch(ipErr) {
-            console.log(`[Playwright] Gagal cek IP via browser: ${ipErr.message.split('\n')[0]}`);
-            // Fallback: Node.js direct IP
+            console.log(`[Playwright] Gagal cek IP/UA via browser: ${ipErr.message.split('\n')[0]}`);
+            // Fallback: Node.js direct IP, raw UA from blank page
             serverIp = await getServerPublicIp() || 'Unknown';
             console.log(`[Server] Public IP (fallback/direct): ${serverIp}`);
+            playwrightUA = await infoPage.evaluate(() => navigator.userAgent).catch(() => 'Unknown');
         }
     } catch(e) {
-        console.log(`[Playwright] Gagal mendapatkan UA: ${e.message}`);
+        console.log(`[Playwright] Error infoPage: ${e.message}`);
         serverIp = await getServerPublicIp() || 'Unknown';
     }
+
 
     // Broadcast Info ke UI WebSockets
     if (global.safeSend && global.activeWs) {
