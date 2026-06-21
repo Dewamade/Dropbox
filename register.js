@@ -880,81 +880,6 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             console.log('✅ Pendaftaran berhasil! Browser tetap terbuka — memulai verifikasi email...');
             await page.waitForTimeout(1500);
 
-            // ── Verify email flow ──────
-            console.log('[Browser] Membuka halaman Settings untuk verifikasi email...');
-            
-            let verifyClicked = false;
-            let emailSent = false;
-            let verifAttempt = 0;
-            const maxVerifAttempts = globalRetry || 3;
-
-            while (verifAttempt < maxVerifAttempts && !verifyClicked) {
-                verifAttempt++;
-                if (verifAttempt > 1) {
-                    console.log(`\n[Tab Reload] Mencoba ulang verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts})...`);
-                }
-
-                try {
-                    // Direct navigation to settings bypasses the need to click the account menu
-                    console.log(`[Navigasi] Ke halaman Settings/Account (timeout ${globalTimeout} detik)...`);
-                    await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
-                    await page.waitForTimeout(4000);
-                    
-                    // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
-                    const verifySelectors = [
-                        'button[aria-label="Verify email"]',
-                        'button.account-key-value-block__link:has-text("Verify email")',
-                        'button:has-text("Verify email")',
-                        'button:has-text("Verifikasi email")',
-                    ];
-                    
-                    for (const sel of verifySelectors) {
-                        try {
-                            if (await page.isVisible(sel)) {
-                                await page.click(sel);
-                                console.log('[Browser] ✓ Tombol Verify email diklik, menunggu modal...');
-                                verifyClicked = true;
-                                break;
-                            }
-                        } catch (e) {}
-                    }
-
-                    if (verifyClicked) {
-                        await page.waitForTimeout(2000);
-
-                        // Click Send email button inside the modal
-                        const sendEmailSelectors = [
-                            'button.js-email-modal-button.dig-Button--primary',
-                            'button:has-text("Send email")',
-                            'button:has-text("Kirim email")',
-                        ];
-                        for (const sel of sendEmailSelectors) {
-                            try {
-                                if (await page.isVisible(sel)) {
-                                    await page.click(sel);
-                                    console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
-                                    emailSent = true;
-                                    break;
-                                }
-                            } catch (e) {}
-                        }
-                        if (!emailSent) {
-                            console.log('[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.');
-                        }
-                    } else {
-                        console.log(`[Browser] ⚠️ Tombol Verify email tidak ditemukan pada percobaan ${verifAttempt}.`);
-                    }
-                } catch (err) {
-                    console.log(`\n⚠️ Error saat navigasi/verifikasi email (Percobaan ${verifAttempt}): ${err.message}`);
-                    if (verifAttempt >= maxVerifAttempts) {
-                        console.log(`Batas maksimal percobaan verifikasi email tercapai.`);
-                    }
-                    await page.waitForTimeout(2000);
-                }
-            }
-
-            const finalStatus = verifyClicked ? 'success' : 'VERIF';
-
             console.log('\n[dropboxd] Memulai proses Dropbox daemon...');
 
             // ── Spawn dropboxd via bash (avoids ELF header warning) ──────────────
@@ -1099,6 +1024,81 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                         console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi, melanjutkan...`);
                     }
                 }
+
+            // ── Verify email flow ──────
+            console.log('\n[Browser] Membuka halaman Settings untuk verifikasi email...');
+            
+            let verifyClicked = false;
+            let emailSent = false;
+            let verifAttempt = 0;
+            const maxVerifAttempts = globalRetry || 3;
+
+            while (verifAttempt < maxVerifAttempts && !verifyClicked) {
+                verifAttempt++;
+                if (verifAttempt > 1) {
+                    console.log(`\n[Tab Reload] Mencoba ulang verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts})...`);
+                }
+
+                try {
+                    // Direct navigation to settings bypasses the need to click the account menu
+                    console.log(`[Navigasi] Ke halaman Settings/Account (timeout ${globalTimeout} detik)...`);
+                    await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
+                    await page.waitForTimeout(4000);
+                    
+                    // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
+                    const verifySelectors = [
+                        'button[aria-label="Verify email"]',
+                        'button.account-key-value-block__link:has-text("Verify email")',
+                        'button:has-text("Verify email")',
+                        'button:has-text("Verifikasi email")',
+                    ];
+                    
+                    for (const sel of verifySelectors) {
+                        try {
+                            if (await page.isVisible(sel)) {
+                                await page.click(sel);
+                                console.log('[Browser] ✓ Tombol Verify email diklik, menunggu modal...');
+                                verifyClicked = true;
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (verifyClicked) {
+                        await page.waitForTimeout(2000);
+
+                        // Click Send email button inside the modal
+                        const sendEmailSelectors = [
+                            'button.js-email-modal-button.dig-Button--primary',
+                            'button:has-text("Send email")',
+                            'button:has-text("Kirim email")',
+                        ];
+                        for (const sel of sendEmailSelectors) {
+                            try {
+                                if (await page.isVisible(sel)) {
+                                    await page.click(sel);
+                                    console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+                                    emailSent = true;
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+                        if (!emailSent) {
+                            console.log('[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.');
+                        }
+                    } else {
+                        console.log(`[Browser] ⚠️ Tombol Verify email tidak ditemukan pada percobaan ${verifAttempt}.`);
+                    }
+                } catch (err) {
+                    console.log(`\n⚠️ Error saat navigasi/verifikasi email (Percobaan ${verifAttempt}): ${err.message}`);
+                    if (verifAttempt >= maxVerifAttempts) {
+                        console.log(`Batas maksimal percobaan verifikasi email tercapai.`);
+                    }
+                    await page.waitForTimeout(2000);
+                }
+            }
+
+            const finalStatus = verifyClicked ? 'success' : 'VERIF';
 
             } finally {
                 // Kill daemon + any lingering dropbox processes
