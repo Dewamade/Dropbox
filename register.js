@@ -111,7 +111,7 @@ async function checkTooManyAttempts(page) {
         ].some(keyword => textContent.toLowerCase().includes(keyword));
 
         if (hasError) {
-            throw new Error("Too many attempts. Please try later.");
+            throw new Error("BROWSER_KILL_REQUIRED: Too many attempts. Please try later.");
         }
     } catch (e) {
         if (e.message.includes("Too many attempts")) {
@@ -683,16 +683,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         await checkTooManyAttempts(page);
         const step2Timeout = Math.round(globalTimeout / 2);
         console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout ${step2Timeout} detik)...`);
-        const firstNameSelector = 'input[id^="fname"], input[name="fname"]';
-        try {
-            await page.waitForSelector(firstNameSelector, { state: 'visible', timeout: gtMs / 2 });
-            console.log("✓ Form Langkah 2 terdeteksi!");
-        } catch (e) {
-            console.log("Form Langkah 2 tidak muncul otomatis. Menunggu 5 detik tambahan...");
-            await page.waitForTimeout(5000);
-        }
-
-        // Fill First Name
+        
         const firstNameSelectors = [
             'input[id^="fname"]',
             'input[name="fname"]',
@@ -700,6 +691,41 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             'input[placeholder*="First name"]',
             'input[placeholder*="Nama depan"]'
         ];
+
+        let step2Visible = false;
+        // First try a direct waitForSelector
+        for (const sel of firstNameSelectors) {
+            try {
+                await page.waitForSelector(sel, { state: 'visible', timeout: Math.min(gtMs / 2, 10000) });
+                step2Visible = true;
+                console.log(`✓ Form Langkah 2 terdeteksi via waitForSelector: ${sel}`);
+                break;
+            } catch (_) {}
+        }
+
+        // Fallback: if still not found, scroll page to trigger lazy rendering and poll
+        if (!step2Visible) {
+            console.log(`[Langkah 2] waitForSelector habis, scroll dan polling...`);
+            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) {}
+            await page.waitForTimeout(2000);
+
+            const step2Deadline = Date.now() + (gtMs / 2);
+            while (Date.now() < step2Deadline && !step2Visible) {
+                for (const selector of firstNameSelectors) {
+                    try {
+                        const isVisible = await page.locator(selector).first().isVisible();
+                        if (isVisible) { step2Visible = true; break; }
+                    } catch (e) {}
+                }
+                if (!step2Visible) await page.waitForTimeout(1000);
+            }
+        }
+
+        if (!step2Visible) {
+            throw new Error(`BROWSER_KILL_REQUIRED: Form Langkah 2 tidak muncul dalam ${step2Timeout} detik.`);
+        }
+
+        // Fill First Name
         let firstNameFilled = false;
         for (const selector of firstNameSelectors) {
             try {
@@ -848,6 +874,11 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         } catch (innerError) {
             const errMsg = (innerError.message || '').toLowerCase();
 
+            // ── BROWSER_KILL_REQUIRED pass-through ───────────────────────────
+            if (innerError.message && innerError.message.includes('BROWSER_KILL_REQUIRED')) {
+                throw innerError;
+            }
+
             // ── NO_URL_CHANGE: browser must be killed and restarted ──────────
             if (innerError.message === 'NO_URL_CHANGE') {
                 throw new Error(`BROWSER_KILL_REQUIRED: URL tidak berubah setelah ${globalTimeout} detik.`);
@@ -973,23 +1004,51 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                             'a:has-text("Connect")',
                         ];
 
-                        const connectDeadline = Date.now() + (gtMs * 2);
-                        while (Date.now() < connectDeadline && !connected) {
-                            for (const sel of connectSelectors) {
-                                try {
-                                    if (await page.isVisible(sel)) {
-                                        await page.click(sel);
-                                        console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
-                                        connected = true;
-                                        break;
-                                    }
-                                } catch (e) {}
+                        let connectBtnFound = false;
+                        for (const sel of connectSelectors) {
+                            try {
+                                await page.waitForSelector(sel, { state: 'visible', timeout: gtMs / 2 });
+                                connectBtnFound = true;
+                                console.log(`[Browser] ✓ Tombol Connect terdeteksi via waitForSelector: ${sel}`);
+                                break;
+                            } catch (_) {}
+                        }
+
+                        if (!connectBtnFound) {
+                            console.log(`[Browser] waitForSelector habis, scroll dan polling untuk Connect...`);
+                            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) {}
+                            await page.waitForTimeout(2000);
+
+                            const connectDeadline = Date.now() + (gtMs * 2);
+                            while (Date.now() < connectDeadline && !connectBtnFound) {
+                                for (const sel of connectSelectors) {
+                                    try {
+                                        const isVisible = await page.locator(sel).first().isVisible();
+                                        if (isVisible) { connectBtnFound = true; break; }
+                                    } catch (e) {}
+                                }
+                                if (!connectBtnFound) await page.waitForTimeout(1000);
                             }
-                            if (!connected) await page.waitForTimeout(1500);
+                        }
+
+                        if (!connectBtnFound) {
+                            throw new Error(`[Browser] Timeout ${globalTimeout * 2} detik — tombol Connect tidak ditemukan`);
+                        }
+
+                        // We just verified the button is visible, now click it
+                        for (const sel of connectSelectors) {
+                            try {
+                                if (await page.isVisible(sel)) {
+                                    await page.click(sel);
+                                    console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
+                                    connected = true;
+                                    break;
+                                }
+                            } catch (e) {}
                         }
 
                         if (!connected) {
-                            throw new Error(`[Browser] Timeout ${globalTimeout * 2} detik — tombol Connect tidak ditemukan`);
+                            throw new Error(`[Browser] Gagal mengklik tombol Connect meski sudah terlihat.`);
                         }
 
                     } catch (cliErr) {
@@ -1043,7 +1102,6 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                     // Direct navigation to settings bypasses the need to click the account menu
                     console.log(`[Navigasi] Ke halaman Settings/Account (timeout ${globalTimeout} detik)...`);
                     await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
-                    await page.waitForTimeout(4000);
                     
                     // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
                     const verifySelectors = [
@@ -1053,36 +1111,76 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                         'button:has-text("Verifikasi email")',
                     ];
                     
+                    let verifyBtnFound = false;
                     for (const sel of verifySelectors) {
                         try {
-                            if (await page.isVisible(sel)) {
-                                await page.click(sel);
-                                console.log('[Browser] ✓ Tombol Verify email diklik, menunggu modal...');
-                                verifyClicked = true;
-                                break;
+                            await page.waitForSelector(sel, { state: 'visible', timeout: gtMs / 2 });
+                            verifyBtnFound = true;
+                            console.log(`[Browser] ✓ Tombol Verify terdeteksi via waitForSelector: ${sel}`);
+                            break;
+                        } catch (_) {}
+                    }
+
+                    if (!verifyBtnFound) {
+                        console.log(`[Browser] waitForSelector habis, scroll dan polling untuk Verify...`);
+                        try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) {}
+                        await page.waitForTimeout(2000);
+
+                        const verifyDeadline = Date.now() + (gtMs / 2);
+                        while (Date.now() < verifyDeadline && !verifyBtnFound) {
+                            for (const sel of verifySelectors) {
+                                try {
+                                    const isVisible = await page.locator(sel).first().isVisible();
+                                    if (isVisible) { verifyBtnFound = true; break; }
+                                } catch (e) {}
                             }
-                        } catch (e) {}
+                            if (!verifyBtnFound) await page.waitForTimeout(1000);
+                        }
+                    }
+
+                    if (verifyBtnFound) {
+                        for (const sel of verifySelectors) {
+                            try {
+                                if (await page.isVisible(sel)) {
+                                    await page.click(sel);
+                                    console.log('[Browser] ✓ Tombol Verify email diklik, menunggu modal...');
+                                    verifyClicked = true;
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
                     }
 
                     if (verifyClicked) {
-                        await page.waitForTimeout(2000);
-
                         // Click Send email button inside the modal
                         const sendEmailSelectors = [
                             'button.js-email-modal-button.dig-Button--primary',
                             'button:has-text("Send email")',
                             'button:has-text("Kirim email")',
                         ];
+
+                        let sendBtnFound = false;
                         for (const sel of sendEmailSelectors) {
                             try {
-                                if (await page.isVisible(sel)) {
-                                    await page.click(sel);
-                                    console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
-                                    emailSent = true;
-                                    break;
-                                }
-                            } catch (e) {}
+                                await page.waitForSelector(sel, { state: 'visible', timeout: 5000 });
+                                sendBtnFound = true;
+                                break;
+                            } catch (_) {}
                         }
+
+                        if (sendBtnFound) {
+                            for (const sel of sendEmailSelectors) {
+                                try {
+                                    if (await page.isVisible(sel)) {
+                                        await page.click(sel);
+                                        console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+                                        emailSent = true;
+                                        break;
+                                    }
+                                } catch (e) {}
+                            }
+                        }
+
                         if (!emailSent) {
                             console.log('[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.');
                         }
