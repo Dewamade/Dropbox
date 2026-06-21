@@ -5,6 +5,10 @@ const path = require('path');
 const fs = require('fs');
 const PROFILE_PATH = path.join(__dirname, 'firefox-profile');
 
+// Track whether Warp is already active (avoid unnecessary stop/start between cycles)
+let warpActive = false;
+
+
 // Helper function to get user input from the console
 function askQuestion(query) {
     const rl = readline.createInterface({
@@ -256,32 +260,45 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
     
     let proxyServer = null;
     if (proxyType === 'warp') {
-        const { exec } = require('child_process');
-        console.log(`\nMengaktifkan koneksi Warp+Socks5...`);
-
-        const runCmd = (cmd, timeoutMs = 8000) => new Promise((resolve) => {
-            const proc = exec(cmd, { timeout: timeoutMs }, (err) => {
-                if (err && !err.killed) {
-                    console.log(`[Warp] Perintah '${cmd}' selesai dengan peringatan: ${err.message.split('\n')[0]}`);
-                }
-                resolve();
-            });
-            // Force-resolve after timeout as a safety net
-            setTimeout(resolve, timeoutMs + 500);
-        });
-
-        try {
-            console.log(`[Warp] Menjalankan: warp-ctl stop`);
-            await runCmd('warp-ctl stop', 6000);
-            console.log(`[Warp] Menjalankan: warp-ctl start`);
-            await runCmd('warp-ctl start', 6000);
-            console.log(`[Warp] Menunggu 10 detik agar koneksi stabil...`);
-            await new Promise(r => setTimeout(r, 10000));
-            console.log(`[Warp] Koneksi Warp+Socks5 siap di 127.0.0.1:8086`);
-        } catch(e) {
-            console.log(`⚠️ Gagal menjalankan perintah warp-ctl: ${e.message}. Pastikan warp-cli sudah terinstall.`);
-        }
         proxyServer = 'socks5://127.0.0.1:8086';
+
+        if (warpActive) {
+            console.log(`\n[Warp] Koneksi Warp+Socks5 sudah aktif, menggunakan sesi yang ada di 127.0.0.1:8086`);
+        } else {
+            const { exec } = require('child_process');
+            console.log(`\nMengaktifkan koneksi Warp+Socks5...`);
+
+            const runCmd = (cmd, timeoutMs = 8000) => new Promise((resolve) => {
+                exec(cmd, { timeout: timeoutMs }, (err) => {
+                    if (err && !err.killed) {
+                        console.log(`[Warp] Perintah '${cmd}' selesai dengan peringatan: ${err.message.split('\n')[0]}`);
+                    }
+                    resolve();
+                });
+                setTimeout(resolve, timeoutMs + 500);
+            });
+
+            try {
+                console.log(`[Warp] Menjalankan: warp-ctl stop`);
+                await runCmd('warp-ctl stop', 6000);
+                console.log(`[Warp] Menjalankan: warp-ctl start`);
+                await runCmd('warp-ctl start', 6000);
+                console.log(`[Warp] Menunggu 10 detik agar koneksi stabil...`);
+                await new Promise(r => setTimeout(r, 10000));
+                console.log(`[Warp] Koneksi Warp+Socks5 siap di 127.0.0.1:8086`);
+                warpActive = true;
+            } catch(e) {
+                console.log(`⚠️ Gagal menjalankan perintah warp-ctl: ${e.message}. Pastikan warp-cli sudah terinstall.`);
+            }
+        }
+    } else {
+        // Direct connection — stop warp if it was previously active
+        if (warpActive) {
+            const { exec } = require('child_process');
+            exec('warp-ctl stop', { timeout: 5000 }, () => {});
+            warpActive = false;
+            console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Direct Connection).`);
+        }
     }
 
 
@@ -361,23 +378,28 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
 
     // Grab UA safely with timeout
     let playwrightUA = 'Unknown';
+    let serverIp = 'Unknown';
     try {
-        const uaPage = context.pages()[0] || await context.newPage();
+        const infoPage = context.pages()[0] || await context.newPage();
+        // Get UA
         playwrightUA = await Promise.race([
-            uaPage.evaluate(() => navigator.userAgent),
+            infoPage.evaluate(() => navigator.userAgent),
             new Promise((_, reject) => setTimeout(() => reject(new Error('UA timeout')), 10000))
-        ]);
+        ]).catch(() => 'Unknown');
         console.log(`[Playwright] User Agent: ${playwrightUA}`);
+
+        // Fetch IP via the browser (through the actual proxy/direct connection used by Firefox)
+        console.log(`[Playwright] Memeriksa IP publik via browser...`);
+        await infoPage.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const ipJson = await infoPage.innerText('body').catch(() => '{}');
+        try {
+            serverIp = JSON.parse(ipJson).ip || 'Unknown';
+        } catch (_) { serverIp = ipJson.trim() || 'Unknown'; }
+        console.log(`[Server] Public IP (via browser): ${serverIp}`);
     } catch(e) {
-        console.log(`[Playwright] Gagal mendapatkan User Agent: ${e.message}`);
-    }
-    
-    // Fetch public IP always via direct connection (faster, no proxy dependency for this)
-    const serverIp = await getServerPublicIp();
-    if (serverIp) {
-        console.log(`[Server] Public IP: ${serverIp}`);
-    } else {
-        console.log(`[Server] Gagal mendapatkan Public IP.`);
+        console.log(`[Playwright] Gagal mendapatkan UA/IP: ${e.message}`);
+        // Fallback: try Node.js direct IP
+        serverIp = await getServerPublicIp() || 'Unknown';
     }
 
     // Broadcast Info ke UI WebSockets
@@ -388,8 +410,8 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                 alias: alias || '-',
                 mode: proxyType === 'warp' ? 'Warp+Socks5' : 'Direct Connection',
                 email: email,
-                ip: serverIp || 'Unknown',
-                ua: playwrightUA || 'Unknown'
+                ip: serverIp,
+                ua: playwrightUA
             }
         });
     }
