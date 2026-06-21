@@ -565,6 +565,8 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         try {
             console.log(`[Navigasi] Ke: ${url} (timeout ${gtMs/1000} detik)`);
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs });
+            // Wait for network to quiet down so JS-rendered form has time to appear
+            try { await page.waitForLoadState('networkidle', { timeout: Math.min(gtMs, 20000) }); } catch (_) {}
             await checkTooManyAttempts(page);
 
         // Clear local/session storage to avoid cross-session tracking
@@ -596,24 +598,37 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             'input[id^="susi_email"]',
             'input[type="email"]',
             'input[name="email"]',
-            'input[placeholder*="Email"]'
+            'input[placeholder*="Email"]',
+            'input[placeholder*="email"]'
         ];
         
+        // First try a direct waitForSelector — more efficient than polling
         let activeEmailSelector = null;
-        const startTime = Date.now();
-        const emailDeadline = Date.now() + gtMs;
-        while (Date.now() < emailDeadline) {
-            for (const selector of emailSelectors) {
-                try {
-                    const isVisible = await page.locator(selector).first().isVisible();
-                    if (isVisible) {
-                        activeEmailSelector = selector;
-                        break;
-                    }
-                } catch (e) {}
+        for (const sel of emailSelectors) {
+            try {
+                await page.waitForSelector(sel, { state: 'visible', timeout: Math.min(gtMs, 15000) });
+                activeEmailSelector = sel;
+                console.log(`✓ Field email ditemukan via waitForSelector: ${sel}`);
+                break;
+            } catch (_) {}
+        }
+
+        // Fallback: if still not found, scroll page to trigger lazy rendering and poll
+        if (!activeEmailSelector) {
+            console.log(`[Langkah 1] waitForSelector habis, scroll dan polling...`);
+            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) {}
+            await page.waitForTimeout(2000);
+
+            const emailDeadline = Date.now() + gtMs;
+            while (Date.now() < emailDeadline && !activeEmailSelector) {
+                for (const selector of emailSelectors) {
+                    try {
+                        const isVisible = await page.locator(selector).first().isVisible();
+                        if (isVisible) { activeEmailSelector = selector; break; }
+                    } catch (e) {}
+                }
+                if (!activeEmailSelector) await page.waitForTimeout(1000);
             }
-            if (activeEmailSelector) break;
-            await page.waitForTimeout(1000); // Check every 1 second
         }
 
         if (!activeEmailSelector) {
