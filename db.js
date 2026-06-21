@@ -27,16 +27,18 @@ function saveDB(db) {
  * @param {string} email
  * @param {string} password
  * @param {string} status - 'success' | 'failed'
- * @param {string} url - target URL used
+ * @param {string} alias - Target alias
+ * @param {string} ip - Public IP used
  */
-function saveRegistration(email, password, status, url) {
+function saveRegistration(email, password, status, alias, ip) {
     const db = loadDB();
     db.registrations.push({
         id: Date.now(),
         email,
         password,
         status,
-        url: url || '',
+        alias: alias || '',
+        ip: ip || '',
         timestamp: new Date().toISOString()
     });
     saveDB(db);

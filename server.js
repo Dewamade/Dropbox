@@ -102,9 +102,9 @@ wss.on('connection', (ws) => {
                 safeSend(ws, { type: 'status', status: 'running' });
 
                 const { 
-                    url, emails: emailsRaw, emailMode, domain, count, 
+                    action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
-                    useProxy, useHeadless, passwordMode, fixedPassword 
+                    useDirect, useWarp, useHeadless, passwordMode, fixedPassword 
                 } = data;
                 
                 let emails = [];
@@ -152,36 +152,41 @@ wss.on('connection', (ws) => {
                             failedCount
                         });
 
-                        let proxy = null;
-                        if (useProxy) {
-                            console.log('Mengambil proxy baru dari Proxifly...');
-                            proxy = await getProxiflyProxy();
-                        }
-
-                        // Retry logic for proxy errors or "Too many attempts"
                         let registrationSuccess = false;
                         let attempts = 0;
                         const maxAttempts = globalRetry || 3;
-                        let currentProxy = proxy;
+                        let proxyType = 'direct';
 
                         while (!registrationSuccess && attempts < maxAttempts) {
                             if (shouldStop || activeWs !== ws) break;
                             attempts++;
-                            if (attempts > 1) {
-                                if (useProxy) {
-                                    console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} dengan proxy baru (Percobaan ke-${attempts} dari ${maxAttempts})...`);
-                                    currentProxy = await getProxiflyProxy();
+                            
+                            if (attempts === 1) {
+                                if (useDirect) {
+                                    proxyType = 'direct';
+                                } else if (useWarp) {
+                                    proxyType = 'warp';
                                 } else {
-                                    console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} (Percobaan ke-${attempts} dari ${maxAttempts})...`);
+                                    proxyType = 'direct';
                                 }
+                            } else {
+                                if (useWarp) {
+                                    proxyType = 'warp';
+                                } else {
+                                    proxyType = 'direct';
+                                }
+                            }
+
+                            if (attempts > 1) {
+                                console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} dengan mode ${proxyType.toUpperCase()} (Percobaan ke-${attempts} dari ${maxAttempts})...`);
                             }
 
                             try {
                                 currentAbortController = { shouldStop: false, abort: null };
                                 const result = await registerSingleEmail(
-                                    url, email, currentProxy, false,
+                                    url, email, proxyType, false,
                                     currentAbortController, useHeadless,
-                                    passwordMode, fixedPassword, globalTimeout, daemonTimeout
+                                    passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias
                                 );
                                 if (result && result.success) {
                                     registrationSuccess = true;
@@ -190,7 +195,7 @@ wss.on('connection', (ws) => {
                                     safeSend(ws, { type: 'email_success', email: email });
                                     // Save to history DB
                                     try {
-                                        saveRegistration(email, result.password, 'success', url);
+                                        saveRegistration(email, result.password, 'success', alias, result.ip);
                                     } catch (dbErr) {
                                         originalError('DB save error:', dbErr.message);
                                     }
@@ -202,7 +207,7 @@ wss.on('connection', (ws) => {
                                     console.log(`✓ Pendaftaran sukses untuk ${email}`);
                                     safeSend(ws, { type: 'email_success', email: email });
                                     try {
-                                        saveRegistration(email, usedPwd, 'success', url);
+                                        saveRegistration(email, usedPwd, 'success', alias, '');
                                     } catch (dbErr) {
                                         originalError('DB save error:', dbErr.message);
                                     }
@@ -210,7 +215,7 @@ wss.on('connection', (ws) => {
                                     failedCount++;
                                     console.log(`Pendaftaran untuk ${email} selesai dengan status tidak berhasil (halaman ditutup/timeout).`);
                                     try {
-                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', url);
+                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '');
                                     } catch (_) {}
                                     break;
                                 }
@@ -231,16 +236,12 @@ wss.on('connection', (ws) => {
                                 if (isTooManyAttempts && attempts < maxAttempts) {
                                     console.log(`Terdeteksi pesan "Too many attempts". Mencoba kembali...`);
                                 } else if (isConnectionError && attempts < maxAttempts) {
-                                    if (useProxy) {
-                                        console.log(`Terdeteksi masalah koneksi/timeout. Mengambil proxy baru dan mencoba kembali...`);
-                                    } else {
-                                        console.log(`Terdeteksi masalah koneksi/timeout. Mencoba kembali...`);
-                                    }
+                                    console.log(`Terdeteksi masalah koneksi/timeout. Mencoba kembali...`);
                                 } else {
                                     console.log(`Sudah mencapai batas maksimal percobaan atau kesalahan permanen. Melewati email ini.`);
                                     failedCount++;
                                     try {
-                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', url);
+                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '');
                                     } catch (_) {}
                                     break;
                                 }

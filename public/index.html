@@ -48,6 +48,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="alias-input">Alias</label>
+                    <input type="text" id="alias-input" value="Alias1" placeholder="Masukkan Alias...">
+                </div>
+
+                <div class="form-group">
                     <label for="dropbox-url">URL Dropbox / Referal</label>
                     <input type="text" id="dropbox-url" value="https://www.dropbox.com/register" placeholder="Masukkan URL Dropbox...">
                 </div>
@@ -127,8 +132,12 @@
 
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="use-proxy">
-                    <label for="use-proxy">Gunakan Rotasi Proxy Singapura (SG)</label>
+                    <input type="checkbox" id="use-direct" checked>
+                    <label for="use-direct">Direct Connection</label>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="use-warp" checked>
+                    <label for="use-warp">Warp+Socks5</label>
                 </div>
                 <div class="form-group checkbox-group">
                     <input type="checkbox" id="use-headless" checked>
@@ -212,6 +221,13 @@
                         Hapus Log
                     </button>
                 </div>
+                <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom: 0.5rem; font-size: 0.85rem; color: #a1a1aa; padding: 0 0.5rem;" id="console-info">
+                    <span>Alias: <strong style="color:#fff;" id="info-alias">-</strong></span>
+                    <span>Mode: <strong style="color:#fff;" id="info-mode">-</strong></span>
+                    <span>Email: <strong style="color:#fff;" id="info-email">-</strong></span>
+                    <span>IP: <strong style="color:#fff;" id="info-ip">-</strong></span>
+                    <span>UA: <strong style="color:#fff;" id="info-ua">-</strong></span>
+                </div>
                 <div class="log-panel" id="log-panel">
                     <div class="log-line log-info">[Info] Dashboard siap. Silakan masukkan parameter pendaftaran.</div>
                 </div>
@@ -239,10 +255,18 @@
     </div>
 
     <script>
+        const aliasInput          = document.getElementById('alias-input');
         const dropboxUrlInput     = document.getElementById('dropbox-url');
         const emailsListInput     = document.getElementById('emails-list');
-        const useProxyCheckbox    = document.getElementById('use-proxy');
+        const useDirectCheckbox   = document.getElementById('use-direct');
+        const useWarpCheckbox     = document.getElementById('use-warp');
         const useHeadlessCheckbox = document.getElementById('use-headless');
+        
+        const infoAlias = document.getElementById('info-alias');
+        const infoMode  = document.getElementById('info-mode');
+        const infoEmail = document.getElementById('info-email');
+        const infoIp    = document.getElementById('info-ip');
+        const infoUa    = document.getElementById('info-ua');
         const startBtn            = document.getElementById('start-btn');
         const stopBtn             = document.getElementById('stop-btn');
         const clearBtn            = document.getElementById('clear-btn');
@@ -307,11 +331,13 @@
         // ── LocalStorage Settings ──────────────────────────────
         function saveSettings() {
             const settings = {
+                alias: aliasInput.value,
                 url: dropboxUrlInput.value,
                 emails: emailsListInput.value,
                 domain: autoDomainInput.value,
                 count: autoCountInput.value,
-                useProxy: useProxyCheckbox.checked,
+                useDirect: useDirectCheckbox.checked,
+                useWarp: useWarpCheckbox.checked,
                 useHeadless: useHeadlessCheckbox.checked,
                 passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
                 fixedPassword: fixedPasswordInput.value,
@@ -328,6 +354,7 @@
                 const raw = localStorage.getItem('dropbox_signup_settings');
                 if (raw) {
                     const settings = JSON.parse(raw);
+                    if (settings.alias) aliasInput.value = settings.alias;
                     if (settings.url) dropboxUrlInput.value = settings.url;
                     if (settings.emails) emailsListInput.value = settings.emails;
                     if (settings.domain) autoDomainInput.value = settings.domain;
@@ -336,7 +363,8 @@
                     if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
                     if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
                     
-                    if (settings.useProxy !== undefined) useProxyCheckbox.checked = settings.useProxy;
+                    if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
+                    if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
                     if (settings.useHeadless !== undefined) useHeadlessCheckbox.checked = settings.useHeadless;
                     
                     if (settings.passwordMode === 'fixed') {
@@ -360,8 +388,8 @@
         
         // Save settings on any change
         const inputsToSave = [
-            dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
-            globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useProxyCheckbox, useHeadlessCheckbox, 
+            aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
+            globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, useHeadlessCheckbox, 
             pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
@@ -393,7 +421,8 @@
                         <td>${r.email}</td>
                         <td>${r.password}</td>
                         <td><span class="badge-${r.status}">${r.status}</span></td>
-                        <td style="font-size:0.75rem;color:#71717a;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.url}">${r.url}</td>
+                        <td style="font-size:0.75rem;color:#71717a;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.alias}">${r.alias || '-'}</td>
+                        <td style="font-size:0.75rem;color:#71717a;">${r.ip || '-'}</td>
                     </tr>`).join('');
                 historyContent.innerHTML = `
                     <table class="history-table">
@@ -403,7 +432,8 @@
                                 <th>Email</th>
                                 <th>Password</th>
                                 <th>Status</th>
-                                <th>URL</th>
+                                <th>Alias</th>
+                                <th>IP</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>
@@ -451,6 +481,12 @@
 
                 if (data.type === 'log') {
                     handleLogMessage(data.message);
+                } else if (data.type === 'info') {
+                    if (data.info.alias) infoAlias.innerText = data.info.alias;
+                    if (data.info.mode) infoMode.innerText = data.info.mode;
+                    if (data.info.email) infoEmail.innerText = data.info.email;
+                    if (data.info.ip) infoIp.innerText = data.info.ip;
+                    if (data.info.ua) infoUa.innerText = data.info.ua;
                 } else if (data.type === 'progress') {
                     updateProgress(data.current, data.total, data.status, data.successCount, data.failedCount);
                 } else if (data.type === 'status') {
@@ -515,9 +551,11 @@
         }
 
         function setFormDisabled(disabled) {
+            aliasInput.disabled = disabled;
             emailsListInput.disabled = disabled;
             dropboxUrlInput.disabled = disabled;
-            useProxyCheckbox.disabled = disabled;
+            useDirectCheckbox.disabled = disabled;
+            useWarpCheckbox.disabled = disabled;
             useHeadlessCheckbox.disabled = disabled;
             pwRandomRadio.disabled = disabled;
             pwFixedRadio.disabled = disabled;
@@ -561,9 +599,11 @@
         }
 
         startBtn.addEventListener('click', () => {
+            const alias        = aliasInput.value.trim();
             const url          = dropboxUrlInput.value.trim();
             const emails       = emailsListInput.value.trim();
-            const useProxy     = useProxyCheckbox.checked;
+            const useDirect    = useDirectCheckbox.checked;
+            const useWarp      = useWarpCheckbox.checked;
             const useHeadless  = useHeadlessCheckbox.checked;
             const passwordMode = pwFixedRadio.checked ? 'fixed' : 'random';
             const fixedPassword = fixedPasswordInput.value.trim() || 'Aa12345678*';
@@ -603,6 +643,7 @@
 
                 socket.send(JSON.stringify({
                     action: 'start',
+                    alias,
                     url,
                     emails,
                     emailMode,
@@ -611,7 +652,8 @@
                     globalTimeout,
                     globalRetry,
                     daemonTimeout,
-                    useProxy,
+                    useDirect,
+                    useWarp,
                     useHeadless,
                     passwordMode,
                     fixedPassword

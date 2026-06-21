@@ -128,91 +128,17 @@ function getRandomName() {
     return { first, last };
 }
 
-// Cache untuk menyimpan daftar proxy yang sudah diunduh (hindari fetch berulang)
-let _proxyListCache = null;
-
-// Helper function to fetch proxy list from Proxifly GitHub SG proxy list
-async function getProxiflyProxy() {
+// Helper to fetch server public IP
+function getServerPublicIp(agentOptions = {}) {
     return new Promise((resolve) => {
-        // Gunakan cache jika sudah tersedia dan masih ada proxy yang belum dipakai
-        if (_proxyListCache && _proxyListCache.length > 0) {
-            // Ambil proxy pertama dari cache (sudah di-shuffle), lalu hapus dari daftar
-            const proxyObj = _proxyListCache.shift();
-            const proxyStr = proxyObj.proxy; // format: "socks5://ip:port" atau "http://ip:port"
-            const anon = proxyObj.anonymity || 'unknown';
-            const city = proxyObj.geolocation?.city || 'SG';
-            console.log(`✓ Proxy dipilih dari cache: ${proxyStr} [${anon}, ${city}]`);
-            return resolve(proxyStr);
-        }
-
-        // Fetch segar dari GitHub raw URL
-        console.log('Mengunduh daftar proxy SG dari Proxifly GitHub...');
-        const options = {
-            hostname: 'raw.githubusercontent.com',
-            path: '/proxifly/free-proxy-list/main/proxies/countries/SG/data.json',
-            method: 'GET',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; node-https/1.0)'
-            }
-        };
-
-        const req = https.request(options, (res) => {
+        const req = https.get('https://api.ipify.org?format=json', agentOptions, (res) => {
             let data = '';
-            res.on('data', chunk => { data += chunk; });
+            res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                try {
-                    let parsed = JSON.parse(data);
-                    if (!Array.isArray(parsed) || parsed.length === 0) {
-                        console.log('⚠️  Daftar proxy SG kosong atau format tidak valid, lanjut tanpa proxy.');
-                        return resolve(null);
-                    }
-
-                    // Saring proxy: hanya mendukung SOCKS5 atau HTTP dengan HTTPS enabled
-                    parsed = parsed.filter(p => p.protocol === 'socks5' || (p.protocol === 'http' && p.https === true));
-                    console.log(`✓ Berhasil memfilter proxy. Tersisa ${parsed.length} proxy yang mendukung HTTPS.`);
-
-                    if (parsed.length === 0) {
-                        console.log('⚠️  Tidak ada proxy SG yang mendukung HTTPS, lanjut tanpa proxy.');
-                        return resolve(null);
-                    }
-
-                    // Urutkan berdasarkan score tertinggi, lalu acak untuk variasi
-                    parsed.sort((a, b) => (b.score || 0) - (a.score || 0));
-
-                    // Shuffle 50% teratas untuk variasi sambil tetap mengutamakan proxy berkualitas
-                    const topHalf = parsed.slice(0, Math.ceil(parsed.length / 2));
-                    for (let i = topHalf.length - 1; i > 0; i--) {
-                        const j = Math.floor(Math.random() * (i + 1));
-                        [topHalf[i], topHalf[j]] = [topHalf[j], topHalf[i]];
-                    }
-                    const rest = parsed.slice(Math.ceil(parsed.length / 2));
-
-                    // Simpan ke cache (top half diacak + sisanya)
-                    _proxyListCache = [...topHalf, ...rest];
-
-                    console.log(`✓ ${_proxyListCache.length} proxy SG berhasil dimuat.`);
-
-                    // Ambil proxy pertama
-                    const proxyObj = _proxyListCache.shift();
-                    const proxyStr = proxyObj.proxy;
-                    const anon = proxyObj.anonymity || 'unknown';
-                    const city = proxyObj.geolocation?.city || 'SG';
-                    console.log(`✓ Proxy dipilih: ${proxyStr} [${anon}, ${city}]`);
-                    resolve(proxyStr);
-
-                } catch (e) {
-                    console.log(`⚠️  Gagal parse daftar proxy SG: ${e.message}, lanjut tanpa proxy.`);
-                    resolve(null);
-                }
+                try { resolve(JSON.parse(data).ip); } catch (e) { resolve(null); }
             });
         });
-
-        req.on('error', (e) => {
-            console.log(`⚠️  Error mengunduh proxy SG (${e.message}), lanjut tanpa proxy.`);
-            resolve(null);
-        });
-
-        req.end();
+        req.on('error', () => resolve(null));
     });
 }
 
@@ -311,14 +237,30 @@ function clearProfileData(profilePath) {
 }
 
 // Single registration process for one email
-async function registerSingleEmail(url, email, proxyServer, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120) {
+async function registerSingleEmail(url, email, proxyType, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '') {
     const gtMs = globalTimeout * 1000;
+    
+    let proxyServer = null;
+    if (proxyType === 'warp') {
+        const { execSync } = require('child_process');
+        console.log(`\nMengaktifkan koneksi Warp+Socks5...`);
+        try {
+            execSync('warp-ctl stop', { stdio: 'ignore' });
+            execSync('warp-ctl start', { stdio: 'ignore' });
+            console.log(`Menunggu 10 detik agar koneksi Warp stabil...`);
+            await new Promise(r => setTimeout(r, 10000));
+        } catch(e) {
+            console.log(`⚠️ Gagal menjalankan perintah warp-ctl: ${e.message}. Pastikan warp-cli sudah terinstall dan tersedia di sistem.`);
+        }
+        proxyServer = 'socks5://127.0.0.1:8086';
+    }
+
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
     if (proxyServer) {
-        console.log(`Menggunakan Proxy   : ${proxyServer}`);
+        console.log(`Menggunakan Proxy   : Warp+Socks5 (${proxyServer})`);
     } else {
-        console.log(`Menggunakan Proxy   : TIDAK ADA (koneksi langsung)`);
+        console.log(`Menggunakan Proxy   : TIDAK ADA (Direct Connection)`);
     }
     console.log(`==========================================`);
 
@@ -371,26 +313,36 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
     const uaPage = context.pages()[0] || await context.newPage();
     const playwrightUA = await uaPage.evaluate(() => navigator.userAgent);
     console.log(`[Playwright] User Agent: ${playwrightUA}`);
-    // Fetch server's public IP (the machine running Playwright)
-    const getServerPublicIp = () => {
-        return new Promise((resolve) => {
-            https.get('https://api.ipify.org?format=json', (res) => {
-                let data = '';
-                res.on('data', (chunk) => (data += chunk));
-                res.on('end', () => {
-                    try {
-                        const ip = JSON.parse(data).ip;
-                        resolve(ip);
-                    } catch (_) {
-                        resolve(null);
-                    }
-                });
-            }).on('error', () => resolve(null));
-        });
-    };
-    const serverIp = await getServerPublicIp();
+    
+    let agentOptions = {};
+    if (proxyServer && proxyServer.startsWith('socks5://')) {
+        try {
+            const { SocksProxyAgent } = require('socks-proxy-agent');
+            agentOptions = { agent: new SocksProxyAgent(proxyServer) };
+        } catch(e) {
+            console.log(`⚠️ socks-proxy-agent tidak terinstall, pengecekan IP public akan dilakukan via direct connection.`);
+        }
+    }
+    
+    const serverIp = await getServerPublicIp(agentOptions);
     if (serverIp) {
         console.log(`[Server] Public IP: ${serverIp}`);
+    } else {
+        console.log(`[Server] Gagal mendapatkan Public IP.`);
+    }
+
+    // Broadcast Info ke UI WebSockets
+    if (global.safeSend && global.activeWs) {
+        global.safeSend(global.activeWs, {
+            type: 'info',
+            info: {
+                alias: alias || '-',
+                mode: proxyType === 'warp' ? 'Warp+Socks5' : 'Direct Connection',
+                email: email,
+                ip: serverIp || 'Unknown',
+                ua: playwrightUA || 'Unknown'
+            }
+        });
     }
 
     if (abortController) {
@@ -916,7 +868,7 @@ async function registerSingleEmail(url, email, proxyServer, isInit, abortControl
                 killDropbox();
             }
 
-            return { success: true, password };
+            return { success: true, password, ip: serverIp || '' };
 
 
         } else {
