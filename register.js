@@ -318,9 +318,9 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
 
             try {
                 console.log(`[Warp] Menjalankan: warp-ctl stop`);
-                await runCmd('warp-ctl stop', 6000);
-                console.log(`[Warp] Menunggu 2 detik...`);
-                await new Promise(r => setTimeout(r, 2000));
+                await runCmd('warp-ctl stop', 5000);
+                console.log(`[Warp Restart] Menunggu 5 detik...`);
+                await new Promise(r => setTimeout(r, 5000));
                 
                 console.log(`[Warp] Menjalankan: warp-ctl start`);
                 await runCmd('warp-ctl start', 6000);
@@ -632,7 +632,8 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         }
 
         if (!activeEmailSelector) {
-            throw new Error(`Tidak dapat menemukan field Email untuk Langkah 1 dalam ${globalTimeout} detik!`);
+            // Throw BROWSER_KILL_REQUIRED so server kills all browsers and performs Warp retry
+            throw new Error(`BROWSER_KILL_REQUIRED: Field email tidak muncul dalam ${globalTimeout} detik (waitForSelector + fallback scroll habis).`);
         }
 
         await humanType(activeEmailSelector, email);

@@ -166,8 +166,8 @@ wss.on('connection', (ws) => {
                             });
                             console.log(`\n[Warp Restart] Menjalankan: warp-ctl stop`);
                             await runCmd('warp-ctl stop', 6000);
-                            console.log(`[Warp Restart] Menunggu 2 detik...`);
-                            await new Promise(r => setTimeout(r, 2000));
+                            console.log(`[Warp Restart] Menunggu 5 detik...`);
+                            await new Promise(r => setTimeout(r, 5000));
                             console.log(`[Warp Restart] Menjalankan: warp-ctl start`);
                             await runCmd('warp-ctl start', 6000);
                             console.log(`[Warp Restart] Menunggu 10 detik agar koneksi stabil...`);
