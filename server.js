@@ -155,117 +155,158 @@ wss.on('connection', (ws) => {
                         });
 
                         let registrationSuccess = false;
-                        let attempts = 0;
                         const maxAttempts = globalRetry || 3;
-                        let proxyType = 'direct';
+                        const maxWarpRetries = useWarp ? maxAttempts : 0;
+                        let proxyType = useWarp ? 'warp' : 'direct';
 
-                        while (!registrationSuccess && attempts < maxAttempts) {
+                        // Warp restart helper
+                        const runWarpRestart = async () => {
+                            const { exec } = require('child_process');
+                            const runCmd = (cmd, tms = 8000) => new Promise(resolve => {
+                                exec(cmd, { timeout: tms }, () => resolve());
+                                setTimeout(resolve, tms + 500);
+                            });
+                            console.log(`\n[Warp Restart] Menjalankan: warp-ctl stop`);
+                            await runCmd('warp-ctl stop', 6000);
+                            console.log(`[Warp Restart] Menunggu 2 detik...`);
+                            await new Promise(r => setTimeout(r, 2000));
+                            console.log(`[Warp Restart] Menjalankan: warp-ctl start`);
+                            await runCmd('warp-ctl start', 6000);
+                            console.log(`[Warp Restart] Menunggu 10 detik agar koneksi stabil...`);
+                            await new Promise(r => setTimeout(r, 10000));
+                            // Force warp state to reset so register.js will re-init
+                            const regMod = require('./register.js');
+                        };
+
+                        // \u2550\u2550 OUTER WARP RETRY LOOP \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+                        let warpRetryCount = 0;
+                        let outerDone = false;
+
+                        while (!outerDone) {
                             if (shouldStop || activeWs !== ws) break;
-                            attempts++;
-                            
-                            if (attempts === 1) {
-                                if (useDirect) {
-                                    proxyType = 'direct';
-                                } else if (useWarp) {
-                                    proxyType = 'warp';
-                                } else {
-                                    proxyType = 'direct';
-                                }
-                            } else {
-                                if (useWarp) {
-                                    proxyType = 'warp';
-                                } else {
-                                    proxyType = 'direct';
-                                }
-                            }
 
-                            if (attempts > 1) {
-                                console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} dengan mode ${proxyType.toUpperCase()} (Percobaan ke-${attempts} dari ${maxAttempts})...`);
-                            }
+                            // \u2550\u2550 INNER BROWSER RETRY LOOP \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+                            let attempts = 0;
 
-                            try {
-                                currentAbortController = { shouldStop: false, abort: null };
-                                const result = await registerSingleEmail(
-                                    url, email, proxyType, false,
-                                    currentAbortController, useHeadless,
-                                    passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, attempts > 1
-                                );
-                                if (result && result.success) {
-                                    registrationSuccess = true;
-                                    const finalStatus = result.status || 'success';
-                                    if (finalStatus === 'VERIF') {
-                                        verifCount++;
-                                    } else {
+                            while (!registrationSuccess && attempts < maxAttempts) {
+                                if (shouldStop || activeWs !== ws) break;
+                                attempts++;
+
+                                const isWarpRetry = warpRetryCount > 0;
+                                const isBrowserRetry = attempts > 1;
+
+                                if (isBrowserRetry || isWarpRetry) {
+                                    console.log(`\n[Mencoba Kembali] Browser Attempt ${attempts}/${maxAttempts}${isWarpRetry ? ` (Warp Restart ke-${warpRetryCount}/${maxWarpRetries})` : ''} — ${email}`);
+                                }
+
+                                try {
+                                    currentAbortController = { shouldStop: false, abort: null };
+                                    const result = await registerSingleEmail(
+                                        url, email, proxyType, false,
+                                        currentAbortController, useHeadless,
+                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isBrowserRetry || isWarpRetry
+                                    );
+
+                                    if (result && result.success) {
+                                        registrationSuccess = true;
+                                        outerDone = true;
+                                        const finalStatus = result.status || 'success';
+                                        if (finalStatus === 'VERIF') {
+                                            verifCount++;
+                                        } else {
+                                            successCount++;
+                                        }
+                                        console.log(`\u2713 Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
+                                        safeSend(ws, { type: 'email_success', email: email });
+                                        try {
+                                            saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua);
+                                        } catch (dbErr) {
+                                            originalError('DB save error:', dbErr.message);
+                                        }
+                                    } else if (result === true) {
+                                        // backward compat
+                                        registrationSuccess = true;
+                                        outerDone = true;
                                         successCount++;
+                                        const usedPwd = passwordMode === 'fixed' ? fixedPassword : '(random)';
+                                        console.log(`\u2713 Pendaftaran sukses untuk ${email}`);
+                                        safeSend(ws, { type: 'email_success', email: email });
+                                        try {
+                                            saveRegistration(email, usedPwd, 'success', alias, '', '');
+                                        } catch (dbErr) {
+                                            originalError('DB save error:', dbErr.message);
+                                        }
+                                    } else {
+                                        // Result false/null — treat as failure needing retry
+                                        console.log(`\u26a0\ufe0f Pendaftaran untuk ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
+                                        if (global.killAllBrowsers) global.killAllBrowsers();
+                                        if (global.killAllBox64) global.killAllBox64();
                                     }
-                                    console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
-                                    safeSend(ws, { type: 'email_success', email: email });
-                                    // Save to history DB
-                                    try {
-                                        saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua);
-                                    } catch (dbErr) {
-                                        originalError('DB save error:', dbErr.message);
+
+                                } catch (error) {
+                                    if (shouldStop) { outerDone = true; break; }
+
+                                    const errMsg = (error.message || '');
+                                    const needsKill = errMsg.startsWith('BROWSER_KILL_REQUIRED') ||
+                                        errMsg.toLowerCase().includes('timeout') ||
+                                        errMsg.toLowerCase().includes('net::err') ||
+                                        errMsg.toLowerCase().includes('connection') ||
+                                        errMsg.toLowerCase().includes('proxy') ||
+                                        errMsg.toLowerCase().includes('ns_error');
+
+                                    console.log(`\n\u274c Error attempt ${attempts}/${maxAttempts}: ${errMsg.replace('BROWSER_KILL_REQUIRED: ', '').split('\\n')[0]}`);
+
+                                    // Always kill browsers after any failure
+                                    if (global.killAllBrowsers) global.killAllBrowsers();
+                                    if (global.killAllBox64) global.killAllBox64();
+
+                                    if (attempts < maxAttempts) {
+                                        console.log(`\ud83d\udd04 Kill browser selesai, meluncurkan browser baru untuk percobaan ${attempts + 1}/${maxAttempts}...`);
+                                        await new Promise(r => setTimeout(r, 2000));
+                                        // continue inner loop
+                                    } else {
+                                        console.log(`\ud83d\uded1 Batas ${maxAttempts} percobaan browser tercapai untuk ${email}.`);
+                                        // Fall through to warp retry check below
                                     }
-                                } else if (result === true) {
-                                    // backward compat: result is plain boolean true
-                                    registrationSuccess = true;
-                                    successCount++;
-                                    const usedPwd = passwordMode === 'fixed' ? fixedPassword : '(random)';
-                                    console.log(`✓ Pendaftaran sukses untuk ${email}`);
-                                    safeSend(ws, { type: 'email_success', email: email });
-                                    try {
-                                        saveRegistration(email, usedPwd, 'success', alias, '', '');
-                                    } catch (dbErr) {
-                                        originalError('DB save error:', dbErr.message);
-                                    }
-                                } else {
-                                    failedCount++;
-                                    console.log(`Pendaftaran untuk ${email} selesai dengan status tidak berhasil (halaman ditutup/timeout).`);
-                                    try {
-                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '');
-                                    } catch (_) {}
-                                    break;
-                                }
-                            } catch (error) {
-                                if (shouldStop) {
-                                    console.log(`Pendaftaran untuk ${email} dihentikan.`);
-                                    break;
-                                }
-                                console.log(`\n⚠️ Terjadi kesalahan saat registrasi: ${error.message}`);
 
-                                const errorMsg = (error.message || '').toLowerCase();
-                                const isConnectionError = [
-                                    'net::err', 'timeout', 'connection', 'proxy', 'tunnel'
-                                ].some(keyword => errorMsg.includes(keyword));
-
-                                const isTooManyAttempts = errorMsg.includes('too many attempts') || errorMsg.includes('please try later') || errorMsg.includes('terlalu banyak percobaan') || errorMsg.includes('coba lagi nanti');
-
-                                if (isTooManyAttempts && attempts < maxAttempts) {
-                                    console.log(`Terdeteksi pesan "Too many attempts". Mencoba kembali...`);
-                                } else if (isConnectionError && attempts < maxAttempts) {
-                                    console.log(`Terdeteksi masalah koneksi/timeout. Mencoba kembali...`);
-                                } else {
-                                    console.log(`Sudah mencapai batas maksimal percobaan atau kesalahan permanen. Melewati email ini.`);
-                                    failedCount++;
-                                    try {
-                                        saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '');
-                                    } catch (_) {}
-                                    break;
+                                } finally {
+                                    currentAbortController = null;
                                 }
-                            } finally {
-                                currentAbortController = null;
+                            } // end inner browser loop
+
+                            if (registrationSuccess) break; // done
+                            if (shouldStop || activeWs !== ws) break;
+
+                            // \u2550\u2550 Check warp retry \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+                            if (useWarp && warpRetryCount < maxWarpRetries) {
+                                warpRetryCount++;
+                                console.log(`\n\ud83d\udd01 [Warp Retry ${warpRetryCount}/${maxWarpRetries}] Semua percobaan browser habis. Restart Warp dan coba ulang...`);
+                                try { await runWarpRestart(); } catch (e) {
+                                    console.log(`\u26a0\ufe0f Gagal restart Warp: ${e.message}`);
+                                }
+                                // Reset warp state so register.js will re-init on next attempt
+                                const regModule = require('./register.js');
+                                // Continue outer loop
+                            } else {
+                                // \u2550\u2550 Total failure \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+                                console.log(`\n\u274c GAGAL TOTAL: Semua percobaan browser${useWarp ? ` dan Warp Restart (${maxWarpRetries}x)` : ''} untuk ${email} sudah habis.`);
+                                console.log(`\ud83d\udee0\ufe0f Kill paksa semua proses browser dan box64...`);
+                                if (global.killAllBrowsers) global.killAllBrowsers();
+                                if (global.killAllBox64) global.killAllBox64();
+
+                                failedCount++;
+                                try {
+                                    saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '');
+                                } catch (_) {}
+
+                                console.log(`\ud83d\udead Menghentikan semua proses pendaftaran dan masuk ke mode IDLE.`);
+                                shouldStop = true;  // Stop entire batch → idle
+                                outerDone = true;
                             }
-                        }
 
-                        // Anti-tracking delay
-                        if (i < emails.length - 1 && activeWs === ws && !shouldStop) {
-                            const delay = Math.floor(Math.random() * 10000) + 5000;
-                            console.log(`Jeda anti-tracking: Menunggu selama ${(delay/1000).toFixed(1)} detik sebelum memproses email berikutnya...`);
-                            const startTime = Date.now();
-                            while (Date.now() - startTime < delay && !shouldStop && activeWs === ws) {
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                            }
-                        }
+                        } // end outer warp loop
+
+
                     }
 
                     if (activeWs === ws) {

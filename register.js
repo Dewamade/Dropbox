@@ -8,6 +8,23 @@ const PROFILE_PATH = path.join(__dirname, 'firefox-profile');
 // Track whether Warp is already active (avoid unnecessary stop/start between cycles)
 let warpActive = false;
 
+// ── Kill helpers (accessible from server.js via global) ─────────────────────
+function killAllBrowsers() {
+    try { require('child_process').execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) {}
+    try { require('child_process').execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) {}
+    console.log('[Kill] Semua proses Firefox/Playwright dihentikan paksa.');
+}
+
+function killAllBox64() {
+    try { require('child_process').execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) {}
+    try { require('child_process').execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) {}
+    console.log('[Kill] Semua proses box64/dropboxd dihentikan paksa.');
+}
+
+// Expose globally so server.js can call them
+global.killAllBrowsers = killAllBrowsers;
+global.killAllBox64 = killAllBox64;
+
 
 // Helper function to get user input from the console
 function askQuestion(query) {
@@ -421,7 +438,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         // Navigate to a real page first so the UA Switcher extension content script can inject.
         // Reading navigator.userAgent on about:blank returns the raw browser UA before extension activates.
         try {
-            console.log(`[Playwright] Navigasi ke ipify untuk cek IP dan UA (via ekstensi)...`);
+            console.log(`[Playwright] Navigasi ke ipify untuk cek IP dan UA (timeout ${globalTimeout} detik)...`);
             await infoPage.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: gtMs });
 
             // Small wait for extension content scripts to settle
@@ -546,7 +563,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         }
         
         try {
-            console.log(`Navigasi ke URL: ${url}...`);
+            console.log(`[Navigasi] Ke: ${url} (timeout ${gtMs/1000} detik)`);
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs });
             await checkTooManyAttempts(page);
 
@@ -648,7 +665,8 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         // Wait for Step 2 fields to load and be visible
         await page.waitForTimeout(2000);
         await checkTooManyAttempts(page);
-        console.log("\n[Langkah 2] Menunggu form detail nama dan password muncul...");
+        const step2Timeout = Math.round(globalTimeout / 2);
+        console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout ${step2Timeout} detik)...`);
         const firstNameSelector = 'input[id^="fname"], input[name="fname"]';
         try {
             await page.waitForSelector(firstNameSelector, { state: 'visible', timeout: gtMs / 2 });
@@ -791,6 +809,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         console.log("Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...");
 
         // Loop to check if the user has successfully registered
+        console.log(`\n[Langkah 3] Menunggu redirect URL sukses pendaftaran (timeout ${globalTimeout} detik)...`);
         const regDeadline = Date.now() + gtMs;
         while (Date.now() < regDeadline) {
             await page.waitForTimeout(2000);
@@ -811,15 +830,31 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         }
 
         } catch (innerError) {
-            if (innerError.message === "NO_URL_CHANGE") {
-                // Jangan reload tab jika URL stuck di akhir (teruskan ke log atas agar browser di-restart)
-                throw new Error(`Timeout: URL tidak berubah setelah ${globalTimeout} detik.`);
+            const errMsg = (innerError.message || '').toLowerCase();
+
+            // ── NO_URL_CHANGE: browser must be killed and restarted ──────────
+            if (innerError.message === 'NO_URL_CHANGE') {
+                throw new Error(`BROWSER_KILL_REQUIRED: URL tidak berubah setelah ${globalTimeout} detik.`);
             }
-            console.log(`\n⚠️ Error pada proses pendaftaran tab (Percobaan ${tabAttempt}): ${innerError.message}`);
+
+            // ── Hard browser errors: session gone, context closed, etc ───────
+            const isBrowserCrash = errMsg.includes('target closed') || errMsg.includes('context') ||
+                                   errMsg.includes('ns_error') || errMsg.includes('session') ||
+                                   errMsg.includes('connection refused') || errMsg.includes('crashed');
+            if (isBrowserCrash) {
+                console.log(`\n💥 Error berat browser (Percobaan ${tabAttempt}): ${innerError.message.split('\n')[0]}`);
+                throw new Error(`BROWSER_KILL_REQUIRED: ${innerError.message}`);
+            }
+
+            // ── Timeout / soft error: reload tab, retry step ─────────────────
+            console.log(`\n⚠️ Timeout/error ringan (Percobaan ${tabAttempt}/${maxTabAttempts}): ${innerError.message.split('\n')[0]}`);
             if (tabAttempt >= maxTabAttempts) {
-                throw innerError;
+                throw new Error(`BROWSER_KILL_REQUIRED: Batas ${maxTabAttempts} percobaan tab tercapai. ${innerError.message}`);
             }
-            console.log(`Memuat ulang tab dan mengulangi proses pendaftaran...`);
+            console.log(`[Tab Reload] Memuat ulang URL dan mengulangi pendaftaran (timeout ${globalTimeout} detik)...`);
+            try { await page.reload({ waitUntil: 'domcontentloaded', timeout: gtMs }); } catch (_) {
+                try { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs }); } catch (__) {}
+            }
             await page.waitForTimeout(2000);
         }
     }
@@ -845,6 +880,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
 
                 try {
                     // Direct navigation to settings bypasses the need to click the account menu
+                    console.log(`[Navigasi] Ke halaman Settings/Account (timeout ${globalTimeout} detik)...`);
                     await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
                     await page.waitForTimeout(4000);
                     
@@ -971,12 +1007,12 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                 });
 
                 // ── Navigate browser to CLI link ──────────────────────────────────
-                console.log('[Browser] Navigasi ke URL CLI Link...');
+                console.log(`[Browser] Navigasi ke URL CLI Link (timeout ${globalTimeout} detik)...`);
                 await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
                 await page.waitForTimeout(2000);
 
                 // ── Wait for Connect button and click it ──────────────────────────
-                console.log('[Browser] Menunggu tombol Connect...');
+                console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout * 2} detik)...`);
                 const connectSelectors = [
                     'button:has-text("Connect")',
                     'button[aria-label="Connect"]',
@@ -1046,9 +1082,10 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         }
         // Always close the browser context to clear cookies, session data, and anti-fingerprinting details before the next iteration
         console.log(`Menutup browser context untuk ${email}...`);
-        try {
-            await context.close();
-        } catch (e) {}
+        try { await context.close(); } catch (e) {}
+        // Force-kill any lingering Firefox/playwright + box64 processes
+        killAllBrowsers();
+        killAllBox64();
     }
 }
 
@@ -1166,12 +1203,7 @@ async function run() {
             }
         }
         
-        // Anti-tracking delay: Add a random delay between 5 to 15 seconds between registrations
-        if (i < emails.length - 1) {
-            const delay = Math.floor(Math.random() * 10000) + 5000;
-            console.log(`Jeda anti-tracking: Menunggu selama ${(delay/1000).toFixed(1)} detik sebelum memproses email berikutnya...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
+
     }
 
     console.log("\nSemua email dalam daftar telah diproses.");
