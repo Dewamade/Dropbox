@@ -444,22 +444,15 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
     let context;
     let browserObj = null;
 
-    const topUserAgents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/122.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
-        'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36'
-    ];
+    const topUserAgents = require('top-user-agents');
+    // Filter out 'NT 6' to avoid triggering our own Bad User Agent check
+    const validUas = topUserAgents.filter(ua => !ua.includes('NT 6'));
 
     const launchFirefoxMode = async () => {
         if (uaMode === 'extension') {
             return await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
         } else {
-            const randomUa = topUserAgents[Math.floor(Math.random() * topUserAgents.length)];
+            const randomUa = validUas[Math.floor(Math.random() * validUas.length)];
             contextOptions.userAgent = randomUa;
             browserObj = await firefox.launch({
                 headless: contextOptions.headless,
