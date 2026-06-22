@@ -30,8 +30,10 @@ function saveDB(db) {
  * @param {string} alias - Target alias
  * @param {string} ip - Public IP used
  * @param {string} ua - User Agent used
+ * @param {number} timeouts - Number of timeouts
+ * @param {number} errors - Number of errors
  */
-function saveRegistration(email, password, status, alias, ip, ua) {
+function saveRegistration(email, password, status, alias, ip, ua, timeouts = 0, errors = 0) {
     const db = loadDB();
     db.registrations.push({
         id: Date.now(),
@@ -41,6 +43,8 @@ function saveRegistration(email, password, status, alias, ip, ua) {
         alias: alias || '',
         ip: ip || '',
         ua: ua || '',
+        timeouts: timeouts || 0,
+        errors: errors || 0,
         timestamp: new Date().toISOString()
     });
     saveDB(db);

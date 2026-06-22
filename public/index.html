@@ -146,17 +146,12 @@
                 </div>
 
 
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="use-direct" checked>
-                    <label for="use-direct">Direct Connection</label>
-                </div>
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="use-warp" checked>
-                    <label for="use-warp">Warp+Socks5</label>
-                </div>
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="use-headless" checked>
-                    <label for="use-headless">Jalankan Tanpa Jendela (Headless Mode)</label>
+                <div class="form-group" style="gap: 0.4rem; grid-column: 1 / -1;" id="connection-type-group">
+                    <label>Koneksi (Bisa pilih lebih dari satu)</label>
+                    <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.2rem;">
+                        <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-direct" checked> Direct Connection</label>
+                        <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-warp" checked> Warp+Socks5</label>
+                    </div>
                 </div>
                 <div class="btn-group">
                     <button class="btn" id="start-btn">
@@ -246,6 +241,8 @@
                     <span>Email: <strong style="color:#fff;" id="info-email">-</strong></span>
                     <span>IP: <strong style="color:#fff;" id="info-ip">-</strong></span>
                     <span>UA: <strong style="color:#fff;" id="info-ua">-</strong></span>
+                    <span>Timeout: <strong style="color:#fff;" id="info-timeout">0</strong></span>
+                    <span>Error: <strong style="color:#fff;" id="info-error">0</strong></span>
                 </div>
                 <div class="log-panel" id="log-panel">
                     <div class="log-line log-info">[Info] Dashboard siap. Silakan masukkan parameter pendaftaran.</div>
@@ -292,7 +289,6 @@
         
         const useDirectCheckbox   = document.getElementById('use-direct');
         const useWarpCheckbox     = document.getElementById('use-warp');
-        const useHeadlessCheckbox = document.getElementById('use-headless');
         
         const pwRandomRadio       = document.getElementById('pw-random');
         const pwFixedRadio        = document.getElementById('pw-fixed');
@@ -307,6 +303,8 @@
         const infoEmail = document.getElementById('info-email');
         const infoIp    = document.getElementById('info-ip');
         const infoUa    = document.getElementById('info-ua');
+        const infoTimeout = document.getElementById('info-timeout');
+        const infoError   = document.getElementById('info-error');
         
         const startBtn            = document.getElementById('start-btn');
         const stopBtn             = document.getElementById('stop-btn');
@@ -367,7 +365,6 @@
                 count: autoCountInput.value,
                 useDirect: useDirectCheckbox.checked,
                 useWarp: useWarpCheckbox.checked,
-                useHeadless: useHeadlessCheckbox.checked,
                 passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
                 fixedPassword: fixedPasswordInput.value,
                 emailMode: emAutoRadio.checked ? 'auto' : 'manual',
@@ -404,7 +401,6 @@
                     
                     if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
                     if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
-                    if (settings.useHeadless !== undefined) useHeadlessCheckbox.checked = settings.useHeadless;
                     
                     if (settings.passwordMode === 'fixed') {
                         pwFixedRadio.checked = true;
@@ -428,7 +424,7 @@
         // Save settings on any change
         const inputsToSave = [
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
-            globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, useHeadlessCheckbox, 
+            globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
             pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
@@ -462,6 +458,8 @@
                         <td>${r.password}</td>
                         <td><span class="badge-${r.status}">${r.status}</span></td>
                         <td style="font-size:0.75rem;color:#71717a;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.alias}">${r.alias || '-'}</td>
+                        <td style="color:#fbbf24;">${r.timeouts || 0}</td>
+                        <td style="color:#f87171;">${r.errors || 0}</td>
                         <td style="font-size:0.72rem;color:#a1a1aa;white-space:nowrap;">${r.ua || '-'}</td>
                     </tr>`).join('');
                 
@@ -514,6 +512,8 @@
                                 <th>Password</th>
                                 <th>Status</th>
                                 <th>Alias</th>
+                                <th>Timeouts</th>
+                                <th>Errors</th>
                                 <th>User Agent</th>
                             </tr>
                         </thead>
@@ -568,6 +568,9 @@
                     if (data.info.email) infoEmail.innerText = data.info.email;
                     if (data.info.ip) infoIp.innerText = data.info.ip;
                     if (data.info.ua) infoUa.innerText = data.info.ua;
+                } else if (data.type === 'email_stats') {
+                    if (data.timeouts !== undefined) infoTimeout.innerText = data.timeouts;
+                    if (data.errors !== undefined) infoError.innerText = data.errors;
                 } else if (data.type === 'progress') {
                     updateProgress(data.current, data.total, data.status, data.successCount, data.failedCount, data.verifCount);
                 } else if (data.type === 'status') {
@@ -638,7 +641,6 @@
             dropboxUrlInput.disabled = disabled;
             useDirectCheckbox.disabled = disabled;
             useWarpCheckbox.disabled = disabled;
-            useHeadlessCheckbox.disabled = disabled;
             pwRandomRadio.disabled = disabled;
             pwFixedRadio.disabled = disabled;
             fixedPasswordInput.disabled = disabled;
@@ -686,7 +688,7 @@
             const emails       = emailsListInput.value.trim();
             const useDirect    = useDirectCheckbox.checked;
             const useWarp      = useWarpCheckbox.checked;
-            const useHeadless  = useHeadlessCheckbox.checked;
+            const useHeadless  = true;
             const passwordMode = pwFixedRadio.checked ? 'fixed' : 'random';
             const fixedPassword = fixedPasswordInput.value.trim() || 'Aa12345678*';
             const uaMode       = document.getElementById('ua-mode').value;

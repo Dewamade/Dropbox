@@ -144,6 +144,11 @@ wss.on('connection', (ws) => {
                         }
                         processedCount = i + 1;
                         const email = emails[i];
+                        let emailTimeouts = 0;
+                        let emailErrors = 0;
+                        
+                        // Send initial stats to UI for the new email
+                        safeSend(ws, { type: 'email_stats', timeouts: emailTimeouts, errors: emailErrors });
                         safeSend(ws, {
                             type: 'progress',
                             current: i + 1,
@@ -239,7 +244,7 @@ wss.on('connection', (ws) => {
                                         console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
                                         safeSend(ws, { type: 'email_success', email: email });
                                         try {
-                                            saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua);
+                                            saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua, emailTimeouts, emailErrors);
                                         } catch (dbErr) {
                                             originalError('DB save error:', dbErr.message);
                                         }
@@ -250,7 +255,7 @@ wss.on('connection', (ws) => {
                                         const usedPwd = passwordMode === 'fixed' ? fixedPassword : '(random)';
                                         console.log(`✓ Pendaftaran sukses untuk ${email}`);
                                         safeSend(ws, { type: 'email_success', email: email });
-                                        try { saveRegistration(email, usedPwd, 'success', alias, '', ''); } catch (_) {}
+                                        try { saveRegistration(email, usedPwd, 'success', alias, '', '', emailTimeouts, emailErrors); } catch (_) {}
                                     } else {
                                         console.log(`⚠️ Pendaftaran ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
                                         if (global.killAllBrowsers) global.killAllBrowsers();
@@ -260,6 +265,14 @@ wss.on('connection', (ws) => {
                                 } catch (error) {
                                     if (shouldStop) break;
                                     const errMsg = (error.message || '');
+                                    
+                                    if (errMsg.toLowerCase().includes('timeout')) {
+                                        emailTimeouts++;
+                                    } else {
+                                        emailErrors++;
+                                    }
+                                    safeSend(ws, { type: 'email_stats', timeouts: emailTimeouts, errors: emailErrors });
+                                    
                                     console.log(`\n❌ Error attempt ${attempts}/${maxAttempts} [${phaseLabel}]: ${errMsg.replace('BROWSER_KILL_REQUIRED: ', '').split('\n')[0]}`);
                                     // Always kill browsers after any failure
                                     if (global.killAllBrowsers) global.killAllBrowsers();
@@ -341,7 +354,7 @@ wss.on('connection', (ws) => {
 
                             failedCount++;
                             try {
-                                saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '');
+                                saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '', emailTimeouts, emailErrors);
                             } catch (_) {}
 
                             console.log(`🚫 Menghentikan semua proses pendaftaran dan masuk ke mode IDLE.`);
