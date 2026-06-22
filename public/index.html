@@ -274,11 +274,18 @@
     </div>
 
     <script>
+        // DOM Elements
         const aliasInput          = document.getElementById('alias-input');
         const dropboxUrlInput     = document.getElementById('dropbox-url');
         const emailsListInput     = document.getElementById('emails-list');
+        
+        const emManualRadio        = document.getElementById('em-manual');
+        const emAutoRadio          = document.getElementById('em-auto');
+        const manualEmailWrap      = document.getElementById('manual-email-wrap');
+        const autoEmailWrap        = document.getElementById('auto-email-wrap');
         const autoDomainInput     = document.getElementById('auto-domain');
         const autoCountInput      = document.getElementById('auto-count');
+        
         const globalTimeoutInput  = document.getElementById('global-timeout');
         const globalRetryInput    = document.getElementById('global-retry');
         const daemonTimeoutInput  = document.getElementById('daemon-timeout');
@@ -289,8 +296,8 @@
         
         const pwRandomRadio       = document.getElementById('pw-random');
         const pwFixedRadio        = document.getElementById('pw-fixed');
-        const fixedPasswordInput  = document.getElementById('fixed-password-input');
         const fixedPasswordWrap   = document.getElementById('fixed-password-wrap');
+        const fixedPasswordInput  = document.getElementById('fixed-password-input');
 
         const uaModeSelect        = document.getElementById('ua-mode');
         const deviceTypeGroup     = document.getElementById('device-type-group');
@@ -300,9 +307,11 @@
         const infoEmail = document.getElementById('info-email');
         const infoIp    = document.getElementById('info-ip');
         const infoUa    = document.getElementById('info-ua');
+        
         const startBtn            = document.getElementById('start-btn');
         const stopBtn             = document.getElementById('stop-btn');
         const clearBtn            = document.getElementById('clear-btn');
+        
         const logPanel            = document.getElementById('log-panel');
         const progressIndicator   = document.getElementById('progress-indicator');
         const progressPercentage  = document.getElementById('progress-percentage');
@@ -311,27 +320,6 @@
         const progressDetail      = document.getElementById('progress-detail');
         const successCountEl      = document.getElementById('stat-success-count');
         const failedCountEl       = document.getElementById('stat-failed-count');
-
-        // Password mode
-        const pwRandomRadio        = document.getElementById('pw-random');
-        const pwFixedRadio         = document.getElementById('pw-fixed');
-        const fixedPasswordWrap    = document.getElementById('fixed-password-wrap');
-        const fixedPasswordInput   = document.getElementById('fixed-password-input');
-
-        // Email Source mode
-        const emManualRadio        = document.getElementById('em-manual');
-        const emAutoRadio          = document.getElementById('em-auto');
-        const manualEmailWrap      = document.getElementById('manual-email-wrap');
-        const autoEmailWrap        = document.getElementById('auto-email-wrap');
-        const autoDomainInput      = document.getElementById('auto-domain');
-        const autoCountInput       = document.getElementById('auto-count');
-
-        // Advanced Settings
-        const globalTimeoutInput   = document.getElementById('global-timeout');
-        const globalRetryInput     = document.getElementById('global-retry');
-        const daemonTimeoutInput   = document.getElementById('daemon-timeout');
-        const uaModeSelect         = document.getElementById('ua-mode');
-        const deviceTypeGroup      = document.getElementById('device-type-group');
 
         // History modal
         const historyBtn           = document.getElementById('history-btn');
