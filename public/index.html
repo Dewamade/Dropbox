@@ -544,8 +544,12 @@
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}`;
         let socket;
+        let pingInterval;
+        let lastPongReceived = Date.now();
 
         function connectWebSocket() {
+            if (socket && socket.readyState === WebSocket.CONNECTING) return;
+            
             socket = new WebSocket(wsUrl);
 
             socket.onopen = () => {
@@ -555,12 +559,47 @@
                     .then(res => res.json())
                     .then(data => appendLog('log-info', `[Info] Public IP (client): ${data.ip}`))
                     .catch(() => {});
+                    
+                lastPongReceived = Date.now();
+                if (pingInterval) clearInterval(pingInterval);
+                pingInterval = setInterval(() => {
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({ action: 'ping' }));
+                        if (Date.now() - lastPongReceived > 15000) {
+                            appendLog('log-warn', '[System] Koneksi terputus (Ping timeout). Reconnecting...');
+                            socket.close();
+                        }
+                    }
+                }, 5000);
             };
 
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
 
-                if (data.type === 'log') {
+                if (data.type === 'pong') {
+                    lastPongReceived = Date.now();
+                } else if (data.type === 'sync_state') {
+                    if (data.state) {
+                        if (data.state.logs && data.state.logs.length > 0) {
+                            logPanel.innerHTML = '';
+                            data.state.logs.forEach(log => handleLogMessage(log.message));
+                        }
+                        if (data.state.progress && data.state.progress.total > 0) {
+                            updateProgress(data.state.progress.current, data.state.progress.total, data.state.progress.status, data.state.progress.successCount, data.state.progress.failedCount, data.state.progress.verifCount);
+                        }
+                        if (data.state.info) {
+                            if (data.state.info.alias) infoAlias.innerText = data.state.info.alias;
+                            if (data.state.info.mode) infoMode.innerText = data.state.info.mode;
+                            if (data.state.info.email) infoEmail.innerText = data.state.info.email;
+                            if (data.state.info.ip) infoIp.innerText = data.state.info.ip;
+                            if (data.state.info.ua) infoUa.innerText = data.state.info.ua;
+                        }
+                        if (data.state.stats) {
+                            if (data.state.stats.timeouts !== undefined) infoTimeout.innerText = data.state.stats.timeouts;
+                            if (data.state.stats.errors !== undefined) infoError.innerText = data.state.stats.errors;
+                        }
+                    }
+                } else if (data.type === 'log') {
                     handleLogMessage(data.message);
                 } else if (data.type === 'info') {
                     if (data.info.alias) infoAlias.innerText = data.info.alias;
@@ -581,12 +620,25 @@
             };
 
             socket.onclose = () => {
+                if (pingInterval) clearInterval(pingInterval);
                 appendLog('log-err', '[System] Koneksi WebSockets terputus. Mencoba menghubungkan kembali...');
                 setTimeout(connectWebSocket, 3000);
             };
         }
 
         connectWebSocket();
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                if (!socket || socket.readyState !== WebSocket.OPEN) {
+                    appendLog('log-info', '[System] Layar aktif kembali, merestart koneksi...');
+                    if (socket && socket.readyState !== WebSocket.CLOSED) socket.close();
+                    else connectWebSocket();
+                } else {
+                    socket.send(JSON.stringify({ action: 'ping' }));
+                }
+            }
+        });
 
         function removeEmailFromUIList(successEmail) {
             const rawText = emailsListInput.value;

@@ -29,7 +29,25 @@ const originalLog = console.log;
 const originalError = console.error;
 const originalWarn = console.warn;
 
+let globalState = {
+    progress: { current: 0, total: 0, status: 'Standby', successCount: 0, failedCount: 0, verifCount: 0 },
+    stats: { timeouts: 0, errors: 0 },
+    info: { alias: '-', mode: '-', email: '-', ip: '-', ua: '-' },
+    logs: []
+};
+
 function safeSend(socket, payload) {
+    if (payload.type === 'log') {
+        globalState.logs.push(payload);
+        if (globalState.logs.length > 100) globalState.logs.shift();
+    } else if (payload.type === 'progress') {
+        globalState.progress = { ...globalState.progress, ...payload };
+    } else if (payload.type === 'info') {
+        globalState.info = { ...globalState.info, ...payload.info };
+    } else if (payload.type === 'email_stats') {
+        globalState.stats = { ...globalState.stats, ...payload };
+    }
+
     if (socket && socket.readyState === WebSocket.OPEN) {
         try {
             socket.send(JSON.stringify(payload));
@@ -68,12 +86,22 @@ let currentAbortController = null;
 wss.on('connection', (ws) => {
     originalLog('Client connected via WebSocket');
 
-    // Send current status
+    // Send current status and full sync state
     safeSend(ws, { type: 'status', status: isRunning ? 'running' : 'idle' });
+    safeSend(ws, {
+        type: 'sync_state',
+        isRunning,
+        state: globalState
+    });
 
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
+
+            if (data.action === 'ping') {
+                safeSend(ws, { type: 'pong' });
+                return;
+            }
 
             if (data.action === 'stop') {
                 if (!isRunning) return;
@@ -99,6 +127,13 @@ wss.on('connection', (ws) => {
                 shouldStop = false;
                 activeWs = ws;
                 global.activeWs = ws;
+                
+                // Reset state on new run
+                globalState.progress = { current: 0, total: 0, status: 'Memulai...', successCount: 0, failedCount: 0, verifCount: 0 };
+                globalState.stats = { timeouts: 0, errors: 0 };
+                globalState.info = { alias: '-', mode: '-', email: '-', ip: '-', ua: '-' };
+                globalState.logs = [];
+
                 safeSend(ws, { type: 'status', status: 'running' });
 
                 const { 
