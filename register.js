@@ -278,7 +278,7 @@ function clearProfileData(profilePath) {
 }
 
 // Single registration process for one email
-async function registerSingleEmail(url, email, proxyType, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false) {
+async function registerSingleEmail(url, email, proxyType, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false, uaMode = 'extension') {
     const gtMs = globalTimeout * 1000;
     
     let proxyServer = null;
@@ -437,14 +437,42 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         }
     }
 
-    console.log(`Membuka Firefox dengan profil persistent: ${PROFILE_PATH}`);
+    console.log(`Membuka Firefox dengan mode User Agent: ${uaMode === 'extension' ? 'Ekstensi (Profile)' : 'Generate Local'}`);
     
     // Launch with timeout to avoid hanging if proxy is not ready
     const launchTimeout = Math.max(gtMs, 60000);
     let context;
+    let browserObj = null;
+
+    const topUserAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36'
+    ];
+
+    const launchFirefoxMode = async () => {
+        if (uaMode === 'extension') {
+            return await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
+        } else {
+            const randomUa = topUserAgents[Math.floor(Math.random() * topUserAgents.length)];
+            contextOptions.userAgent = randomUa;
+            browserObj = await firefox.launch({
+                headless: contextOptions.headless,
+                proxy: contextOptions.proxy,
+                args: contextOptions.args
+            });
+            return await browserObj.newContext(contextOptions);
+        }
+    };
+
     try {
         context = await Promise.race([
-            firefox.launchPersistentContext(PROFILE_PATH, contextOptions),
+            launchFirefoxMode(),
             new Promise((_, reject) => setTimeout(() => reject(new Error(`[Firefox] Launch timeout ${launchTimeout/1000}s — proxy mungkin tidak tersedia`)), launchTimeout))
         ]);
     } catch (launchErr) {
@@ -453,7 +481,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             console.log(`[Firefox] Gagal launch dengan Warp proxy: ${launchErr.message}`);
             console.log(`[Firefox] Mencoba ulang tanpa proxy sebagai fallback...`);
             delete contextOptions.proxy;
-            context = await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
+            context = await launchFirefoxMode();
         } else {
             throw launchErr;
         }
@@ -1254,6 +1282,9 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
         // Always close the browser context to clear cookies, session data, and anti-fingerprinting details before the next iteration
         console.log(`Menutup browser context untuk ${email}...`);
         try { await context.close(); } catch (e) {}
+        if (browserObj) {
+            try { await browserObj.close(); } catch (e) {}
+        }
         // Force-kill any lingering Firefox/playwright + box64 processes
         killAllBrowsers();
         killAllBox64();
