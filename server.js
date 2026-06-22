@@ -104,7 +104,7 @@ wss.on('connection', (ws) => {
                 const { 
                     action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
-                    useDirect, useWarp, useHeadless, passwordMode, fixedPassword, uaMode 
+                    useDirect, useWarp, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes 
                 } = data;
                 
                 let emails = [];
@@ -225,7 +225,7 @@ wss.on('connection', (ws) => {
                                     const result = await registerSingleEmail(
                                         url, email, proxyType, false,
                                         currentAbortController, useHeadless,
-                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry, uaMode
+                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry, uaMode, deviceTypes
                                     );
 
                                     if (result && result.success) {
