@@ -643,15 +643,6 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             try { await page.waitForLoadState('networkidle', { timeout: Math.min(gtMs, 20000) }); } catch (_) {}
             await checkTooManyAttempts(page);
 
-        // Clear local/session storage to avoid cross-session tracking
-        try {
-            await page.evaluate(() => {
-                localStorage.clear();
-                sessionStorage.clear();
-            });
-            console.log("✓ Menghapus sisa local/session storage");
-        } catch (e) {}
-
         console.log("Mencari form input pendaftaran...");
         // More human-like: random wait before starting
         await page.waitForTimeout(2000 + Math.random() * 2000);
