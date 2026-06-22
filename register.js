@@ -307,71 +307,65 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             console.log(`\nMengaktifkan koneksi Warp+Socks5...`);
 
             const runCmd = (cmd, timeoutMs = 8000) => new Promise((resolve) => {
-                exec(cmd, { timeout: timeoutMs }, (err) => {
-                    if (err && !err.killed) {
-                        console.log(`[Warp] Perintah '${cmd}' selesai dengan peringatan: ${err.message.split('\n')[0]}`);
-                    }
-                    resolve();
+                exec(cmd, { timeout: timeoutMs }, (err, stdout) => {
+                    resolve(stdout || '');
                 });
-                setTimeout(resolve, timeoutMs + 500);
+                setTimeout(() => resolve(''), timeoutMs + 500);
             });
 
-            try {
-                const checkWarp = (desiredStatus) => new Promise(resolve => {
-                    exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
-                        if (err) return resolve(false);
-                        const out = (stdout || '').toLowerCase();
-                        if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
-                        else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
-                        else resolve(false);
-                    });
+            const checkWarp = (desiredStatus) => new Promise(resolve => {
+                exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
+                    if (err) return resolve(false);
+                    const out = (stdout || '').toLowerCase();
+                    if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
+                    else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
+                    else resolve(false);
                 });
+            });
+
+            let portReady = false;
+            while (!portReady) {
+                if (abortController && abortController.shouldStop) {
+                    throw new Error("Pendaftaran dihentikan oleh pengguna.");
+                }
 
                 console.log(`[Warp] Menjalankan: warp-ctl stop`);
                 await runCmd('warp-ctl stop', 5000);
-                for(let i = 0; i < 10; i++) {
-                    if (await checkWarp('stop')) {
-                        console.log(`[Warp] ✓ Status: BERHENTI`);
-                        break;
-                    }
+                for(let i = 0; i < 5; i++) {
+                    if (await checkWarp('stop')) break;
                     await new Promise(r => setTimeout(r, 1000));
                 }
 
-                console.log(`[Warp Restart] Menunggu 1 detik...`);
-                await new Promise(r => setTimeout(r, 1000));
-                
-                console.log(`[Warp] Menjalankan: warp-ctl start (Max 60x percobaan)...`);
+                console.log(`[Warp] Menjalankan: warp-ctl start...`);
                 let started = false;
-                for (let i = 0; i < 60; i++) {
-                    await runCmd('warp-ctl start', 2000);
+                for (let i = 0; i < 20; i++) {
+                    const startOut = await runCmd('warp-ctl start', 2000);
+                    // Check if the custom warp-ctl script outputs the success substring
+                    if (startOut.includes('WARP Berhasil aktif')) {
+                        started = true;
+                        console.log(`[Warp] WARP Berhasil aktif`);
+                        break;
+                    }
+                    // Fallback check using status just in case
                     if (await checkWarp('start')) {
                         started = true;
-                        console.log(`[Warp] ✓ Status: TERHUBUNG pada percobaan ke-${i + 1}`);
                         break;
                     }
                     await new Promise(r => setTimeout(r, 1000));
                 }
 
-                if (!started) console.log(`[Warp] ⚠️ Peringatan: Status TERHUBUNG gagal dicapai setelah 60 percobaan.`);
+                if (started) {
+                    console.log(`[Warp] Menunggu 5 detik agar port siap...`);
+                    await new Promise(r => setTimeout(r, 5000));
+                    portReady = await checkPort('127.0.0.1', 8086, 3000);
+                }
 
-                console.log(`[Warp] Menunggu 10 detik agar koneksi stabil...`);
-                await new Promise(r => setTimeout(r, 10000));
-
-                // Verify port is actually open after starting
-                const portReady = await checkPort('127.0.0.1', 8086, 3000);
                 if (portReady) {
-                    console.log(`[Warp] ✓ Port 8086 aktif. Koneksi Warp+Socks5 siap.`);
+                    console.log(`[Warp] ✓ Port 8086 tersedia. Koneksi siap.`);
                     warpActive = true;
                 } else {
-                    console.log(`[Warp] ⚠️ Port 8086 tidak tersedia setelah warp-ctl start. Kemungkinan port berbeda atau Warp tidak mendukung SOCKS5.`);
-                    console.log(`[Warp] Melanjutkan tanpa proxy (Direct Connection)...`);
-                    proxyServer = null;
-                    warpActive = false;
+                    console.log(`[Warp] ⚠️ Port 8086 belum tersedia atau gagal terhubung. Mengulang proses restart Warp...`);
                 }
-            } catch(e) {
-                console.log(`⚠️ Gagal menjalankan perintah warp-ctl: ${e.message}. Melanjutkan tanpa proxy.`);
-                proxyServer = null;
-                warpActive = false;
             }
         }
     } else {
@@ -542,7 +536,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             type: 'info',
             info: {
                 alias: alias || '-',
-                mode: proxyServer ? 'Warp+Socks5' : (proxyType === 'warp' ? 'Warp→Direct(fallback)' : 'Direct Connection'),
+                mode: proxyServer ? 'Warp+Socks5' : 'Direct Connection',
                 email: email,
                 ip: serverIp,
                 ua: playwrightUA
