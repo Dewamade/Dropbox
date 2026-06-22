@@ -317,41 +317,42 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             });
 
             try {
-                const ensureWarpStatus = async (desiredStatus, timeoutMs = 15000) => {
-                    const check = () => new Promise(resolve => {
-                        exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
-                            if (err) return resolve(false);
-                            const out = (stdout || '').toLowerCase();
-                            if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
-                            else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
-                            else resolve(false);
-                        });
+                const checkWarp = (desiredStatus) => new Promise(resolve => {
+                    exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
+                        if (err) return resolve(false);
+                        const out = (stdout || '').toLowerCase();
+                        if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
+                        else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
+                        else resolve(false);
                     });
-
-                    const deadline = Date.now() + timeoutMs;
-                    while (Date.now() < deadline) {
-                        if (await check()) return true;
-                        await new Promise(r => setTimeout(r, 1000));
-                    }
-                    return false;
-                };
+                });
 
                 console.log(`[Warp] Menjalankan: warp-ctl stop`);
                 await runCmd('warp-ctl stop', 5000);
-                console.log(`[Warp] Mengecek status BERHENTI...`);
-                const isStopped = await ensureWarpStatus('stop', 10000);
-                if (!isStopped) console.log(`[Warp] ⚠️ Peringatan: Status BERHENTI tidak terdeteksi.`);
-                else console.log(`[Warp] ✓ Status: BERHENTI`);
+                for(let i = 0; i < 10; i++) {
+                    if (await checkWarp('stop')) {
+                        console.log(`[Warp] ✓ Status: BERHENTI`);
+                        break;
+                    }
+                    await new Promise(r => setTimeout(r, 1000));
+                }
 
-                console.log(`[Warp Restart] Menunggu 5 detik...`);
-                await new Promise(r => setTimeout(r, 5000));
+                console.log(`[Warp Restart] Menunggu 1 detik...`);
+                await new Promise(r => setTimeout(r, 1000));
                 
-                console.log(`[Warp] Menjalankan: warp-ctl start`);
-                await runCmd('warp-ctl start', 6000);
-                console.log(`[Warp] Mengecek status TERHUBUNG...`);
-                const isStarted = await ensureWarpStatus('start', 15000);
-                if (!isStarted) console.log(`[Warp] ⚠️ Peringatan: Status TERHUBUNG tidak terdeteksi.`);
-                else console.log(`[Warp] ✓ Status: TERHUBUNG`);
+                console.log(`[Warp] Menjalankan: warp-ctl start (Max 60x percobaan)...`);
+                let started = false;
+                for (let i = 0; i < 60; i++) {
+                    await runCmd('warp-ctl start', 2000);
+                    if (await checkWarp('start')) {
+                        started = true;
+                        console.log(`[Warp] ✓ Status: TERHUBUNG pada percobaan ke-${i + 1}`);
+                        break;
+                    }
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+
+                if (!started) console.log(`[Warp] ⚠️ Peringatan: Status TERHUBUNG gagal dicapai setelah 60 percobaan.`);
 
                 console.log(`[Warp] Menunggu 10 detik agar koneksi stabil...`);
                 await new Promise(r => setTimeout(r, 10000));
@@ -507,6 +508,10 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                 ua: playwrightUA
             }
         });
+    }
+
+    if (playwrightUA.includes('NT 6')) {
+        throw new Error("BROWSER_KILL_REQUIRED: Bad User Agent terdeteksi (mengandung 'NT 6'). Ulangi dari awal.");
     }
 
     if (abortController) {

@@ -165,41 +165,44 @@ wss.on('connection', (ws) => {
                                 setTimeout(resolve, tms + 500);
                             });
 
-                            const ensureWarpStatus = async (desiredStatus, timeoutMs = 15000) => {
-                                const check = () => new Promise(resolve => {
-                                    exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
-                                        if (err) return resolve(false);
-                                        const out = (stdout || '').toLowerCase();
-                                        if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
-                                        else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
-                                        else resolve(false);
-                                    });
+                            const checkWarp = (desiredStatus) => new Promise(resolve => {
+                                exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
+                                    if (err) return resolve(false);
+                                    const out = (stdout || '').toLowerCase();
+                                    if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
+                                    else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
+                                    else resolve(false);
                                 });
-
-                                const deadline = Date.now() + timeoutMs;
-                                while (Date.now() < deadline) {
-                                    if (await check()) return true;
-                                    await new Promise(r => setTimeout(r, 1000));
-                                }
-                                return false;
-                            };
+                            });
 
                             console.log(`\n[Warp Restart] Menjalankan: warp-ctl stop`);
-                            await runCmd('warp-ctl stop', 6000);
-                            console.log(`[Warp Restart] Mengecek status BERHENTI...`);
-                            const isStopped = await ensureWarpStatus('stop', 10000);
-                            if (!isStopped) console.log(`[Warp Restart] ⚠️ Peringatan: Status BERHENTI tidak terdeteksi.`);
-                            else console.log(`[Warp Restart] ✓ Status: BERHENTI`);
+                            await runCmd('warp-ctl stop', 5000);
+                            
+                            // Poll stop for up to 10s
+                            for(let i = 0; i < 10; i++) {
+                                if (await checkWarp('stop')) {
+                                    console.log(`[Warp Restart] ✓ Status: BERHENTI`);
+                                    break;
+                                }
+                                await new Promise(r => setTimeout(r, 1000));
+                            }
+                            
+                            console.log(`[Warp Restart] Menunggu 1 detik...`);
+                            await new Promise(r => setTimeout(r, 1000));
 
-                            console.log(`[Warp Restart] Menunggu 5 detik...`);
-                            await new Promise(r => setTimeout(r, 5000));
+                            console.log(`[Warp Restart] Menjalankan: warp-ctl start (Max 60x percobaan)...`);
+                            let started = false;
+                            for (let i = 0; i < 60; i++) {
+                                await runCmd('warp-ctl start', 2000);
+                                if (await checkWarp('start')) {
+                                    started = true;
+                                    console.log(`[Warp Restart] ✓ Status: TERHUBUNG pada percobaan ke-${i + 1}`);
+                                    break;
+                                }
+                                await new Promise(r => setTimeout(r, 1000));
+                            }
 
-                            console.log(`[Warp Restart] Menjalankan: warp-ctl start`);
-                            await runCmd('warp-ctl start', 6000);
-                            console.log(`[Warp Restart] Mengecek status TERHUBUNG...`);
-                            const isStarted = await ensureWarpStatus('start', 15000);
-                            if (!isStarted) console.log(`[Warp Restart] ⚠️ Peringatan: Status TERHUBUNG tidak terdeteksi.`);
-                            else console.log(`[Warp Restart] ✓ Status: TERHUBUNG`);
+                            if (!started) console.log(`[Warp Restart] ⚠️ Peringatan: Status TERHUBUNG gagal dicapai setelah 60 percobaan.`);
 
                             console.log(`[Warp Restart] Menunggu 10 detik agar koneksi stabil...`);
                             await new Promise(r => setTimeout(r, 10000));
@@ -261,6 +264,12 @@ wss.on('connection', (ws) => {
                                     // Always kill browsers after any failure
                                     if (global.killAllBrowsers) global.killAllBrowsers();
                                     if (global.killAllBox64) global.killAllBox64();
+
+                                    if (errMsg.toLowerCase().includes('too many attempts')) {
+                                        console.log(`🔄 Deteksi 'Too many attempts'. Langsung memicu rotasi IP / Fase berikutnya...`);
+                                        break;
+                                    }
+
                                     if (attempts < maxAttempts) {
                                         console.log(`🔄 Kill selesai, meluncurkan browser baru untuk percobaan ${attempts + 1}/${maxAttempts}...`);
                                         await new Promise(r => setTimeout(r, 2000));
