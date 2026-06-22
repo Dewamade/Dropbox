@@ -36,7 +36,13 @@ let globalState = {
     logs: []
 };
 
-function safeSend(socket, payload) {
+function safeSend(socketOrPayload, maybePayload) {
+    let payload = maybePayload;
+    if (arguments.length === 1) {
+        payload = socketOrPayload;
+    }
+    if (!payload || !payload.type) return;
+
     if (payload.type === 'log') {
         globalState.logs.push(payload);
         if (globalState.logs.length > 100) globalState.logs.shift();
@@ -48,35 +54,43 @@ function safeSend(socket, payload) {
         globalState.stats = { ...globalState.stats, ...payload };
     }
 
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        try {
-            socket.send(JSON.stringify(payload));
-        } catch (e) {
-            originalError('WS send error:', e.message);
+    if (payload.type === 'sync_state' || payload.type === 'pong') {
+        let socket = arguments.length === 2 ? socketOrPayload : null;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            try { socket.send(JSON.stringify(payload)); } catch (e) {}
         }
+        return;
     }
+
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            try {
+                client.send(JSON.stringify(payload));
+            } catch (e) {}
+        }
+    });
 }
 
 // Expose globally so register.js can use them via console.log
 global.safeSend = safeSend;
-global.activeWs = null;
+global.activeWs = null; // Kept for backward compatibility with register.js
 
 console.log = (...args) => {
     const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
     originalLog.apply(console, args);
-    safeSend(activeWs, { type: 'log', message: msg });
+    safeSend({ type: 'log', message: msg });
 };
 
 console.error = (...args) => {
     const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
     originalError.apply(console, args);
-    safeSend(activeWs, { type: 'log', message: `[ERROR] ${msg}` });
+    safeSend({ type: 'log', message: `[ERROR] ${msg}` });
 };
 
 console.warn = (...args) => {
     const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
     originalWarn.apply(console, args);
-    safeSend(activeWs, { type: 'log', message: `[WARNING] ${msg}` });
+    safeSend({ type: 'log', message: `[WARNING] ${msg}` });
 };
 
 let isRunning = false;
@@ -174,7 +188,7 @@ wss.on('connection', (ws) => {
 
                 try {
                     for (let i = 0; i < emails.length; i++) {
-                        if (shouldStop || activeWs !== ws) {
+                        if (shouldStop) {
                             break;
                         }
                         processedCount = i + 1;
@@ -252,7 +266,7 @@ wss.on('connection', (ws) => {
                         const runBrowserLoop = async (proxyType, phaseLabel, isPhaseRetry) => {
                             let attempts = 0;
                             while (!registrationSuccess && attempts < maxAttempts) {
-                                if (shouldStop || activeWs !== ws) break;
+                                if (shouldStop) break;
                                 attempts++;
 
                                 const isRetry = isPhaseRetry || attempts > 1;
@@ -339,7 +353,7 @@ wss.on('connection', (ws) => {
                         let globalDone = false;
 
                         for (let phaseIdx = 0; phaseIdx < phases.length && !globalDone; phaseIdx++) {
-                            if (shouldStop || activeWs !== ws) break;
+                            if (shouldStop) break;
 
                             const currentPhase = phases[phaseIdx];
                             const phaseLabel = currentPhase === 'warp' ? 'Warp+Socks5' : 'Direct Connection';
@@ -396,25 +410,21 @@ wss.on('connection', (ws) => {
                             shouldStop = true;  // stop entire batch → idle
                         }
 
-                    }
+                    } // End of email loop
 
-                    if (activeWs === ws) {
-                        const finalStatus = shouldStop ? 'stopped' : 'success';
-                        safeSend(ws, { type: 'status', status: finalStatus });
-                        safeSend(ws, {
-                            type: 'progress',
-                            current: processedCount,
-                            total: emails.length,
-                            status: shouldStop ? 'Proses dihentikan oleh pengguna.' : 'Semua email selesai diproses.',
-                            successCount,
-                            failedCount
-                        });
-                    }
+                    const finalStatus = shouldStop ? 'stopped' : 'success';
+                    safeSend({ type: 'status', status: finalStatus });
+                    safeSend({
+                        type: 'progress',
+                        current: processedCount,
+                        total: emails.length,
+                        status: shouldStop ? 'Proses dihentikan oleh pengguna.' : 'Semua email selesai diproses.',
+                        successCount,
+                        failedCount
+                    });
                 } catch (err) {
                     console.error('Error saat menjalankan proses pendaftaran:', err);
-                    if (activeWs === ws) {
-                        safeSend(ws, { type: 'status', status: 'error' });
-                    }
+                    safeSend({ type: 'status', status: 'error' });
                 } finally {
                     isRunning = false;
                     activeWs = null;

@@ -537,8 +537,8 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
 
 
     // Broadcast Info ke UI WebSockets
-    if (global.safeSend && global.activeWs) {
-        global.safeSend(global.activeWs, {
+    if (global.safeSend) {
+        global.safeSend({
             type: 'info',
             info: {
                 alias: alias || '-',
