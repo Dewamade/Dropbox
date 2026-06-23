@@ -411,13 +411,13 @@
                 document.getElementById('ua-list-desktop').innerHTML = (data.desktop || []).map(ua => `<li>${ua}</li>`).join('');
                 document.getElementById('ua-list-mobile').innerHTML = (data.mobile || []).map(ua => `<li>${ua}</li>`).join('');
                 document.getElementById('ua-list-tablet').innerHTML = (data.tablet || []).map(ua => `<li>${ua}</li>`).join('');
-                uaModal.classList.add('show');
+                uaModal.classList.add('open');
             } catch (err) {
                 alert('Gagal mengambil data User Agent');
             }
         });
-        closeUaModal.addEventListener('click', () => uaModal.classList.remove('show'));
-        uaModal.addEventListener('click', (e) => { if (e.target === uaModal) uaModal.classList.remove('show'); });
+        closeUaModal.addEventListener('click', () => uaModal.classList.remove('open'));
+        uaModal.addEventListener('click', (e) => { if (e.target === uaModal) uaModal.classList.remove('open'); });
 
         // ── LocalStorage Settings ──────────────────────────────
         function saveSettings() {
