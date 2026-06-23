@@ -278,7 +278,7 @@ function clearProfileData(profilePath) {
 }
 
 // Single registration process for one email
-async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false, uaMode = 'generate', deviceTypes = ['desktop', 'mobile', 'tablet']) {
+async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false, uaMode = 'generate', selectedUaString = '', selectedDeviceType = 'desktop') {
     const gtMs = globalTimeout * 1000;
     
     let proxyServer = null;
@@ -440,42 +440,18 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
         }
     }
 
-    console.log(`Membuka Firefox dengan mode User Agent: ${uaMode === 'extension' ? 'Ekstensi (Profile)' : `Generate Local (${deviceTypes.join(', ')})`}`);
+    console.log(`Membuka Firefox dengan mode User Agent: ${uaMode === 'extension' ? 'Ekstensi (Profile)' : `Generate Local (${selectedDeviceType})`}`);
     
     // Launch with timeout to avoid hanging if proxy is not ready
     const launchTimeout = Math.max(gtMs, 60000);
     let context;
     let browserObj = null;
 
-    const topUserAgents = require('top-user-agents');
-    // Filter out 'NT 6' to avoid triggering our own Bad User Agent check
-    const baseUas = topUserAgents.filter(ua => !ua.includes('NT 6'));
-
-    const tabletUas = [
-        'Mozilla/5.0 (iPad; CPU OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15', // iPad requesting desktop site
-        'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-    ];
-
-    let validUas = [];
-    if (deviceTypes.includes('desktop')) {
-        validUas = validUas.concat(baseUas.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android')));
-    }
-    if (deviceTypes.includes('mobile')) {
-        validUas = validUas.concat(baseUas.filter(u => u.includes('Mobile') || u.includes('iPhone')));
-    }
-    if (deviceTypes.includes('tablet')) {
-        validUas = validUas.concat(baseUas.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(tabletUas));
-    }
-
-    if (validUas.length === 0) validUas = baseUas; // fallback safe
-
     const launchFirefoxMode = async () => {
         if (uaMode === 'extension') {
             return await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
         } else {
-            const randomUa = validUas[Math.floor(Math.random() * validUas.length)];
-            contextOptions.userAgent = randomUa;
+            contextOptions.userAgent = selectedUaString;
             browserObj = await firefox.launch({
                 headless: contextOptions.headless,
                 proxy: contextOptions.proxy,

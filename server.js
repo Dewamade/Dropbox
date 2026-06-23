@@ -21,6 +21,23 @@ app.delete('/api/history', (_req, res) => {
     clearRegistrations();
     res.json({ ok: true });
 });
+
+app.get('/api/uas', (_req, res) => {
+    const topUserAgents = require('top-user-agents');
+    const baseUas = topUserAgents.filter(ua => !ua.includes('NT 6'));
+    
+    const tabletUas = [
+        'Mozilla/5.0 (iPad; CPU OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
+        'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    ];
+
+    res.json({
+        desktop: baseUas.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android')),
+        mobile: baseUas.filter(u => u.includes('Mobile') || u.includes('iPhone')),
+        tablet: baseUas.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(tabletUas)
+    });
+});
 // ────────────────────────────────────────────────────────────────────────────
 
 // Keep track of active connection for console redirection
@@ -185,6 +202,21 @@ wss.on('connection', (ws) => {
                 let failedCount = 0;
                 let verifCount = 0;
                 let processedCount = 0;
+                let uaRotationIndex = 0;
+
+                // Pre-fetch UAs for rotation
+                const topUserAgents = require('top-user-agents');
+                const baseUas = topUserAgents.filter(ua => !ua.includes('NT 6'));
+                const tabletUas = [
+                    'Mozilla/5.0 (iPad; CPU OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
+                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
+                    'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                ];
+                const uaLists = {
+                    desktop: baseUas.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android')),
+                    mobile: baseUas.filter(u => u.includes('Mobile') || u.includes('iPhone')),
+                    tablet: baseUas.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(tabletUas)
+                };
 
                 try {
                     for (let i = 0; i < emails.length; i++) {
@@ -273,13 +305,23 @@ wss.on('connection', (ws) => {
                                 if (attempts > 1 || isPhaseRetry) {
                                     console.log(`\n[Mencoba Kembali] ${phaseLabel} — Attempt ${attempts}/${maxAttempts} untuk ${email}`);
                                 }
+                                
+                                // Rotate UA for each attempt
+                                let selectedUaString = '';
+                                let selectedDeviceType = '';
+                                if (uaMode !== 'extension' && deviceTypes && deviceTypes.length > 0) {
+                                    selectedDeviceType = deviceTypes[uaRotationIndex % deviceTypes.length];
+                                    const list = uaLists[selectedDeviceType] || uaLists.desktop;
+                                    selectedUaString = list[Math.floor(Math.random() * list.length)];
+                                    uaRotationIndex++;
+                                }
 
                                 try {
                                     currentAbortController = { shouldStop: false, abort: null };
                                     const result = await registerSingleEmail(
                                         url, email, proxyType, proxyHost, false,
                                         currentAbortController, useHeadless,
-                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry, uaMode, deviceTypes
+                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry, uaMode, selectedUaString, selectedDeviceType
                                     );
 
                                     if (result && result.success) {

@@ -129,7 +129,10 @@
                         <input type="number" id="daemon-timeout" value="120" min="30" max="600">
                     </div>
                     <div class="form-group" style="gap: 0.4rem; grid-column: 1 / -1;">
-                        <label for="ua-mode">Mode User Agent</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label for="ua-mode">Mode User Agent</label>
+                            <button id="view-ua-btn" class="btn btn-secondary" style="padding: 0.2rem 0.5rem; font-size: 0.8rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">View UA</button>
+                        </div>
                         <select id="ua-mode" style="padding: 0.5rem; border-radius: 6px; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color);">
                             <option value="generate" selected>Generate Local (Acak)</option>
                             <option value="extension">Ekstensi (firefox-profile)</option>
@@ -256,6 +259,26 @@
         </main>
     </div>
 
+    <!-- ── View UA Modal ─────────────────────────────────── -->
+    <div class="modal-backdrop" id="ua-modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3>Daftar User Agent</h3>
+                <button class="close-modal" id="close-ua-modal">&times;</button>
+            </div>
+            <div style="padding: 1rem; overflow-y: auto; max-height: 400px;">
+                <h4 style="margin-top:0;">Desktop</h4>
+                <ul id="ua-list-desktop" style="font-size: 0.85rem; color: #a1a1aa; padding-left: 1.2rem; word-break: break-all; margin-bottom: 1rem;"></ul>
+                
+                <h4>Mobile</h4>
+                <ul id="ua-list-mobile" style="font-size: 0.85rem; color: #a1a1aa; padding-left: 1.2rem; word-break: break-all; margin-bottom: 1rem;"></ul>
+                
+                <h4>Tablet</h4>
+                <ul id="ua-list-tablet" style="font-size: 0.85rem; color: #a1a1aa; padding-left: 1.2rem; word-break: break-all;"></ul>
+            </div>
+        </div>
+    </div>
+
     <!-- ── History Modal ─────────────────────────────────── -->
     <div class="modal-backdrop" id="history-modal">
         <div class="modal">
@@ -315,6 +338,10 @@
         const socks5InputGroup = document.getElementById('socks5-input-group');
         const socks5HostInput = document.getElementById('socks5-host');
 
+        const viewUaBtn = document.getElementById('view-ua-btn');
+        const uaModal = document.getElementById('ua-modal');
+        const closeUaModal = document.getElementById('close-ua-modal');
+
         useSocks5Checkbox.addEventListener('change', (e) => {
             socks5InputGroup.style.display = e.target.checked ? 'flex' : 'none';
         });
@@ -367,6 +394,22 @@
         }
         uaModeSelect.addEventListener('change', updateUaModeUI);
         updateUaModeUI();
+
+        // ── UA Fetching ────────────────────────────────────────
+        viewUaBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/uas');
+                const data = await res.json();
+                document.getElementById('ua-list-desktop').innerHTML = (data.desktop || []).map(ua => `<li>${ua}</li>`).join('');
+                document.getElementById('ua-list-mobile').innerHTML = (data.mobile || []).map(ua => `<li>${ua}</li>`).join('');
+                document.getElementById('ua-list-tablet').innerHTML = (data.tablet || []).map(ua => `<li>${ua}</li>`).join('');
+                uaModal.classList.add('show');
+            } catch (err) {
+                alert('Gagal mengambil data User Agent');
+            }
+        });
+        closeUaModal.addEventListener('click', () => uaModal.classList.remove('show'));
+        uaModal.addEventListener('click', (e) => { if (e.target === uaModal) uaModal.classList.remove('show'); });
 
         // ── LocalStorage Settings ──────────────────────────────
         function saveSettings() {
