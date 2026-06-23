@@ -212,40 +212,56 @@ async function registerSingleEmail(email, params, selectedUaString) {
         await page.fill(usedEmailSelector, email, { timeout: 5000 });
         console.log(`✓ Mengisi Email`);
         
-        console.log(`Mengklik tombol 'Continue'...`);
-        const continueSelectors = ['button:has-text("Continue")', 'button[type="submit"]'];
-        let clickedContinue = false;
-        for (const sel of continueSelectors) {
+        const nameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[name="register-first-name"]'];
+        let isOneStep = false;
+        let usedNameSelector = '';
+
+        // Cek secara instan apakah field nama sudah terlihat (form 1-langkah)
+        for (const sel of nameSelectors) {
             try {
                 if (await page.isVisible(sel)) {
-                    await page.click(sel);
-                    clickedContinue = true;
-                    console.log(`✓ Mengklik tombol Continue (human-click)`);
+                    isOneStep = true;
+                    usedNameSelector = sel;
+                    console.log(`\n[Info] Mendeteksi form 1-langkah (Field nama langsung tersedia)`);
                     break;
                 }
             } catch(e) {}
         }
-        
-        if (!clickedContinue) {
-            console.log(`⚠️ Tombol Continue tidak ditemukan, mencoba lanjut pengisian nama...`);
-        } else {
-            await page.waitForTimeout(2000);
+
+        if (!isOneStep) {
+            console.log(`Mengklik tombol 'Continue'...`);
+            // Jangan gunakan button[type="submit"] di sini agar tidak prematur klik submit pada form 1-langkah
+            const continueSelectors = ['button:has-text("Continue")'];
+            let clickedContinue = false;
+            for (const sel of continueSelectors) {
+                try {
+                    if (await page.isVisible(sel)) {
+                        await page.click(sel);
+                        clickedContinue = true;
+                        console.log(`✓ Mengklik tombol Continue (human-click)`);
+                        break;
+                    }
+                } catch(e) {}
+            }
+            
+            if (!clickedContinue) {
+                console.log(`⚠️ Tombol Continue spesifik tidak ditemukan, mencoba lanjut pengisian nama...`);
+            } else {
+                await page.waitForTimeout(2000);
+            }
+
+            console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout 30 detik)...`);
+            for (const sel of nameSelectors) {
+                try {
+                    await page.waitForSelector(sel, { state: 'visible', timeout: 30000 });
+                    isOneStep = true;
+                    usedNameSelector = sel;
+                    break;
+                } catch(e) {}
+            }
         }
 
-        console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout 30 detik)...`);
-        const nameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[name="register-first-name"]'];
-        let nameFieldFound = false;
-        let usedNameSelector = '';
-        for (const sel of nameSelectors) {
-            try {
-                await page.waitForSelector(sel, { state: 'visible', timeout: 30000 });
-                nameFieldFound = true;
-                usedNameSelector = sel;
-                break;
-            } catch(e) {}
-        }
-
-        if (nameFieldFound) {
+        if (isOneStep) {
             console.log(`✓ Form Langkah 2 terdeteksi via waitForSelector: ${usedNameSelector}`);
             await page.fill(usedNameSelector, firstName, { timeout: 5000 });
             console.log(`✓ Mengisi First Name (human-typed)`);
