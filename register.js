@@ -244,6 +244,8 @@ async function registerSingleEmail(email, params, selectedUaString) {
             console.log(`Mengklik tombol 'Continue'...`);
             // Aman menggunakan button[type="submit"] karena kita sudah memastikan ini BUKAN form 1-langkah
             const continueSelectors = [
+                'button.email-submit-button',
+                'button[class*="email-submit-button"]',
                 'button:has-text("Continue")',
                 'button:has-text("Lanjutkan")',
                 'button:has-text("Next")',
@@ -298,6 +300,8 @@ async function registerSingleEmail(email, params, selectedUaString) {
 
         console.log(`\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...`);
         const submitSelectors = [
+            'button.register-button',
+            'button[class*="register-button"]',
             'button[type="submit"]',
             'button:has-text("Create an account")',
             'button:has-text("Sign up")',
