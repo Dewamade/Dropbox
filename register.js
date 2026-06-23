@@ -507,6 +507,14 @@ async function registerSingleEmail(email, params, selectedUaString) {
         if (msg.toLowerCase().includes('timeout')) emailTimeouts++;
         else emailErrors++;
         
+        if (page && !page.isClosed()) {
+            try {
+                const screenshotPath = path.join(__dirname, 'data', `debug_error_${email.split('@')[0]}.png`);
+                await page.screenshot({ path: screenshotPath, fullPage: true });
+                console.log(`[DEBUG] Screenshot layar saat error disimpan di: ./data/debug_error_${email.split('@')[0]}.png`);
+            } catch(e) {}
+        }
+
         return { success: false, error: msg };
     } finally {
         if (page) await page.close().catch(()=>{});
