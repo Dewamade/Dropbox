@@ -129,14 +129,18 @@
                         <input type="number" id="daemon-timeout" value="120" min="30" max="600">
                     </div>
                     <div class="form-group" style="gap: 0.4rem; grid-column: 1 / -1;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label for="ua-mode">Mode User Agent</label>
-                            <button id="view-ua-btn" class="btn btn-secondary" style="padding: 0.2rem 0.5rem; font-size: 0.8rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">View UA</button>
+                        <label>Mode User Agent</label>
+                        <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.2rem;">
+                            <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;">
+                                <input type="radio" name="ua-mode" value="generate" id="ua-generate-radio" checked>
+                                Generate Local (Acak)
+                            </label>
+                            <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;">
+                                <input type="radio" name="ua-mode" value="extension" id="ua-extension-radio">
+                                Ekstensi (firefox-profile)
+                            </label>
                         </div>
-                        <select id="ua-mode" style="padding: 0.5rem; border-radius: 6px; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color);">
-                            <option value="generate" selected>Generate Local (Acak)</option>
-                            <option value="extension">Ekstensi (firefox-profile)</option>
-                        </select>
+                        <button id="view-ua-btn" class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); width: fit-content; margin-top: 0.5rem; display: none;">View UA</button>
                     </div>
                     <div class="form-group" style="gap: 0.4rem; grid-column: 1 / -1;" id="device-type-group">
                         <label>Perangkat (Bisa pilih lebih dari satu)</label>
@@ -323,7 +327,8 @@
         const fixedPasswordWrap   = document.getElementById('fixed-password-wrap');
         const fixedPasswordInput  = document.getElementById('fixed-password-input');
 
-        const uaModeSelect        = document.getElementById('ua-mode');
+        const uaGenerateRadio     = document.getElementById('ua-generate-radio');
+        const uaExtensionRadio    = document.getElementById('ua-extension-radio');
         const deviceTypeGroup     = document.getElementById('device-type-group');
         
         const infoAlias = document.getElementById('info-alias');
@@ -390,9 +395,12 @@
         updateEmailModeUI();
 
         function updateUaModeUI() {
-            deviceTypeGroup.style.display = uaModeSelect.value === 'generate' ? 'flex' : 'none';
+            const isGenerate = uaGenerateRadio.checked;
+            deviceTypeGroup.style.display = isGenerate ? 'flex' : 'none';
+            viewUaBtn.style.display = isGenerate ? 'inline-block' : 'none';
         }
-        uaModeSelect.addEventListener('change', updateUaModeUI);
+        uaGenerateRadio.addEventListener('change', updateUaModeUI);
+        uaExtensionRadio.addEventListener('change', updateUaModeUI);
         updateUaModeUI();
 
         // ── UA Fetching ────────────────────────────────────────
@@ -429,7 +437,7 @@
                 globalTimeout: globalTimeoutInput.value,
                 globalRetry: globalRetryInput.value,
                 daemonTimeout: daemonTimeoutInput.value,
-                uaMode: uaModeSelect.value,
+                uaMode: uaGenerateRadio.checked ? 'generate' : 'extension',
                 dtDesktop: document.getElementById('dt-desktop').checked,
                 dtMobile: document.getElementById('dt-mobile').checked,
                 dtTablet: document.getElementById('dt-tablet').checked
@@ -450,7 +458,10 @@
                     if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
                     if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
                     if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
-                    if (settings.uaMode) uaModeSelect.value = settings.uaMode;
+                    if (settings.uaMode) {
+                        if (settings.uaMode === 'generate') uaGenerateRadio.checked = true;
+                        else uaExtensionRadio.checked = true;
+                    }
                     if (settings.dtDesktop !== undefined) document.getElementById('dt-desktop').checked = settings.dtDesktop;
                     if (settings.dtMobile !== undefined) document.getElementById('dt-mobile').checked = settings.dtMobile;
                     if (settings.dtTablet !== undefined) document.getElementById('dt-tablet').checked = settings.dtTablet;
@@ -486,7 +497,7 @@
         const inputsToSave = [
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
             globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
-            useSocks5Checkbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio
+            useSocks5Checkbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
         inputsToSave.forEach(el => el.addEventListener('keyup', saveSettings));
@@ -819,7 +830,7 @@
             const useHeadless  = true;
             const passwordMode = pwFixedRadio.checked ? 'fixed' : 'random';
             const fixedPassword = fixedPasswordInput.value.trim() || 'Aa12345678*';
-            const uaMode       = document.getElementById('ua-mode').value;
+            const uaMode       = uaGenerateRadio.checked ? 'generate' : 'extension';
             
             const deviceTypes = [];
             if (document.getElementById('dt-desktop').checked) deviceTypes.push('desktop');
