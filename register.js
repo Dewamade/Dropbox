@@ -282,7 +282,10 @@ async function registerSingleEmail(email, params, selectedUaString) {
             await page.fill('input[name="password"], input[name="register-password"]', password, { timeout: 5000 }).catch(()=>{});
             console.log(`✓ Mengisi Password (human-typed)`);
         } else {
-             throw new Error("Gagal menemukan form nama (Langkah 2)");
+             const screenshotPath = path.join(__dirname, 'data', `debug_error_${email}.png`);
+             await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+             console.log(`[DEBUG] Screenshot layar saat error disimpan di: ./data/debug_error_${email}.png`);
+             throw new Error(`Gagal menemukan form nama (Langkah 2) - Cek screenshot di folder data`);
         }
 
         try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][name="agree"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) {}
