@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { chromium, firefox } = require('playwright');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -34,6 +34,7 @@ function parseArgs() {
         timeout: 60,
         retry: 3,
         devices: 'desktop',
+        browser: 'chromium',
         headless: true
     };
 
@@ -88,6 +89,7 @@ function randomString(length) {
 
 function killAllBrowsers() {
     try { execSync('pkill -9 -f chromium', { stdio: 'ignore' }); } catch (_) {}
+    try { execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) {}
     try { execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) {}
 }
 
@@ -150,9 +152,9 @@ async function registerSingleEmail(email, params, selectedUaString) {
             console.log(`- Password  : ${password}`);
             console.log(`Membersihkan cookies, cache, dan data penyimpanan situs...`);
             console.log(`✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.`);
-            console.log(`Membuka Chromium dengan mode User Agent: Generate Local`);
+            console.log(`Membuka ${params.browser === 'firefox' ? 'Firefox' : 'Chromium'} dengan mode User Agent: Generate Local`);
         } else {
-            console.log(`\nMembuka Chromium dengan mode User Agent: Generate Local (Percobaan Ulang)`);
+            console.log(`\nMembuka ${params.browser === 'firefox' ? 'Firefox' : 'Chromium'} dengan mode User Agent: Generate Local (Percobaan Ulang)`);
         }
 
         const launchOptions = {
@@ -161,12 +163,16 @@ async function registerSingleEmail(email, params, selectedUaString) {
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-blink-features=AutomationControlled'
+                '--disable-gpu'
             ]
         };
+        
+        if (params.browser !== 'firefox') {
+            launchOptions.args.push('--disable-blink-features=AutomationControlled');
+        }
 
-        browser = await chromium.launch(launchOptions);
+        const engine = params.browser === 'firefox' ? firefox : chromium;
+        browser = await engine.launch(launchOptions);
         context = await browser.newContext({
             userAgent: selectedUaString,
             viewport: { width: 1280, height: 720 },
