@@ -5,7 +5,11 @@ const fs = require('fs');
 // Use JSON file as a simple database (no native compilation needed)
 // Falls back gracefully
 
-const DB_PATH = path.join(__dirname, 'history.json');
+const DB_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DB_DIR)) {
+    fs.mkdirSync(DB_DIR, { recursive: true });
+}
+const DB_PATH = path.join(DB_DIR, 'history.json');
 
 function loadDB() {
     if (!fs.existsSync(DB_PATH)) {
