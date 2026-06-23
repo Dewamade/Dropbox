@@ -1,5 +1,6 @@
 const { chromium, firefox } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
+// Kita tetap menggunakan stealth karena field email masih terbaca dengan baik
 chromium.use(stealth);
 firefox.use(stealth);
 const { spawn, execSync } = require('child_process');
