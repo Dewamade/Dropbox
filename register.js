@@ -1,4 +1,7 @@
-const { chromium, firefox } = require('playwright');
+const { chromium, firefox } = require('playwright-extra');
+const stealth = require('puppeteer-extra-plugin-stealth')();
+chromium.use(stealth);
+firefox.use(stealth);
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');

@@ -18,6 +18,8 @@
     "proxifly": "^3.0.1",
     "socks-proxy-agent": "^10.1.0",
     "top-user-agents": "^2.1.118",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
