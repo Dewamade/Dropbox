@@ -41,16 +41,22 @@ function parseArgs() {
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg.startsWith('--')) {
-            const key = arg.slice(2).replace(/-([a-z])/g, (g) => g[1].toUpperCase());
-            if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
-                let val = args[i + 1];
-                if (val === 'false') val = false;
-                if (val === 'true') val = true;
-                params[key] = val;
-                i++;
+            let key = '';
+            let val = true;
+            if (arg.includes('=')) {
+                const parts = arg.split('=');
+                key = parts[0].slice(2).replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+                val = parts.slice(1).join('=');
             } else {
-                params[key] = true;
+                key = arg.slice(2).replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+                if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+                    val = args[i + 1];
+                    i++;
+                }
             }
+            if (val === 'false') val = false;
+            if (val === 'true') val = true;
+            params[key] = val;
         }
     }
     return params;
