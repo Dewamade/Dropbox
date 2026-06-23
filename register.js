@@ -242,8 +242,13 @@ async function registerSingleEmail(email, params, selectedUaString) {
 
         if (!isOneStep) {
             console.log(`Mengklik tombol 'Continue'...`);
-            // Jangan gunakan button[type="submit"] di sini agar tidak prematur klik submit pada form 1-langkah
-            const continueSelectors = ['button:has-text("Continue")'];
+            // Aman menggunakan button[type="submit"] karena kita sudah memastikan ini BUKAN form 1-langkah
+            const continueSelectors = [
+                'button:has-text("Continue")',
+                'button:has-text("Lanjutkan")',
+                'button:has-text("Next")',
+                'button[type="submit"]'
+            ];
             let clickedContinue = false;
             for (const sel of continueSelectors) {
                 try {
