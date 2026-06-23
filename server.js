@@ -153,7 +153,7 @@ wss.on('connection', (ws) => {
                 const { 
                     action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
-                    useDirect, useWarp, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes 
+                    useDirect, useWarp, useSocks5, socks5Host, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes 
                 } = data;
                 
                 let emails = [];
@@ -263,7 +263,7 @@ wss.on('connection', (ws) => {
                         };
 
                         // ── Helper: run inner browser retry loop for a given proxyType ───
-                        const runBrowserLoop = async (proxyType, phaseLabel, isPhaseRetry) => {
+                        const runBrowserLoop = async (proxyType, proxyHost, phaseLabel, isPhaseRetry) => {
                             let attempts = 0;
                             while (!registrationSuccess && attempts < maxAttempts) {
                                 if (shouldStop) break;
@@ -277,7 +277,7 @@ wss.on('connection', (ws) => {
                                 try {
                                     currentAbortController = { shouldStop: false, abort: null };
                                     const result = await registerSingleEmail(
-                                        url, email, proxyType, false,
+                                        url, email, proxyType, proxyHost, false,
                                         currentAbortController, useHeadless,
                                         passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry, uaMode, deviceTypes
                                     );
@@ -344,19 +344,21 @@ wss.on('connection', (ws) => {
                             }
                         };
 
-                        // ── Build phase list: Direct first, then Warp ─────────────────────
+                        // ── Build phase list: Direct first, then Warp, then Socks5 ───────────────
                         const phases = [];
-                        if (useDirect) phases.push('direct');
-                        if (useWarp)   phases.push('warp');
-                        if (phases.length === 0) phases.push('direct'); // safety fallback
+                        if (useDirect) phases.push({ type: 'direct', host: null });
+                        if (useWarp)   phases.push({ type: 'warp', host: null });
+                        if (useSocks5) phases.push({ type: 'socks5', host: socks5Host });
+                        if (phases.length === 0) phases.push({ type: 'direct', host: null }); // safety fallback
 
                         let globalDone = false;
 
                         for (let phaseIdx = 0; phaseIdx < phases.length && !globalDone; phaseIdx++) {
                             if (shouldStop) break;
 
-                            const currentPhase = phases[phaseIdx];
-                            const phaseLabel = currentPhase === 'warp' ? 'Warp+Socks5' : 'Direct Connection';
+                            const currentPhase = phases[phaseIdx].type;
+                            const currentHost = phases[phaseIdx].host;
+                            const phaseLabel = currentPhase === 'warp' ? 'Warp+Socks5' : (currentPhase === 'socks5' ? `Socks5 Only (${currentHost})` : 'Direct Connection');
                             console.log(`\n[Phase ${phaseIdx + 1}/${phases.length}] Memulai dengan mode: ${phaseLabel}`);
 
                             if (currentPhase === 'warp') {
@@ -372,7 +374,7 @@ wss.on('connection', (ws) => {
                                         }
                                     }
 
-                                    await runBrowserLoop('warp', `Warp+Socks5${warpRestartCount > 0 ? ` (Restart ${warpRestartCount})` : ''}`, warpRestartCount > 0);
+                                    await runBrowserLoop('warp', null, `Warp+Socks5${warpRestartCount > 0 ? ` (Restart ${warpRestartCount})` : ''}`, warpRestartCount > 0);
 
                                     if (registrationSuccess) break;
 
@@ -382,8 +384,10 @@ wss.on('connection', (ws) => {
                                         break;
                                     }
                                 }
+                            } else if (currentPhase === 'socks5') {
+                                await runBrowserLoop('socks5', currentHost, phaseLabel, phaseIdx > 0);
                             } else {
-                                await runBrowserLoop('direct', 'Direct Connection', phaseIdx > 0);
+                                await runBrowserLoop('direct', null, phaseLabel, phaseIdx > 0);
                             }
 
                             if (registrationSuccess) { globalDone = true; break; }
@@ -395,7 +399,7 @@ wss.on('connection', (ws) => {
 
                         // ── Handle total failure ──────────────────────────────────────────
                         if (!registrationSuccess && !shouldStop) {
-                            const phaseSummary = phases.map(p => p === 'warp' ? 'Warp+Socks5' : 'Direct Connection').join(' → ');
+                            const phaseSummary = phases.map(p => p.type === 'warp' ? 'Warp+Socks5' : (p.type === 'socks5' ? 'Socks5 Only' : 'Direct Connection')).join(' → ');
                             console.log(`\n❌ GAGAL TOTAL [${phaseSummary}]: Semua percobaan untuk ${email} sudah habis.`);
                             console.log(`🛠️ Kill paksa semua proses browser dan box64...`);
                             if (global.killAllBrowsers) global.killAllBrowsers();

@@ -278,7 +278,7 @@ function clearProfileData(profilePath) {
 }
 
 // Single registration process for one email
-async function registerSingleEmail(url, email, proxyType, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false, uaMode = 'generate', deviceTypes = ['desktop', 'mobile', 'tablet']) {
+async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false, uaMode = 'generate', deviceTypes = ['desktop', 'mobile', 'tablet']) {
     const gtMs = globalTimeout * 1000;
     
     let proxyServer = null;
@@ -368,6 +368,16 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
                 }
             }
         }
+    } else if (proxyType === 'socks5') {
+        proxyServer = `socks5://${proxyHost}`;
+        console.log(`\n[Proxy] Menggunakan custom Socks5 host: ${proxyHost}`);
+        // Ensure warp is stopped when using direct or custom socks5 to prevent conflicts
+        if (warpActive) {
+            const { exec } = require('child_process');
+            exec('warp-ctl stop', { timeout: 5000 }, () => {});
+            warpActive = false;
+            console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Proxy Socks5).`);
+        }
     } else {
         // Direct connection — stop warp if it was previously active
         if (warpActive) {
@@ -377,7 +387,6 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Direct Connection).`);
         }
     }
-
 
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
@@ -536,7 +545,7 @@ async function registerSingleEmail(url, email, proxyType, isInit, abortControlle
             type: 'info',
             info: {
                 alias: alias || '-',
-                mode: proxyServer ? 'Warp+Socks5' : 'Direct Connection',
+                mode: proxyType === 'warp' ? 'Warp+Socks5' : (proxyType === 'socks5' ? `Socks5 Only (${proxyHost})` : 'Direct Connection'),
                 email: email,
                 ip: serverIp,
                 ua: playwrightUA

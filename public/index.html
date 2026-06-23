@@ -151,7 +151,12 @@
                     <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.2rem;">
                         <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-direct" checked> Direct Connection</label>
                         <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-warp" checked> Warp+Socks5</label>
+                        <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-socks5"> Socks5 Only</label>
                     </div>
+                </div>
+                <div class="form-group" id="socks5-input-group" style="display: none; gap: 0.4rem; grid-column: 1 / -1;">
+                    <label for="socks5-host">Socks5 Host:Port</label>
+                    <input type="text" id="socks5-host" placeholder="Contoh: 127.0.0.1:1080">
                 </div>
                 <div class="btn-group">
                     <button class="btn" id="start-btn">
@@ -306,6 +311,14 @@
         const infoTimeout = document.getElementById('info-timeout');
         const infoError   = document.getElementById('info-error');
         
+        const useSocks5Checkbox = document.getElementById('use-socks5');
+        const socks5InputGroup = document.getElementById('socks5-input-group');
+        const socks5HostInput = document.getElementById('socks5-host');
+
+        useSocks5Checkbox.addEventListener('change', (e) => {
+            socks5InputGroup.style.display = e.target.checked ? 'flex' : 'none';
+        });
+        
         const startBtn            = document.getElementById('start-btn');
         const stopBtn             = document.getElementById('stop-btn');
         const clearBtn            = document.getElementById('clear-btn');
@@ -365,6 +378,8 @@
                 count: autoCountInput.value,
                 useDirect: useDirectCheckbox.checked,
                 useWarp: useWarpCheckbox.checked,
+                useSocks5: useSocks5Checkbox.checked,
+                socks5Host: socks5HostInput.value,
                 passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
                 fixedPassword: fixedPasswordInput.value,
                 emailMode: emAutoRadio.checked ? 'auto' : 'manual',
@@ -401,6 +416,8 @@
                     
                     if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
                     if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
+                    if (settings.useSocks5 !== undefined) useSocks5Checkbox.checked = settings.useSocks5;
+                    if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
                     
                     if (settings.passwordMode === 'fixed') {
                         pwFixedRadio.checked = true;
@@ -417,6 +434,7 @@
 
                     updatePasswordModeUI();
                     updateEmailModeUI();
+                    socks5InputGroup.style.display = useSocks5Checkbox.checked ? 'flex' : 'none';
                 }
             } catch (e) {}
         }
@@ -425,7 +443,7 @@
         const inputsToSave = [
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
             globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
-            pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio
+            useSocks5Checkbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
         inputsToSave.forEach(el => el.addEventListener('keyup', saveSettings));
@@ -693,6 +711,8 @@
             dropboxUrlInput.disabled = disabled;
             useDirectCheckbox.disabled = disabled;
             useWarpCheckbox.disabled = disabled;
+            useSocks5Checkbox.disabled = disabled;
+            socks5HostInput.disabled = disabled;
             pwRandomRadio.disabled = disabled;
             pwFixedRadio.disabled = disabled;
             fixedPasswordInput.disabled = disabled;
@@ -738,8 +758,21 @@
             const alias        = aliasInput.value.trim();
             const url          = dropboxUrlInput.value.trim();
             const emails       = emailsListInput.value.trim();
-            const useDirect    = useDirectCheckbox.checked;
-            const useWarp      = useWarpCheckbox.checked;
+            let useDirect = document.getElementById('use-direct').checked;
+            let useWarp = document.getElementById('use-warp').checked;
+            let useSocks5 = useSocks5Checkbox.checked;
+            let socks5Host = socks5HostInput.value.trim();
+
+            if (!useDirect && !useWarp && !useSocks5) {
+                alert('Pilih setidaknya satu tipe koneksi!');
+                return;
+            }
+
+            if (useSocks5 && !socks5Host) {
+                alert('Silakan masukkan Socks5 Host:Port!');
+                return;
+            }
+
             const useHeadless  = true;
             const passwordMode = pwFixedRadio.checked ? 'fixed' : 'random';
             const fixedPassword = fixedPasswordInput.value.trim() || 'Aa12345678*';
@@ -793,10 +826,12 @@
                     count,
                     globalTimeout,
                     globalRetry,
-                    daemonTimeout,
-                    useDirect,
-                    useWarp,
-                    useHeadless,
+                    daemonTimeout: parseInt(document.getElementById('daemon-timeout').value, 10),
+                    useDirect: useDirect,
+                    useWarp: useWarp,
+                    useSocks5: useSocks5,
+                    socks5Host: socks5Host,
+                    useHeadless: true,
                     passwordMode,
                     fixedPassword,
                     uaMode,
