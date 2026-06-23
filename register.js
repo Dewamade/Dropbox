@@ -211,7 +211,12 @@ async function registerSingleEmail(email, params, selectedUaString) {
         console.log(`Mencari form input pendaftaran...\n`);
         console.log(`[Langkah 1] Menunggu field email muncul (timeout 60 detik)...`);
 
-        const emailSelectors = ['input[id^="susi_email"]', 'input[name="email"]', 'input[name="register-email"]'];
+        const emailSelectors = [
+            'input[type="email"]',
+            'input[id^="susi_email"]', 
+            'input[name*="email"]', 
+            'input[name="register-email"]'
+        ];
         let emailFieldFound = false;
         let usedEmailSelector = '';
         for (const sel of emailSelectors) {
