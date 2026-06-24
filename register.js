@@ -184,7 +184,11 @@ async function registerSingleEmail(email, params, selectedUaString) {
         };
         
         if (params.proxy && params.proxy.trim() !== '') {
-            launchOptions.proxy = { server: params.proxy.trim() };
+            let proxyStr = params.proxy.trim();
+            if (!proxyStr.startsWith('http') && !proxyStr.startsWith('socks')) {
+                proxyStr = 'socks5://' + proxyStr;
+            }
+            launchOptions.proxy = { server: proxyStr };
         }
 
         if (params.browser === 'chrome') {
