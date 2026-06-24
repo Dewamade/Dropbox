@@ -17,7 +17,7 @@ function getUserAgent(browserName, deviceType) {
     let list = baseUas;
     const bName = (browserName || 'chrome').toLowerCase();
     const dType = (deviceType || 'desktop').toLowerCase();
-    
+
     // Filter by browser engine to prevent bot detection due to capability mismatch
     if (bName === 'firefox') {
         list = list.filter(ua => ua.includes('Firefox') || ua.includes('Gecko/'));
@@ -25,7 +25,7 @@ function getUserAgent(browserName, deviceType) {
         // Chromium / Chrome / Edge
         list = list.filter(ua => ua.includes('Chrome') || ua.includes('Chromium') || ua.includes('Edg/'));
     }
-    
+
     // Filter by device type
     if (dType === 'mobile') {
         list = list.filter(u => u.includes('Mobile') || u.includes('iPhone') || (u.includes('Android') && u.includes('Mobile')));
@@ -39,7 +39,7 @@ function getUserAgent(browserName, deviceType) {
         // Desktop
         list = list.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android'));
     }
-    
+
     // Fallback if list is empty
     if (list.length === 0) {
         if (bName === 'firefox') {
@@ -48,7 +48,7 @@ function getUserAgent(browserName, deviceType) {
             return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/125.0.0.0 Safari/537.36';
         }
     }
-    
+
     return list[Math.floor(Math.random() * list.length)];
 }
 
@@ -145,11 +145,11 @@ function deleteDirRecursive(dirPath) {
                 } else {
                     try {
                         fs.unlinkSync(curPath);
-                    } catch (e) {}
+                    } catch (e) { }
                 }
             });
             fs.rmdirSync(dirPath);
-        } catch (e) {}
+        } catch (e) { }
     }
 }
 
@@ -195,7 +195,7 @@ function clearProfileData(profilePath) {
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     // Delete directories entirely
@@ -205,7 +205,7 @@ function clearProfileData(profilePath) {
             if (fs.existsSync(dirPath)) {
                 deleteDirRecursive(dirPath);
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     // Clean storage default directory while preserving moz-extensions (extension settings)
@@ -224,15 +224,15 @@ function clearProfileData(profilePath) {
                 }
             }
             console.log('✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.');
-        } catch (e) {}
+        } catch (e) { }
     }
 }
 
 
 function killAllBrowsers() {
-    try { execSync('pkill -9 -f chromium', { stdio: 'ignore' }); } catch (_) {}
-    try { execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) {}
-    try { execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) {}
+    try { execSync('pkill -9 -f chromium', { stdio: 'ignore' }); } catch (_) { }
+    try { execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) { }
+    try { execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) { }
 }
 
 async function hasCaptcha(page) {
@@ -255,7 +255,7 @@ async function hasCaptcha(page) {
             for (let i = 0; i < count; i++) {
                 if (await page.locator(selector).nth(i).isVisible()) return true;
             }
-        } catch (e) {}
+        } catch (e) { }
     }
     return false;
 }
@@ -264,7 +264,7 @@ async function hasCaptcha(page) {
 
 async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyType, ...args) {
     let email, params, selectedUaString;
-    
+
     if (typeof emailOrUrl === 'string' && emailOrUrl.startsWith('http')) {
         // Old style call from server.js
         const url = emailOrUrl;
@@ -283,7 +283,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         const isRetry = args[10] || false;
         const uaMode = args[11] || 'generate';
         selectedUaString = args[12] || '';
-        
+
         let proxyStr = '';
         if (proxyType === 'warp') {
             proxyStr = 'socks5://127.0.0.1:8086';
@@ -293,7 +293,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 proxyStr = 'socks5://' + proxyStr;
             }
         }
-        
+
         params = {
             url,
             source: 'manual',
@@ -315,19 +315,19 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
     }
 
     const { url, passwordMode, fixedPassword, timeout, alias, headless, isRetry } = params;
-    
+
     const globalTimeout = parseInt(timeout, 10) || 60;
     const daemonTimeout = 120;
     const gtMs = globalTimeout * 1000;
     const dtMs = daemonTimeout * 1000;
-    
+
     let context, page;
     let isRegistered = false;
     let finalStatus = 'failed';
     let emailTimeouts = 0;
     let emailErrors = 0;
     let ipResult = '-';
-    
+
     const password = passwordMode === 'fixed' ? fixedPassword : generatePassword();
 
     // Generate names
@@ -357,7 +357,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             headless: params.headless,
             args: []
         };
-        
+
         if (params.proxy && params.proxy.trim() !== '') {
             let proxyStr = params.proxy.trim();
             if (!proxyStr.startsWith('http') && !proxyStr.startsWith('socks')) {
@@ -408,7 +408,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         }
 
         const engine = params.browser === 'firefox' ? firefox : chromium;
-        
+
         const contextOptions = {
             headless: launchOptions.headless,
             userAgent: selectedUaString,
@@ -441,7 +441,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         // Advanced evasions to make browser tracking significantly harder
         await context.addInitScript(() => {
             // 1. Evade navigator.webdriver
-            try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) {}
+            try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) { }
 
             // 2. Mock Plugins list (biasanya 0 pada headless/bot)
             try {
@@ -453,7 +453,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 ];
                 Object.defineProperty(navigator, 'plugins', { get: () => pluginData });
                 Object.defineProperty(navigator, 'mimeTypes', { get: () => [{ type: 'application/pdf', suffixes: 'pdf', description: '', enabledPlugin: pluginData[0] }] });
-            } catch (e) {}
+            } catch (e) { }
 
             // 3. Override permissions API
             try {
@@ -462,7 +462,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     parameters.name === 'notifications' ?
                         Promise.resolve({ state: Notification.permission }) :
                         originalQuery(parameters);
-            } catch (e) {}
+            } catch (e) { }
         });
 
         console.log(`[Playwright] Navigasi ke ipify untuk cek IP (timeout 60 detik)...`);
@@ -470,13 +470,13 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             await page.goto('https://api.ipify.org', { waitUntil: 'domcontentloaded', timeout: gtMs });
             ipResult = await page.textContent('body');
             console.log(`[Playwright] Public IP (${params.proxy ? 'Proxy' : 'Direct'}): ${ipResult}`);
-        } catch(e) {
+        } catch (e) {
             console.log(`[Playwright] Public IP (${params.proxy ? 'Proxy' : 'Direct'}): Gagal mengambil IP`);
         }
-        
+
         console.log(`[Playwright] User Agent (post-nav): ${selectedUaString}`);
         console.log(`[Navigasi] Ke: ${url} (timeout 60 detik)`);
-        
+
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs });
         await page.waitForTimeout(2000);
 
@@ -487,8 +487,8 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
         const emailSelectors = [
             'input[type="email"]',
-            'input[id^="susi_email"]', 
-            'input[name*="email"]', 
+            'input[id^="susi_email"]',
+            'input[name*="email"]',
             'input[name="register-email"]'
         ];
         let emailFieldFound = false;
@@ -499,7 +499,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 emailFieldFound = true;
                 usedEmailSelector = sel;
                 break;
-            } catch(e) {}
+            } catch (e) { }
         }
         if (!emailFieldFound) throw new Error("Gagal menemukan field email");
 
@@ -514,7 +514,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             await page.locator(usedEmailSelector).first().type(email, { delay: 50 });
         }
         console.log(`✓ Mengisi Email`);
-        
+
         const nameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[name="register-first-name"]'];
         let isOneStep = false;
         let usedNameSelector = '';
@@ -529,7 +529,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     console.log(`\n[Info] Mendeteksi form 1-langkah (Field nama langsung tersedia)`);
                     break;
                 }
-            } catch(e) {}
+            } catch (e) { }
         }
 
         if (!isOneStep) {
@@ -553,9 +553,9 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         console.log(`✓ Mengklik tombol Continue (human-click)`);
                         break;
                     }
-                } catch(e) {}
+                } catch (e) { }
             }
-            
+
             if (!clickedContinue) {
                 console.log(`⚠️ Tombol Continue spesifik tidak ditemukan, mencoba lanjut pengisian nama...`);
             } else {
@@ -593,7 +593,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             }
             if (!foundStep2) {
                 const screenshotPath = path.join(__dirname, 'data', `debug_error_${email.split('@')[0]}.png`);
-                await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+                await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => { });
                 console.log(`[DEBUG] Screenshot layar saat error disimpan di: ./data/debug_error_${email.split('@')[0]}.png`);
                 throw new Error(`Gagal menemukan form nama atau login (Langkah 2)`);
             }
@@ -604,38 +604,38 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             await page.waitForTimeout(2000);
 
             // First Name
-            await page.locator(usedNameSelector).first().fill(firstName).catch(()=>{});
+            await page.locator(usedNameSelector).first().fill(firstName).catch(() => { });
             let fnameVal = await page.locator(usedNameSelector).first().inputValue().catch(() => '');
             if (fnameVal !== firstName) {
-                await page.locator(usedNameSelector).first().fill('').catch(()=>{});
-                await page.locator(usedNameSelector).first().type(firstName, { delay: 50 }).catch(()=>{});
+                await page.locator(usedNameSelector).first().fill('').catch(() => { });
+                await page.locator(usedNameSelector).first().type(firstName, { delay: 50 }).catch(() => { });
             }
             console.log(`✓ Mengisi First Name (human-typed)`);
             await page.waitForTimeout(1000);
 
             // Last Name
             const lnameSel = 'input[name="lname"], input[name="register-last-name"]';
-            await page.locator(lnameSel).first().fill(lastName).catch(()=>{});
+            await page.locator(lnameSel).first().fill(lastName).catch(() => { });
             let lnameVal = await page.locator(lnameSel).first().inputValue().catch(() => '');
             if (lnameVal !== lastName) {
-                await page.locator(lnameSel).first().fill('').catch(()=>{});
-                await page.locator(lnameSel).first().type(lastName, { delay: 50 }).catch(()=>{});
+                await page.locator(lnameSel).first().fill('').catch(() => { });
+                await page.locator(lnameSel).first().type(lastName, { delay: 50 }).catch(() => { });
             }
             console.log(`✓ Mengisi Last Name (human-typed)`);
             await page.waitForTimeout(1000);
 
             // Password
             const pwordSel = 'input[name="password"], input[name="register-password"]';
-            await page.locator(pwordSel).first().fill(password).catch(()=>{});
+            await page.locator(pwordSel).first().fill(password).catch(() => { });
             let pwordVal = await page.locator(pwordSel).first().inputValue().catch(() => '');
             if (pwordVal !== password) {
-                await page.locator(pwordSel).first().fill('').catch(()=>{});
-                await page.locator(pwordSel).first().type(password, { delay: 50 }).catch(()=>{});
+                await page.locator(pwordSel).first().fill('').catch(() => { });
+                await page.locator(pwordSel).first().type(password, { delay: 50 }).catch(() => { });
             }
             console.log(`✓ Mengisi Password (human-typed)`);
 
-            try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][name="agree"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) {}
-            try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][id*="tos"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) {}
+            try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][name="agree"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) { }
+            try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][id*="tos"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) { }
 
             console.log(`\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...`);
             const submitSelectors = [
@@ -659,7 +659,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         submitted = true;
                         break;
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
 
             if (!submitted) throw new Error("Gagal menemukan/menekan tombol Daftar.");
@@ -673,15 +673,15 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             const regDeadline = Date.now() + gtMs;
             while (Date.now() < regDeadline) {
                 await page.waitForTimeout(2000);
-                
+
                 if (await hasCaptcha(page)) throw new Error("CAPTCHA_DETECTED_POST_SUBMIT");
-                
+
                 try {
                     const bodyText = await page.textContent('body');
                     if (bodyText && bodyText.toLowerCase().includes('too many attempts')) {
                         throw new Error("TOO_MANY_ATTEMPTS");
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 const currentUrl = page.url();
                 if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') || currentUrl.includes('onboarding') ||
@@ -695,22 +695,22 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             if (!isRegistered) throw new Error("NO_URL_CHANGE");
         } else if (step2Mode === 'login') {
             console.log(`[Browser] ⚠️ Akun sudah terdaftar. Mencoba masuk (Log in) dengan email & password...`);
-            
+
             const loginEmailSel = 'input[type="email"], input[name*="email"], input[id^="susi_email"]';
             const loginPasswordSel = 'input[type="password"], input[name="login_password"], input[id^="login_password"]';
 
             if (await page.locator(loginEmailSel).first().isVisible()) {
                 const filledEmail = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
                 if (filledEmail !== email) {
-                    await page.locator(loginEmailSel).first().fill(email).catch(()=>{});
+                    await page.locator(loginEmailSel).first().fill(email).catch(() => { });
                     let logEmailVal = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
                     if (logEmailVal !== email) {
-                        await page.locator(loginEmailSel).first().fill('').catch(()=>{});
-                        await page.locator(loginEmailSel).first().type(email, { delay: 50 }).catch(()=>{});
+                        await page.locator(loginEmailSel).first().fill('').catch(() => { });
+                        await page.locator(loginEmailSel).first().type(email, { delay: 50 }).catch(() => { });
                     }
                 }
             }
-            
+
             if (!await page.locator(loginPasswordSel).first().isVisible()) {
                 // Click Continue first
                 const loginContinueSelectors = [
@@ -738,18 +738,18 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     usedPasswordSel = sel;
                     passwordSelFound = true;
                     break;
-                } catch(e) {}
+                } catch (e) { }
             }
 
             if (passwordSelFound) {
-                await page.locator(usedPasswordSel).first().fill(password).catch(()=>{});
+                await page.locator(usedPasswordSel).first().fill(password).catch(() => { });
                 let logPassVal = await page.locator(usedPasswordSel).first().inputValue().catch(() => '');
                 if (logPassVal !== password) {
-                    await page.locator(usedPasswordSel).first().fill('').catch(()=>{});
-                    await page.locator(usedPasswordSel).first().type(password, { delay: 50 }).catch(()=>{});
+                    await page.locator(usedPasswordSel).first().fill('').catch(() => { });
+                    await page.locator(usedPasswordSel).first().type(password, { delay: 50 }).catch(() => { });
                 }
                 await page.waitForTimeout(1000);
-                
+
                 // Click log in submit button
                 const loginSubmitSelectors = [
                     'button[class*="login-button"]',
@@ -768,10 +768,10 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 if (!clickedSubmit) {
                     await page.keyboard.press('Enter');
                 }
-                
+
                 console.log(`[Browser] Menunggu login selesai...`);
                 await page.waitForTimeout(5000);
-                
+
                 // Check if logged in successfully (URL doesn't have login anymore or shows home/personal)
                 const currentUrl = page.url();
                 if (!currentUrl.includes('/login')) {
@@ -789,11 +789,11 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         await page.waitForTimeout(1500);
 
         let dropboxProc = null;
-        let cliLinkUrl  = null;
+        let cliLinkUrl = null;
         const killDropbox = () => {
-            if (dropboxProc) try { dropboxProc.kill('SIGTERM'); } catch (_) {}
-            try { execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) {}
-            try { execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) {}
+            if (dropboxProc) try { dropboxProc.kill('SIGTERM'); } catch (_) { }
+            try { execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) { }
+            try { execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) { }
         };
 
         try {
@@ -806,7 +806,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             } else if (fs.existsSync(path.join(__dirname, '.dropbox-dist', 'dropboxd'))) {
                 dropboxCmd = './.dropbox-dist/dropboxd';
             } else {
-                dropboxCmd = './app/.dropbox-dist/dropboxd'; 
+                dropboxCmd = './app/.dropbox-dist/dropboxd';
             }
 
             console.log(`[dropboxd] Menjalankan via bash: ${dropboxCmd} (HOME=${__dirname})`);
@@ -827,17 +827,17 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         const trimmed = line.trim();
                         if (trimmed) console.log(`[dropboxd] ${trimmed}`);
                     });
-                    
+
                     const match = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
                     if (match && !cliLinkUrl) {
                         cliLinkUrl = match[0];
                         clearTimeout(deadline);
                         console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
-                        
+
                         // Turn off stdout and stderr data listeners to stop console spam
                         dropboxProc.stdout.off('data', scanForLink);
                         dropboxProc.stderr.off('data', scanForLink);
-                        
+
                         resolve();
                     }
                 };
@@ -861,20 +861,20 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 try {
                     console.log(`[Browser] Navigasi ke URL CLI Link (Attempt ${cliAttempt}/${maxCliAttempts})...`);
                     await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-                    
+
                     const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
-                                               .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
-                    
+                        .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
+
                     console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
                     let connectBtnFound = false;
                     try {
                         await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
                         connectBtnFound = true;
-                    } catch (_) {}
+                    } catch (_) { }
 
                     if (!connectBtnFound) {
                         const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
-                        await page.screenshot({ path: errScreenshot, fullPage: true }).catch(()=>{});
+                        await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => { });
                         throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
                     }
 
@@ -884,7 +884,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     console.log(`[Browser] Menunggu konfirmasi berhasil dihubungkan...`);
                     await page.waitForTimeout(3000);
                     console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
-                    
+
                     connected = true;
                     killDropbox();
 
@@ -899,7 +899,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 console.log(`\n[Browser] Membuka halaman Settings untuk verifikasi email...`);
                 console.log(`[Navigasi] Ke halaman Settings/Account (timeout 60 detik)...`);
                 await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
-                
+
                 const verifySelectors = [
                     'button[aria-label="Verify email"]',
                     'button[aria-label="Verifikasi email"]',
@@ -911,7 +911,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
                 console.log(`[Browser] Menunggu tombol Verify email muncul (timeout 15 detik)...`);
                 let verifySelFound = '';
-                const verifyDeadline = Date.now() + 15000;
+                const verifyDeadline = Date.now() + 60000;
                 while (Date.now() < verifyDeadline) {
                     for (const sel of verifySelectors) {
                         try {
@@ -919,7 +919,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                                 verifySelFound = sel;
                                 break;
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                     if (verifySelFound) break;
                     await page.waitForTimeout(500);
@@ -938,7 +938,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 } else {
                     console.log(`[Browser] ⚠️ Tombol Verify email tidak ditemukan di halaman Settings.`);
                     const screenshotPath = path.join(__dirname, 'data', `debug_verify_missing_${email.split('@')[0]}.png`);
-                    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+                    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => { });
                     console.log(`[DEBUG] Screenshot halaman settings disimpan di: ./data/debug_verify_missing_${email.split('@')[0]}.png`);
                 }
 
@@ -964,7 +964,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                                     sendSelFound = sel;
                                     break;
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
                         if (sendSelFound) break;
                         await page.waitForTimeout(500);
@@ -981,7 +981,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     } else {
                         console.log(`[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.`);
                         const screenshotPath = path.join(__dirname, 'data', `debug_modal_missing_${email.split('@')[0]}.png`);
-                        await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+                        await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => { });
                         console.log(`[DEBUG] Screenshot modal disimpan di: ./data/debug_modal_missing_${email.split('@')[0]}.png`);
                     }
                 }
@@ -998,35 +998,35 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         console.log(`Menutup browser context untuk ${email}...`);
         console.log(`[Kill] Semua proses Chromium/Playwright dihentikan paksa.`);
         console.log(`[Kill] Semua proses box64/dropboxd dihentikan paksa.`);
-        
+
         saveRegistration(email, password, finalStatus, alias, ipResult, selectedUaString, emailTimeouts, emailErrors);
         return { success: true, status: finalStatus, password, ip: ipResult, ua: selectedUaString };
 
     } catch (error) {
         let msg = (error.message || '').split('\n')[0];
         console.log(`❌ Pendaftaran gagal untuk ${email}: ${msg}`);
-        
+
         if (isRegistered) {
             console.log(`[Info] Meskipun verifikasi CLI Link gagal, pendaftaran akun untuk ${email} sudah berhasil.`);
             saveRegistration(email, password, 'success', alias, ipResult, selectedUaString, emailTimeouts, emailErrors);
             return { success: true, status: 'success', password, ip: ipResult, ua: selectedUaString };
         }
-        
+
         if (msg.toLowerCase().includes('timeout')) emailTimeouts++;
         else emailErrors++;
-        
+
         if (page && !page.isClosed()) {
             try {
                 const screenshotPath = path.join(__dirname, 'data', `debug_error_${email.split('@')[0]}.png`);
                 await page.screenshot({ path: screenshotPath, fullPage: true });
                 console.log(`[DEBUG] Screenshot layar saat error disimpan di: ./data/debug_error_${email.split('@')[0]}.png`);
-            } catch(e) {}
+            } catch (e) { }
         }
 
         return { success: false, error: msg };
     } finally {
-        if (page) await page.close().catch(()=>{});
-        if (context) await context.close().catch(()=>{});
+        if (page) await page.close().catch(() => { });
+        if (context) await context.close().catch(() => { });
         killAllBrowsers();
     }
 }
@@ -1065,7 +1065,7 @@ async function runCLI() {
         const email = emailList[i];
         console.log(`\n------------------------------------------------------------`);
         console.log(`[Email ${i + 1}/${emailList.length}] Mulai memproses: ${email}`);
-        
+
         const deviceType = devices[uaRotationIndex % devices.length] || 'desktop';
         const ua = getUserAgent(params.browser, deviceType);
         uaRotationIndex++;
@@ -1075,7 +1075,7 @@ async function runCLI() {
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             if (attempt > 1) console.log(`\n🔄 Mencoba kembali (Attempt ${attempt}/${maxAttempts}) untuk ${email}...`);
-            
+
             // Set parameter isRetry jika ini adalah iterasi ke-2 atau lebih
             const runParams = { ...params, isRetry: attempt > 1 };
 
