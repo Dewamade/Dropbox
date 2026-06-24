@@ -227,7 +227,11 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-gpu',
+                '--disable-infobars',
+                '--no-first-run',
+                '--no-service-autorun',
+                '--password-store=basic'
             ]
         };
         
@@ -250,6 +254,9 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             launchOptions.args.push('--disable-blink-features=AutomationControlled');
         }
 
+        // Add argument to exclude automation switches
+        launchOptions.ignoreDefaultArgs = ['--enable-automation'];
+
         const engine = params.browser === 'firefox' ? firefox : chromium;
         
         const contextOptions = {
@@ -270,6 +277,10 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
         if (launchOptions.executablePath) {
             contextOptions.executablePath = launchOptions.executablePath;
+        }
+
+        if (launchOptions.ignoreDefaultArgs) {
+            contextOptions.ignoreDefaultArgs = launchOptions.ignoreDefaultArgs;
         }
 
         context = await engine.launchPersistentContext(profilePath, contextOptions);
