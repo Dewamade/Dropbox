@@ -18,6 +18,9 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
 5. **Dukungan Lintas Platform (Windows & Docker Linux)**:
    - Di Windows, menggunakan instalasi Google Chrome Resmi lokal (`channel: 'chrome'`).
    - Di Docker Linux, menggunakan Google Chrome Desktop resmi `/usr/bin/google-chrome`.
+6. **Injeksi Parameter Lokalisasi & Zona Waktu**:
+   - Skrip secara eksplisit menginjeksikan `locale: 'en-US'` dan `timezoneId: 'America/New_York'` pada pengaturan browser context. Ini mereplikasi behavior browser desktop normal dan meniadakan indikasi ketidaksesuaian/inkonsistensi profile di server VPS (yang secara default tidak memiliki zona waktu atau bermarkas di luar target pasar), sehingga secara signifikan mengurangi kemunculan CAPTCHA pendaftaran.
+
 
 ---
 

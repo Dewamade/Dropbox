@@ -320,6 +320,8 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             headless: launchOptions.headless,
             userAgent: selectedUaString,
             viewport: { width: 1280, height: 720 },
+            locale: 'en-US',
+            timezoneId: 'America/New_York',
             ignoreHTTPSErrors: true,
             args: launchOptions.args
         };
