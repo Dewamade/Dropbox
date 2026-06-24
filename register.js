@@ -725,113 +725,14 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             const maxCliAttempts = 3;
             while (!connected && cliAttempt < maxCliAttempts) {
                 cliAttempt++;
-                let cliPage = null;
                 try {
-                    console.log(`[Browser] Membuka tab baru untuk navigasi ke URL CLI Link...`);
-                    cliPage = await context.newPage();
-
-                    console.log(`[Browser] Navigasi ke URL CLI Link untuk pengecekan awal (timeout 60 detik)...`);
-                    await cliPage.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
+                    console.log(`[Browser] Navigasi ke URL CLI Link (Attempt ${cliAttempt}/${maxCliAttempts})...`);
+                    await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
                     
-                    const connectLocator = cliPage.locator('button, input[type="submit"], a, [role="button"]')
+                    const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
                                                .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
                     
-                    let isLoggedAndReady = false;
-                    try {
-                        await connectLocator.first().waitFor({ state: 'visible', timeout: 8000 });
-                        isLoggedAndReady = true;
-                    } catch (e) {
-                        console.log(`[Browser] Tombol Connect tidak ditemukan secara langsung. Berasumsi perlu login terlebih dahulu...`);
-                    }
-
-                    if (!isLoggedAndReady) {
-                        console.log(`[Browser] Navigasi ke halaman login Dropbox (https://www.dropbox.com/login)...`);
-                        await cliPage.goto('https://www.dropbox.com/login', { waitUntil: 'domcontentloaded', timeout: gtMs });
-                        await cliPage.waitForTimeout(3000);
-
-                        const loginEmailSel = 'input[type="email"], input[name*="email"], input[id^="susi_email"]';
-                        const loginPasswordSel = 'input[type="password"], input[name="login_password"], input[id^="login_password"]';
-
-                        await cliPage.waitForSelector(loginEmailSel, { state: 'visible', timeout: 15000 });
-                        
-                        // Fill email
-                        await cliPage.locator(loginEmailSel).first().fill(email).catch(()=>{});
-                        let logEmailVal = await cliPage.locator(loginEmailSel).first().inputValue().catch(() => '');
-                        if (logEmailVal !== email) {
-                            await cliPage.locator(loginEmailSel).first().fill('').catch(()=>{});
-                            await cliPage.locator(loginEmailSel).first().type(email, { delay: 50 }).catch(()=>{});
-                        }
-                        await cliPage.waitForTimeout(1000);
-
-                        // Check password visibility
-                        let passwordDirectlyVisible = await cliPage.locator(loginPasswordSel).first().isVisible();
-                        if (!passwordDirectlyVisible) {
-                            // Click Continue
-                            const loginContinueSelectors = [
-                                'button.email-submit-button',
-                                'button[class*="email-submit-button"]',
-                                'button:has-text("Continue")',
-                                'button:has-text("Lanjutkan")',
-                                'button[type="submit"]'
-                            ];
-                            let clickedContinue = false;
-                            for (const sel of loginContinueSelectors) {
-                                if (await cliPage.locator(sel).first().isVisible()) {
-                                    await cliPage.locator(sel).first().click({ delay: 150 });
-                                    clickedContinue = true;
-                                    break;
-                                }
-                            }
-                            if (!clickedContinue) {
-                                await cliPage.keyboard.press('Enter');
-                            }
-                            await cliPage.waitForTimeout(3000);
-                        }
-
-                        // Fill password
-                        await cliPage.waitForSelector(loginPasswordSel, { state: 'visible', timeout: 15000 });
-                        await cliPage.locator(loginPasswordSel).first().fill(password).catch(()=>{});
-                        let logPassVal = await cliPage.locator(loginPasswordSel).first().inputValue().catch(() => '');
-                        if (logPassVal !== password) {
-                            await cliPage.locator(loginPasswordSel).first().fill('').catch(()=>{});
-                            await cliPage.locator(loginPasswordSel).first().type(password, { delay: 50 }).catch(()=>{});
-                        }
-                        await cliPage.waitForTimeout(1000);
-
-                        // Click Log In
-                        const loginSubmitSelectors = [
-                            'button[class*="login-button"]',
-                            'button:has-text("Log in")',
-                            'button:has-text("Masuk")',
-                            'button[type="submit"]'
-                        ];
-                        let clickedSubmit = false;
-                        for (const sel of loginSubmitSelectors) {
-                            if (await cliPage.locator(sel).first().isVisible()) {
-                                await cliPage.locator(sel).first().click({ delay: 150 });
-                                clickedSubmit = true;
-                                break;
-                            }
-                        }
-                        if (!clickedSubmit) {
-                            await cliPage.keyboard.press('Enter');
-                        }
-
-                        console.log(`[Browser] Menunggu login selesai...`);
-                        await cliPage.waitForTimeout(7000);
-
-                        // Check if logged in
-                        const currentUrl = cliPage.url();
-                        if (currentUrl.includes('/login')) {
-                            throw new Error("Gagal login: masih berada di halaman login.");
-                        }
-                        console.log(`[Browser] Login sukses, menavigasi kembali ke URL CLI Link...`);
-                        await cliPage.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-                        await cliPage.waitForTimeout(3000);
-                    }
-
                     console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
-                    
                     let connectBtnFound = false;
                     try {
                         await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
@@ -840,7 +741,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
                     if (!connectBtnFound) {
                         const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
-                        await cliPage.screenshot({ path: errScreenshot, fullPage: true }).catch(()=>{});
+                        await page.screenshot({ path: errScreenshot, fullPage: true }).catch(()=>{});
                         throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
                     }
 
@@ -848,7 +749,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     await connectLocator.first().click();
                     console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
                     console.log(`[Browser] Menunggu konfirmasi berhasil dihubungkan...`);
-                    await cliPage.waitForTimeout(3000);
+                    await page.waitForTimeout(3000);
                     console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
                     
                     connected = true;
@@ -858,10 +759,6 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     console.log(`[Browser] Error CLI Link (Attempt ${cliAttempt}): ${err.message}`);
                     if (cliAttempt >= maxCliAttempts) throw new Error("Gagal verifikasi CLI Link.");
                     await page.waitForTimeout(3000);
-                } finally {
-                    if (cliPage) {
-                        await cliPage.close().catch(()=>{});
-                    }
                 }
             }
 
