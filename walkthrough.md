@@ -20,6 +20,10 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
    - Di Docker Linux, menggunakan Google Chrome Desktop resmi `/usr/bin/google-chrome`.
 6. **Injeksi Parameter Lokalisasi & Zona Waktu**:
    - Skrip secara eksplisit menginjeksikan `locale: 'en-US'` dan `timezoneId: 'America/New_York'` pada pengaturan browser context. Ini mereplikasi behavior browser desktop normal dan meniadakan indikasi ketidaksesuaian/inkonsistensi profile di server VPS (yang secara default tidak memiliki zona waktu atau bermarkas di luar target pasar), sehingga secara signifikan mengurangi kemunculan CAPTCHA pendaftaran.
+7. **Restorasi Profil Persisten & Script Evasion (Penyamaran)**:
+   - Skrip dikembalikan untuk menggunakan satu folder profil persisten bersama (`./data/firefox-profile`). Cache browser, data startup, sertifikat SSL, dan status profil tetap dipertahankan antar-sesi pendaftaran (hanya membersihkan data sensitif seperti cookies/locks menggunakan fungsi `clearProfileData` di awal siklus). Ini mereplikasi 'warmed-up profile' yang meningkatkan kepercayaan anti-bot.
+   - Menyisipkan kembali script penyamaran `addInitScript` untuk menyembunyikan properti `navigator.webdriver`, memalsukan list plugins tiruan, dan me-override izin notifikasi API.
+
 
 
 ---

@@ -134,6 +134,101 @@ function randomString(length) {
     return result;
 }
 
+// Helper to recursively delete directories
+function deleteDirRecursive(dirPath) {
+    if (fs.existsSync(dirPath)) {
+        try {
+            fs.readdirSync(dirPath).forEach((file) => {
+                const curPath = path.join(dirPath, file);
+                if (fs.lstatSync(curPath).isDirectory()) {
+                    deleteDirRecursive(curPath);
+                } else {
+                    try {
+                        fs.unlinkSync(curPath);
+                    } catch (e) {}
+                }
+            });
+            fs.rmdirSync(dirPath);
+        } catch (e) {}
+    }
+}
+
+// Function to clear browser cache, cookies, history, and site storage
+// while preserving extensions and their settings
+function clearProfileData(profilePath) {
+    if (!fs.existsSync(profilePath)) return;
+
+    console.log('Membersihkan cookies, cache, dan data penyimpanan situs...');
+
+    // Files to delete (including locks)
+    const filesToDelete = [
+        'cookies.sqlite',
+        'cookies.sqlite-wal',
+        'cookies.sqlite-shm',
+        'places.sqlite',
+        'places.sqlite-wal',
+        'places.sqlite-shm',
+        'formhistory.sqlite',
+        'sessionstore.jsonlz4',
+        'permissions.sqlite',
+        'content-prefs.sqlite',
+        'webappsstore.sqlite',
+        'favicons.sqlite',
+        'parent.lock',
+        'lock',
+        '.parentlock'
+    ];
+
+    // Directories to delete entirely
+    const dirsToDelete = [
+        'cache2',
+        'sessionstore-backups',
+        'startupCache',
+        'jumpListCache',
+        'entries',
+    ];
+
+    // Delete files
+    for (const file of filesToDelete) {
+        const filePath = path.join(profilePath, file);
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        } catch (e) {}
+    }
+
+    // Delete directories entirely
+    for (const dir of dirsToDelete) {
+        const dirPath = path.join(profilePath, dir);
+        try {
+            if (fs.existsSync(dirPath)) {
+                deleteDirRecursive(dirPath);
+            }
+        } catch (e) {}
+    }
+
+    // Clean storage default directory while preserving moz-extensions (extension settings)
+    const storagePath = path.join(profilePath, 'storage', 'default');
+    if (fs.existsSync(storagePath)) {
+        try {
+            const items = fs.readdirSync(storagePath);
+            for (const item of items) {
+                if (!item.startsWith('moz-extension+++')) {
+                    const itemPath = path.join(storagePath, item);
+                    if (fs.lstatSync(itemPath).isDirectory()) {
+                        deleteDirRecursive(itemPath);
+                    } else {
+                        fs.unlinkSync(itemPath);
+                    }
+                }
+            }
+            console.log('✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.');
+        } catch (e) {}
+    }
+}
+
+
 function killAllBrowsers() {
     try { execSync('pkill -9 -f chromium', { stdio: 'ignore' }); } catch (_) {}
     try { execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) {}
@@ -255,10 +350,8 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             console.log(`\nMembuka ${params.browser === 'firefox' ? 'Firefox' : params.browser === 'chrome' ? 'Google Chrome Resmi' : 'Chromium'} dengan mode User Agent: Generate Local (Percobaan Ulang)`);
         }
 
-        const profilePath = path.join(__dirname, 'data', `profile_${email.split('@')[0]}`);
-        if (fs.existsSync(profilePath)) {
-            try { fs.rmSync(profilePath, { recursive: true, force: true }); } catch(_) {}
-        }
+        const profilePath = path.join(__dirname, 'data', 'firefox-profile');
+        clearProfileData(profilePath);
 
         const launchOptions = {
             headless: params.headless,
@@ -344,6 +437,33 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
         context = await engine.launchPersistentContext(profilePath, contextOptions);
         page = context.pages()[0] || await context.newPage();
+
+        // Advanced evasions to make browser tracking significantly harder
+        await context.addInitScript(() => {
+            // 1. Evade navigator.webdriver
+            try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) {}
+
+            // 2. Mock Plugins list (biasanya 0 pada headless/bot)
+            try {
+                const pluginData = [
+                    { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
+                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgieooff', description: 'Portable Document Format', version: '' },
+                    { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
+                    { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
+                ];
+                Object.defineProperty(navigator, 'plugins', { get: () => pluginData });
+                Object.defineProperty(navigator, 'mimeTypes', { get: () => [{ type: 'application/pdf', suffixes: 'pdf', description: '', enabledPlugin: pluginData[0] }] });
+            } catch (e) {}
+
+            // 3. Override permissions API
+            try {
+                const originalQuery = navigator.permissions.query;
+                navigator.permissions.query = (parameters) =>
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters);
+            } catch (e) {}
+        });
 
         console.log(`[Playwright] Navigasi ke ipify untuk cek IP (timeout 60 detik)...`);
         try {
@@ -907,11 +1027,6 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
     } finally {
         if (page) await page.close().catch(()=>{});
         if (context) await context.close().catch(()=>{});
-        // Clean up the profile directory after closing
-        const profilePath = path.join(__dirname, 'data', `profile_${email.split('@')[0]}`);
-        if (fs.existsSync(profilePath)) {
-            try { fs.rmSync(profilePath, { recursive: true, force: true }); } catch(_) {}
-        }
         killAllBrowsers();
     }
 }
