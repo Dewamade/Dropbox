@@ -1,4 +1,4 @@
-const { chromium, firefox } = require('playwright-extra');
+const { chromium, firefox } = require('playwright');
 
 const { spawn, execSync } = require('child_process');
 const path = require('path');
@@ -128,7 +128,58 @@ async function hasCaptcha(page) {
 
 // --- Main Email Registration Logic ---
 
-async function registerSingleEmail(email, params, selectedUaString) {
+async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyType, ...args) {
+    let email, params, selectedUaString;
+    
+    if (typeof emailOrUrl === 'string' && emailOrUrl.startsWith('http')) {
+        // Old style call from server.js
+        const url = emailOrUrl;
+        email = paramsOrEmail;
+        const proxyType = selectedUaOrProxyType;
+        const proxyHost = args[0];
+        const isInit = args[1];
+        const abortController = args[2];
+        const headless = args[3];
+        const passwordMode = args[4];
+        const fixedPassword = args[5];
+        const globalTimeout = args[6] || 60;
+        const daemonTimeout = args[7] || 120;
+        const alias = args[8] || 'Server-Default';
+        const globalRetry = args[9] || 3;
+        const isRetry = args[10] || false;
+        const uaMode = args[11] || 'generate';
+        selectedUaString = args[12] || '';
+        
+        let proxyStr = '';
+        if (proxyType === 'warp') {
+            proxyStr = 'socks5://127.0.0.1:8086';
+        } else if (proxyType === 'socks5' && proxyHost) {
+            proxyStr = proxyHost;
+            if (!proxyStr.startsWith('http') && !proxyStr.startsWith('socks')) {
+                proxyStr = 'socks5://' + proxyStr;
+            }
+        }
+        
+        params = {
+            url,
+            source: 'manual',
+            emails: email,
+            passwordMode,
+            fixedPassword,
+            timeout: globalTimeout,
+            retry: globalRetry,
+            headless: headless,
+            proxy: proxyStr,
+            alias,
+            isRetry
+        };
+    } else {
+        // New style call
+        email = emailOrUrl;
+        params = paramsOrEmail;
+        selectedUaString = selectedUaOrProxyType;
+    }
+
     const { url, passwordMode, fixedPassword, timeout, alias, headless, isRetry } = params;
     
     const globalTimeout = parseInt(timeout, 10) || 60;
@@ -136,7 +187,7 @@ async function registerSingleEmail(email, params, selectedUaString) {
     const gtMs = globalTimeout * 1000;
     const dtMs = daemonTimeout * 1000;
     
-    let browser, context, page;
+    let context, page;
     let isRegistered = false;
     let finalStatus = 'failed';
     let emailTimeouts = 0;
@@ -165,6 +216,11 @@ async function registerSingleEmail(email, params, selectedUaString) {
             console.log(`\nMembuka ${params.browser === 'firefox' ? 'Firefox' : params.browser === 'chrome' ? 'Google Chrome Resmi' : 'Chromium'} dengan mode User Agent: Generate Local (Percobaan Ulang)`);
         }
 
+        const profilePath = path.join(__dirname, 'data', `profile_${email.split('@')[0]}`);
+        if (fs.existsSync(profilePath)) {
+            try { fs.rmSync(profilePath, { recursive: true, force: true }); } catch(_) {}
+        }
+
         const launchOptions = {
             headless: params.headless,
             args: [
@@ -191,14 +247,25 @@ async function registerSingleEmail(email, params, selectedUaString) {
         }
 
         const engine = params.browser === 'firefox' ? firefox : chromium;
-        browser = await engine.launch(launchOptions);
-        context = await browser.newContext({
+        
+        const contextOptions = {
+            headless: launchOptions.headless,
             userAgent: selectedUaString,
             viewport: { width: 1280, height: 720 },
-            ignoreHTTPSErrors: true
-        });
+            ignoreHTTPSErrors: true,
+            args: launchOptions.args
+        };
 
-        page = await context.newPage();
+        if (launchOptions.proxy) {
+            contextOptions.proxy = launchOptions.proxy;
+        }
+
+        if (launchOptions.executablePath) {
+            contextOptions.executablePath = launchOptions.executablePath;
+        }
+
+        context = await engine.launchPersistentContext(profilePath, contextOptions);
+        page = context.pages()[0] || await context.newPage();
 
         console.log(`[Playwright] Navigasi ke ipify untuk cek IP (timeout 60 detik)...`);
         try {
@@ -323,11 +390,13 @@ async function registerSingleEmail(email, params, selectedUaString) {
 
         console.log(`\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...`);
         const submitSelectors = [
+            'button._register-button_1k6no_4',
             'button.register-button',
             'button[class*="register-button"]',
             'button[type="submit"]',
             'button:has-text("Create an account")',
             'button:has-text("Sign up")',
+            'button:has-text("Setuju dan daftar")',
             'button:has-text("Daftar")',
             'button:has-text("Agree and sign up")'
         ];
@@ -424,7 +493,11 @@ async function registerSingleEmail(email, params, selectedUaString) {
                         cliLinkUrl = match[0];
                         clearTimeout(deadline);
                         console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
-                        // JANGAN kill dropboxd di sini, karena daemon harus hidup saat verifikasi!
+                        
+                        // Turn off stdout and stderr data listeners to stop console spam
+                        dropboxProc.stdout.off('data', scanForLink);
+                        dropboxProc.stderr.off('data', scanForLink);
+                        
                         resolve();
                     }
                 };
@@ -457,6 +530,7 @@ async function registerSingleEmail(email, params, selectedUaString) {
                         'button[aria-label="Connect"]',
                         'button:has-text("Hubungkan")',
                         'input[type="submit"][value*="Connect"]',
+                        'a:has-text("Connect")',
                         'button[type="submit"]',
                         'button.auth-button'
                     ];
@@ -536,6 +610,13 @@ async function registerSingleEmail(email, params, selectedUaString) {
     } catch (error) {
         let msg = (error.message || '').split('\n')[0];
         console.log(`❌ Pendaftaran gagal untuk ${email}: ${msg}`);
+        
+        if (isRegistered) {
+            console.log(`[Info] Meskipun verifikasi CLI Link gagal, pendaftaran akun untuk ${email} sudah berhasil.`);
+            saveRegistration(email, password, 'success', alias, ipResult, selectedUaString, emailTimeouts, emailErrors);
+            return { success: true, status: 'success', password, ip: ipResult, ua: selectedUaString };
+        }
+        
         if (msg.toLowerCase().includes('timeout')) emailTimeouts++;
         else emailErrors++;
         
@@ -551,7 +632,11 @@ async function registerSingleEmail(email, params, selectedUaString) {
     } finally {
         if (page) await page.close().catch(()=>{});
         if (context) await context.close().catch(()=>{});
-        if (browser) await browser.close().catch(()=>{});
+        // Clean up the profile directory after closing
+        const profilePath = path.join(__dirname, 'data', `profile_${email.split('@')[0]}`);
+        if (fs.existsSync(profilePath)) {
+            try { fs.rmSync(profilePath, { recursive: true, force: true }); } catch(_) {}
+        }
         killAllBrowsers();
     }
 }
