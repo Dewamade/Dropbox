@@ -230,7 +230,8 @@ async function registerSingleEmail(email, params, selectedUaString) {
         if (!emailFieldFound) throw new Error("Gagal menemukan field email");
 
         console.log(`✓ Field email ditemukan via waitForSelector: ${usedEmailSelector}`);
-        await page.fill(usedEmailSelector, email, { timeout: 5000 });
+        await page.waitForTimeout(2000);
+        await page.type(usedEmailSelector, email, { delay: 100 });
         console.log(`✓ Mengisi Email`);
         
         const nameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[name="register-first-name"]'];
@@ -264,7 +265,8 @@ async function registerSingleEmail(email, params, selectedUaString) {
             for (const sel of continueSelectors) {
                 try {
                     if (await page.isVisible(sel)) {
-                        await page.click(sel);
+                        await page.waitForTimeout(2000);
+                        await page.click(sel, { delay: 150 });
                         clickedContinue = true;
                         console.log(`✓ Mengklik tombol Continue (human-click)`);
                         break;
@@ -291,11 +293,14 @@ async function registerSingleEmail(email, params, selectedUaString) {
 
         if (isOneStep) {
             console.log(`✓ Form Langkah 2 terdeteksi via waitForSelector: ${usedNameSelector}`);
-            await page.fill(usedNameSelector, firstName, { timeout: 5000 });
+            await page.waitForTimeout(2000);
+            await page.type(usedNameSelector, firstName, { delay: 100 }).catch(()=>{});
             console.log(`✓ Mengisi First Name (human-typed)`);
-            await page.fill('input[name="lname"], input[name="register-last-name"]', lastName, { timeout: 5000 }).catch(()=>{});
+            await page.waitForTimeout(2000);
+            await page.type('input[name="lname"], input[name="register-last-name"]', lastName, { delay: 100 }).catch(()=>{});
             console.log(`✓ Mengisi Last Name (human-typed)`);
-            await page.fill('input[name="password"], input[name="register-password"]', password, { timeout: 5000 }).catch(()=>{});
+            await page.waitForTimeout(2000);
+            await page.type('input[name="password"], input[name="register-password"]', password, { delay: 100 }).catch(()=>{});
             console.log(`✓ Mengisi Password (human-typed)`);
         } else {
              const screenshotPath = path.join(__dirname, 'data', `debug_error_${email}.png`);
@@ -322,7 +327,8 @@ async function registerSingleEmail(email, params, selectedUaString) {
         for (const sel of submitSelectors) {
             try {
                 if (await page.isVisible(sel)) {
-                    await page.click(sel);
+                    await page.waitForTimeout(2000);
+                    await page.click(sel, { delay: 150 });
                     submitted = true;
                     break;
                 }
