@@ -357,14 +357,17 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             }
 
             console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout 30 detik)...`);
-            for (const sel of nameSelectors) {
-                try {
-                    await page.waitForSelector(sel, { state: 'visible', timeout: 30000 });
-                    isOneStep = true;
-                    usedNameSelector = sel;
-                    break;
-                } catch(e) {}
-            }
+            try {
+                const combinedNameSel = nameSelectors.join(', ');
+                await page.waitForSelector(combinedNameSel, { state: 'visible', timeout: 30000 });
+                for (const sel of nameSelectors) {
+                    if (await page.isVisible(sel)) {
+                        isOneStep = true;
+                        usedNameSelector = sel;
+                        break;
+                    }
+                }
+            } catch(e) {}
         }
 
         if (isOneStep) {
@@ -522,7 +525,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 try {
                     console.log(`[Browser] Navigasi ke URL CLI Link (timeout 60 detik)...`);
                     await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-                    console.log(`[Browser] Menunggu tombol Connect (timeout 120 detik)...`);
+                    console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
                     await page.waitForTimeout(2000);
 
                     const connectSelectors = [
@@ -537,14 +540,17 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
                     let connectBtnFound = false;
                     let usedConnectSel = '';
-                    for (const sel of connectSelectors) {
-                        try {
-                            await page.waitForSelector(sel, { state: 'visible', timeout: gtMs / 2 });
-                            connectBtnFound = true;
-                            usedConnectSel = sel;
-                            break;
-                        } catch (_) {}
-                    }
+                    try {
+                        const combinedConnectSel = connectSelectors.join(', ');
+                        await page.waitForSelector(combinedConnectSel, { state: 'visible', timeout: gtMs });
+                        for (const sel of connectSelectors) {
+                            if (await page.isVisible(sel)) {
+                                connectBtnFound = true;
+                                usedConnectSel = sel;
+                                break;
+                            }
+                        }
+                    } catch (_) {}
 
                     if (!connectBtnFound) {
                         const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
