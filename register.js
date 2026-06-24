@@ -115,99 +115,7 @@ function randomString(length) {
     return result;
 }
 
-// Helper to recursively delete directories
-function deleteDirRecursive(dirPath) {
-    if (fs.existsSync(dirPath)) {
-        try {
-            fs.readdirSync(dirPath).forEach((file) => {
-                const curPath = path.join(dirPath, file);
-                if (fs.lstatSync(curPath).isDirectory()) {
-                    deleteDirRecursive(curPath);
-                } else {
-                    try {
-                        fs.unlinkSync(curPath);
-                    } catch (e) { }
-                }
-            });
-            fs.rmdirSync(dirPath);
-        } catch (e) { }
-    }
-}
 
-// Function to clear browser cache, cookies, history, and site storage
-// while preserving extensions and their settings
-function clearProfileData(profilePath) {
-    if (!fs.existsSync(profilePath)) return;
-
-    console.log('Membersihkan cookies, cache, dan data penyimpanan situs...');
-
-    // Files to delete (including locks)
-    const filesToDelete = [
-        'cookies.sqlite',
-        'cookies.sqlite-wal',
-        'cookies.sqlite-shm',
-        'places.sqlite',
-        'places.sqlite-wal',
-        'places.sqlite-shm',
-        'formhistory.sqlite',
-        'sessionstore.jsonlz4',
-        'permissions.sqlite',
-        'content-prefs.sqlite',
-        'webappsstore.sqlite',
-        'favicons.sqlite',
-        'parent.lock',
-        'lock',
-        '.parentlock'
-    ];
-
-    // Directories to delete entirely
-    const dirsToDelete = [
-        'cache2',
-        'sessionstore-backups',
-        'startupCache',
-        'jumpListCache',
-        'entries',
-    ];
-
-    // Delete files
-    for (const file of filesToDelete) {
-        const filePath = path.join(profilePath, file);
-        try {
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        } catch (e) { }
-    }
-
-    // Delete directories entirely
-    for (const dir of dirsToDelete) {
-        const dirPath = path.join(profilePath, dir);
-        try {
-            if (fs.existsSync(dirPath)) {
-                deleteDirRecursive(dirPath);
-            }
-        } catch (e) { }
-    }
-
-    // Clean storage default directory while preserving moz-extensions (extension settings)
-    const storagePath = path.join(profilePath, 'storage', 'default');
-    if (fs.existsSync(storagePath)) {
-        try {
-            const items = fs.readdirSync(storagePath);
-            for (const item of items) {
-                if (!item.startsWith('moz-extension+++')) {
-                    const itemPath = path.join(storagePath, item);
-                    if (fs.lstatSync(itemPath).isDirectory()) {
-                        deleteDirRecursive(itemPath);
-                    } else {
-                        fs.unlinkSync(itemPath);
-                    }
-                }
-            }
-            console.log('✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.');
-        } catch (e) { }
-    }
-}
 
 
 function killAllBrowsers() {
@@ -344,8 +252,16 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             console.log(`\nMembuka Firefox dengan mode User Agent: Generate Local (Percobaan Ulang)`);
         }
 
+        killAllBrowsers();
         const profilePath = path.join(__dirname, 'data', 'firefox-profile');
-        clearProfileData(profilePath);
+        if (fs.existsSync(profilePath)) {
+            try {
+                fs.rmSync(profilePath, { recursive: true, force: true });
+                console.log(`✓ Folder profil lama (${profilePath}) berhasil dihapus.`);
+            } catch (e) {
+                console.log(`⚠️ Gagal menghapus folder profil lama: ${e.message}`);
+            }
+        }
 
         const launchOptions = {
             headless: params.headless,
