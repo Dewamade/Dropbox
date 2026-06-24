@@ -1,59 +1,45 @@
-# Panduan Penggunaan Dropbox CLI (Dockerized)
+# Panduan Penggunaan Dropbox CLI (Dockerized) & Fitur Login Fallback
 
-Refactor telah selesai dilakukan! Aplikasi Anda sekarang berbentuk antarmuka murni *Command Line* (CLI) yang dioptimalkan untuk berjalan di dalam Docker Linux secara mandiri tanpa memerlukan Warp, Proxy, dan Box64.
+Refactor telah selesai dilakukan! Aplikasi Anda sekarang berbentuk antarmuka murni *Command Line* (CLI) yang dioptimalkan untuk berjalan di dalam Docker Linux secara mandiri, dengan dukungan pengujian lokal langsung di Windows.
 
-## Struktur File Baru
-- `register.js`: Telah dirombak total dan sekarang berfungsi sebagai skrip eksekusi utama CLI. Skrip ini secara otomatis mem-parsing argumen CLI yang Anda kirimkan, mengelola *looping* email, serta menginisiasi *instance* Playwright Chrome resmi. Skrip ini sudah terintegrasi dengan pengetikan mirip manusia (*human-like delay*) dan selector dinamis.
-- `Dockerfile`: Resep Docker yang menggunakan *base image* `node:20-bookworm`, menginstal dependensi khusus *Google Chrome Desktop* resmi untuk menghindari deteksi Playwright, serta menyertakan logika ekstraksi `dropbox.tar.gz`.
-- `docker-compose.yml`: File ini mempermudah proses eksekusi dan *volume mounting*. Data history Anda akan tersimpan secara persisten di lokal dalam direktori `data/`.
-- `run.sh`: *Wrapper script* *bash* sederhana untuk mempermudah eksekusi `docker-compose run` dari terminal tanpa perlu mengingat argumen docker-compose.
-- `.dockerignore` & `.gitignore`: Memastikan *binary* Windows `node_modules` tidak terkirim ke dalam lingkungan Linux Docker.
+## Fitur Baru & Perbaikan:
 
-## Cara Menggunakan
+1. **Alur Deteksi & Login Otomatis (Login Fallback)**:
+   - Jika Anda mencoba mendaftarkan email yang **sudah terdaftar**, skrip secara otomatis mendeteksi status ini di Langkah 2 (setelah tombol Continue diklik).
+   - Skrip akan mencetak log `[Browser] ⚠️ Akun sudah terdaftar. Mencoba masuk (Log in) dengan email & password...` dan mengalihkan alur untuk masuk (log in) menggunakan kredensial pendaftaran yang diberikan.
+   - Setelah masuk dengan sukses, skrip menandai proses pendaftaran berhasil dan melanjutkan ke langkah verifikasi/penghubungan device daemon.
+   - Jika halaman verifikasi CLI Link dialihkan oleh Dropbox ke halaman login, browser secara otomatis melakukan login ulang dan kembali menavigasi ke halaman verifikasi untuk menekan tombol **Connect**.
 
-### 1. Persiapan File
-> [!IMPORTANT]
-> Pastikan Anda telah menaruh file kompresi Dropbox dengan nama **`dropbox.tar.gz`** ke dalam sub-direktori `app/` sebelum melakukan proses *build*. *Script* instalasi akan membongkar file ini langsung di Linux untuk menjaga *symlink* bawaan.
+2. **Dukungan Jalur Chrome Lintas Platform**:
+   - Skrip mendeteksi sistem operasi Anda secara dinamis.
+   - Pada host **Windows**, skrip menggunakan `channel: 'chrome'` untuk memanfaatkan instalasi Chrome Resmi lokal Anda.
+   - Pada **Linux/Docker**, skrip tetap menggunakan berkas eksekusi resmi `/usr/bin/google-chrome`.
 
-### 2. Membangun (Build) Docker Image
-Buka terminal Anda (di dalam root folder project) lalu jalankan perintah berikut:
-```bash
-docker compose build --no-cache
-```
-Proses ini mungkin membutuhkan waktu karena mengunduh instalasi sistem Ubuntu dan instalasi resmi Google Chrome / Chromium sebesar ~150MB+.
+3. **Alur Form Bertahap**:
+   - **Langkah 1**: Menunggu dan mengisi field email, lalu mencari tombol "Continue" untuk masuk ke *screen* kedua.
+   - **Langkah 2**: Menunggu field nama pendaftaran (untuk akun baru) ATAU field password login (untuk akun yang sudah terdaftar), lalu melakukan pengisian field yang sesuai.
 
-### 3. Eksekusi Pendaftaran
-Setelah proses *build* selesai, jalankan bot dengan menggunakan skrip pembantu yang telah disediakan:
+---
 
-**Contoh: Mode Auto-Generate (10 Email)**
-```bash
-./run.sh --alias "Worker-Auto" --url "https://www.dropbox.com/register" --source auto --domain "kywa.uk" --count 10 --timeout 120 --retry 3 --devices "desktop,mobile"
-```
+## Struktur File Utama:
+- `register.js`: Skrip eksekusi utama CLI. Skrip ini mem-parsing argumen CLI, mengelola rotasi User Agent, mengelola *looping* email, serta menginisiasi *instance* Playwright Chrome resmi dengan penundaan mirip manusia (*human-like delay*).
+- `Dockerfile`: Menggunakan *base image* `node:20-bookworm`, menginstal dependensi khusus *Google Chrome Desktop* resmi untuk menghindari deteksi Playwright, serta menyertakan logika ekstraksi `dropbox.tar.gz`.
+- `docker-compose.yml`: Mempermudah proses eksekusi dan *volume mounting*. Data history tersimpan secara persisten di lokal dalam direktori `data/`.
+- `run.sh`: *Wrapper script* *bash* sederhana untuk mempermudah eksekusi `docker-compose run`.
 
-**Contoh: Mode Manual Input dengan Proxy SOCKS5 & Chrome Desktop**
-```bash
-./run.sh --alias "Worker-Manual" --source manual --emails "satu@kywa.uk; dua@kywa.uk" --browser chrome --proxy "socks5://192.168.1.1:1080"
-```
+---
 
-**Contoh: Mode Auto-Generate Password Tetap**
-```bash
-./run.sh --alias "Fixed-Pass" --source auto --domain "kywa.uk" --count 5 --password-mode "fixed" --fixed-password "SuperRahasia123!"
-```
+## Cara Menggunakan di Lokal Windows
 
-### Parameter Referensi
-- `--alias`: Memberikan nama sesi (Default: `CLI-Default`)
-- `--url`: Link referal Dropbox pendaftaran
-- `--source`: Mode email (`auto` atau `manual`)
-- `--domain`: Domain tujuan untuk *Generate* acak (`auto`)
-- `--count`: Jumlah email yang ingin dibuat (`auto`)
-- `--emails`: Daftar email yang dipisahkan titik koma (`;`) (jika `manual`)
-- `--password-mode`: `random` (diacak aman) atau `fixed` (tetap)
-- `--fixed-password`: Teks password bila mode `fixed`
-- `--timeout`: Waktu habis per interaksi UI Browser (Detik)
-- `--retry`: Percobaan maksimal per tab browser jika gagal / *crash*
-- `--devices`: Pemilihan variasi User Agent (`desktop,mobile,tablet` dsb)
-- `--browser`: Memilih versi browser yang digunakan (`chromium` atau `chrome`). Disarankan menggunakan `chrome` untuk penyamaran yang lebih baik.
-- `--proxy`: Meneruskan koneksi bot via Proxy (Contoh: `socks5://user:pass@1.2.3.4:1080` atau `http://1.2.3.4:8080`).
+Untuk menjalankan pengetesan langsung di Windows:
+1. Jalankan instalasi dependensi lokal:
+   ```bash
+   npm install
+   npx playwright install chromium chrome
+   ```
+2. Jalankan perintah registrasi/login menggunakan email Anda:
+   ```bash
+   node register.js --emails="email_anda@domain.com" --password-mode="fixed" --fixed-password="PasswordAnda" --browser=chrome --headless=false
+   ```
 
-## Melihat Riwayat Log
-Riwayat kesuksesan setiap alamat email akan tercatat di file `./data/history.json`. Karena file ini sudah di *mount* menggunakan sistem *Volume*, Anda dapat membuka dan mengecek file JSON ini dengan teks editor apa pun pada sistem lokal Windows Anda.
+*Catatan: Saat dijalankan langsung di Windows, daemon `dropboxd` (yang merupakan binary Linux) tidak akan berhasil berjalan, tetapi alur login/signup di browser Chrome akan berjalan 100% secara otomatis hingga halaman verifikasi.*

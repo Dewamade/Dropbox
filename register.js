@@ -240,7 +240,11 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         }
 
         if (params.browser === 'chrome') {
-            launchOptions.executablePath = '/usr/bin/google-chrome';
+            if (process.platform === 'win32') {
+                launchOptions.channel = 'chrome';
+            } else {
+                launchOptions.executablePath = '/usr/bin/google-chrome';
+            }
             launchOptions.args.push('--disable-blink-features=AutomationControlled');
         } else if (params.browser !== 'firefox' && params.browser !== 'chrome') {
             launchOptions.args.push('--disable-blink-features=AutomationControlled');
@@ -258,6 +262,10 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
         if (launchOptions.proxy) {
             contextOptions.proxy = launchOptions.proxy;
+        }
+
+        if (launchOptions.channel) {
+            contextOptions.channel = launchOptions.channel;
         }
 
         if (launchOptions.executablePath) {
@@ -313,6 +321,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         const nameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[name="register-first-name"]'];
         let isOneStep = false;
         let usedNameSelector = '';
+        let step2Mode = 'signup'; // default to signup
 
         // Cek secara instan apakah field nama sudah terlihat (form 1-langkah)
         for (const sel of nameSelectors) {
@@ -356,21 +365,44 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 await page.waitForTimeout(2000);
             }
 
-            console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout 30 detik)...`);
-            try {
-                const combinedNameSel = nameSelectors.join(', ');
-                await page.waitForSelector(combinedNameSel, { state: 'visible', timeout: 30000 });
+            console.log(`\n[Langkah 2] Menunggu form detail nama/password atau halaman login (timeout 30 detik)...`);
+            const loginPasswordSel = 'input[type="password"], input[name="login_password"], input[id^="login_password"]';
+            const step2Deadline = Date.now() + 30000;
+            let foundStep2 = false;
+            while (Date.now() < step2Deadline) {
+                // Check if name fields are visible
+                let nameVisible = false;
                 for (const sel of nameSelectors) {
-                    if (await page.isVisible(sel)) {
-                        isOneStep = true;
+                    if (await page.locator(sel).first().isVisible()) {
+                        nameVisible = true;
                         usedNameSelector = sel;
                         break;
                     }
                 }
-            } catch(e) {}
+                if (nameVisible) {
+                    step2Mode = 'signup';
+                    isOneStep = true;
+                    foundStep2 = true;
+                    break;
+                }
+
+                // Check if login password field is visible or URL is login
+                if (await page.locator(loginPasswordSel).first().isVisible() || page.url().includes('/login')) {
+                    step2Mode = 'login';
+                    foundStep2 = true;
+                    break;
+                }
+                await page.waitForTimeout(500);
+            }
+            if (!foundStep2) {
+                const screenshotPath = path.join(__dirname, 'data', `debug_error_${email.split('@')[0]}.png`);
+                await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+                console.log(`[DEBUG] Screenshot layar saat error disimpan di: ./data/debug_error_${email.split('@')[0]}.png`);
+                throw new Error(`Gagal menemukan form nama atau login (Langkah 2)`);
+            }
         }
 
-        if (isOneStep) {
+        if (step2Mode === 'signup' && isOneStep) {
             console.log(`✓ Form Langkah 2 terdeteksi via waitForSelector: ${usedNameSelector}`);
             await page.waitForTimeout(2000);
             await page.type(usedNameSelector, firstName, { delay: 100 }).catch(()=>{});
@@ -381,72 +413,148 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             await page.waitForTimeout(2000);
             await page.type('input[name="password"], input[name="register-password"]', password, { delay: 100 }).catch(()=>{});
             console.log(`✓ Mengisi Password (human-typed)`);
-        } else {
-             const screenshotPath = path.join(__dirname, 'data', `debug_error_${email}.png`);
-             await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
-             console.log(`[DEBUG] Screenshot layar saat error disimpan di: ./data/debug_error_${email}.png`);
-             throw new Error(`Gagal menemukan form nama (Langkah 2) - Cek screenshot di folder data`);
-        }
 
-        try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][name="agree"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) {}
-        try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][id*="tos"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) {}
+            try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][name="agree"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) {}
+            try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][id*="tos"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) {}
 
-        console.log(`\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...`);
-        const submitSelectors = [
-            'button._register-button_1k6no_4',
-            'button.register-button',
-            'button[class*="register-button"]',
-            'button[type="submit"]',
-            'button:has-text("Create an account")',
-            'button:has-text("Sign up")',
-            'button:has-text("Setuju dan daftar")',
-            'button:has-text("Daftar")',
-            'button:has-text("Agree and sign up")'
-        ];
+            console.log(`\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...`);
+            const submitSelectors = [
+                'button._register-button_1k6no_4',
+                'button.register-button',
+                'button[class*="register-button"]',
+                'button[type="submit"]',
+                'button:has-text("Create an account")',
+                'button:has-text("Sign up")',
+                'button:has-text("Setuju dan daftar")',
+                'button:has-text("Daftar")',
+                'button:has-text("Agree and sign up")'
+            ];
 
-        let submitted = false;
-        for (const sel of submitSelectors) {
-            try {
-                if (await page.isVisible(sel)) {
-                    await page.waitForTimeout(2000);
-                    await page.click(sel, { delay: 150 });
-                    submitted = true;
+            let submitted = false;
+            for (const sel of submitSelectors) {
+                try {
+                    if (await page.isVisible(sel)) {
+                        await page.waitForTimeout(2000);
+                        await page.click(sel, { delay: 150 });
+                        submitted = true;
+                        break;
+                    }
+                } catch (e) {}
+            }
+
+            if (!submitted) throw new Error("Gagal menemukan/menekan tombol Daftar.");
+
+            console.log(`✓ Berhasil mengklik tombol Daftar.`);
+            console.log(`Tombol Daftar telah diklik secara otomatis.`);
+            console.log(`Catatan: Jika ada CAPTCHA yang muncul di layar browser, silakan selesaikan secara manual.`);
+            console.log(`Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...`);
+            console.log(`\n[Langkah 3] Menunggu redirect URL sukses pendaftaran (timeout 60 detik)...`);
+
+            const regDeadline = Date.now() + gtMs;
+            while (Date.now() < regDeadline) {
+                await page.waitForTimeout(2000);
+                
+                if (await hasCaptcha(page)) throw new Error("CAPTCHA_DETECTED_POST_SUBMIT");
+                
+                try {
+                    const bodyText = await page.textContent('body');
+                    if (bodyText && bodyText.toLowerCase().includes('too many attempts')) {
+                        throw new Error("TOO_MANY_ATTEMPTS");
+                    }
+                } catch (e) {}
+
+                const currentUrl = page.url();
+                if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') || currentUrl.includes('onboarding') ||
+                    (!currentUrl.includes('/register') && !currentUrl.includes('/login') && (currentUrl.includes('/home') || currentUrl.includes('/personal') || currentUrl.includes('/dashboard')))) {
+                    console.log(`\n✓ Pendaftaran/Verifikasi terdeteksi! URL saat ini: ${currentUrl}`);
+                    isRegistered = true;
                     break;
                 }
-            } catch (e) {}
-        }
+            }
 
-        if (!submitted) throw new Error("Gagal menemukan/menekan tombol Daftar.");
-
-        console.log(`✓ Berhasil mengklik tombol Daftar.`);
-        console.log(`Tombol Daftar telah diklik secara otomatis.`);
-        console.log(`Catatan: Jika ada CAPTCHA yang muncul di layar browser, silakan selesaikan secara manual.`);
-        console.log(`Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...`);
-        console.log(`\n[Langkah 3] Menunggu redirect URL sukses pendaftaran (timeout 60 detik)...`);
-
-        const regDeadline = Date.now() + gtMs;
-        while (Date.now() < regDeadline) {
-            await page.waitForTimeout(2000);
+            if (!isRegistered) throw new Error("NO_URL_CHANGE");
+        } else if (step2Mode === 'login') {
+            console.log(`[Browser] ⚠️ Akun sudah terdaftar. Mencoba masuk (Log in) dengan email & password...`);
             
-            if (await hasCaptcha(page)) throw new Error("CAPTCHA_DETECTED_POST_SUBMIT");
-            
-            try {
-                const bodyText = await page.textContent('body');
-                if (bodyText && bodyText.toLowerCase().includes('too many attempts')) {
-                    throw new Error("TOO_MANY_ATTEMPTS");
+            const loginEmailSel = 'input[type="email"], input[name*="email"], input[id^="susi_email"]';
+            const loginPasswordSel = 'input[type="password"], input[name="login_password"], input[id^="login_password"]';
+
+            if (await page.locator(loginEmailSel).first().isVisible()) {
+                const filledEmail = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
+                if (filledEmail !== email) {
+                    await page.locator(loginEmailSel).first().fill('');
+                    await page.locator(loginEmailSel).first().type(email, { delay: 100 });
                 }
-            } catch (e) {}
+            }
+            
+            if (!await page.locator(loginPasswordSel).first().isVisible()) {
+                // Click Continue first
+                const loginContinueSelectors = [
+                    'button.email-submit-button',
+                    'button[class*="email-submit-button"]',
+                    'button:has-text("Continue")',
+                    'button:has-text("Lanjutkan")',
+                    'button[type="submit"]'
+                ];
+                for (const sel of loginContinueSelectors) {
+                    if (await page.locator(sel).first().isVisible()) {
+                        await page.locator(sel).first().click({ delay: 150 });
+                        break;
+                    }
+                }
+                await page.waitForTimeout(2000);
+            }
 
-            const currentUrl = page.url();
-            if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') || currentUrl.includes('onboarding') ||
-                (!currentUrl.includes('/register') && !currentUrl.includes('/login') && (currentUrl.includes('/home') || currentUrl.includes('/personal') || currentUrl.includes('/dashboard')))) {
-                console.log(`\n✓ Pendaftaran/Verifikasi terdeteksi! URL saat ini: ${currentUrl}`);
-                isRegistered = true;
-                break;
+            // Fill password
+            let passwordSelFound = false;
+            let usedPasswordSel = '';
+            for (const sel of [loginPasswordSel]) {
+                try {
+                    await page.waitForSelector(sel, { state: 'visible', timeout: 10000 });
+                    usedPasswordSel = sel;
+                    passwordSelFound = true;
+                    break;
+                } catch(e) {}
+            }
+
+            if (passwordSelFound) {
+                await page.locator(usedPasswordSel).first().type(password, { delay: 100 });
+                await page.waitForTimeout(1000);
+                
+                // Click log in submit button
+                const loginSubmitSelectors = [
+                    'button[class*="login-button"]',
+                    'button:has-text("Log in")',
+                    'button:has-text("Masuk")',
+                    'button[type="submit"]'
+                ];
+                let clickedSubmit = false;
+                for (const sel of loginSubmitSelectors) {
+                    if (await page.locator(sel).first().isVisible()) {
+                        await page.locator(sel).first().click({ delay: 150 });
+                        clickedSubmit = true;
+                        break;
+                    }
+                }
+                if (!clickedSubmit) {
+                    await page.keyboard.press('Enter');
+                }
+                
+                console.log(`[Browser] Menunggu login selesai...`);
+                await page.waitForTimeout(5000);
+                
+                // Check if logged in successfully (URL doesn't have login anymore or shows home/personal)
+                const currentUrl = page.url();
+                if (!currentUrl.includes('/login')) {
+                    console.log(`✓ Login berhasil!`);
+                    isRegistered = true;
+                } else {
+                    throw new Error("Gagal login: Masih berada di halaman login setelah submit");
+                }
+            } else {
+                throw new Error("Field password tidak muncul untuk login");
             }
         }
-
-        if (!isRegistered) throw new Error("NO_URL_CHANGE");
 
         console.log(`✅ Pendaftaran berhasil! Browser tetap terbuka — memulai verifikasi email...`);
         await page.waitForTimeout(1500);
@@ -519,15 +627,126 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             let connected = false;
             let cliAttempt = 0;
             const maxCliAttempts = 3;
-
-            while (!connected && cliAttempt < maxCliAttempts) {
+        while (!connected && cliAttempt < maxCliAttempts) {
                 cliAttempt++;
                 try {
                     console.log(`[Browser] Navigasi ke URL CLI Link (timeout 60 detik)...`);
                     await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-                    console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
-                    await page.waitForTimeout(2000);
+                    
+                    const loginEmailSel = 'input[type="email"], input[name*="email"], input[id^="susi_email"]';
 
+                    console.log(`[Browser] Menunggu halaman verifikasi atau halaman login dimuat...`);
+                    let activeElement = null;
+                    const checkDeadline = Date.now() + gtMs;
+                    while (Date.now() < checkDeadline) {
+                        // Check login email field first
+                        if (await page.locator(loginEmailSel).first().isVisible()) {
+                            activeElement = 'login';
+                            break;
+                        }
+                        // Check connect button
+                        const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
+                                                   .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
+                        if (await connectLocator.first().isVisible()) {
+                            activeElement = 'connect';
+                            break;
+                        }
+                        await page.waitForTimeout(500);
+                    }
+
+                    if (activeElement === 'login') {
+                        console.log(`[Browser] ⚠️ Terdeteksi halaman login. Mencoba login otomatis dengan kredensial: ${email}`);
+                        
+                        // Fill email
+                        await page.locator(loginEmailSel).first().type(email, { delay: 100 });
+                        await page.waitForTimeout(1000);
+                        
+                        // Check if password field is visible (1-step or 2-step form)
+                        const passwordSelectors = ['input[type="password"]', 'input[name="login_password"]', 'input[id^="login_password"]'];
+                        let passwordDirectlyVisible = false;
+                        for (const sel of passwordSelectors) {
+                            if (await page.locator(sel).first().isVisible()) {
+                                passwordDirectlyVisible = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!passwordDirectlyVisible) {
+                            // Multi-step: click continue first
+                            const loginContinueSelectors = [
+                                'button.email-submit-button',
+                                'button[class*="email-submit-button"]',
+                                'button:has-text("Continue")',
+                                'button:has-text("Lanjutkan")',
+                                'button[type="submit"]'
+                            ];
+                            let clickedContinue = false;
+                            for (const sel of loginContinueSelectors) {
+                                if (await page.locator(sel).first().isVisible()) {
+                                    await page.locator(sel).first().click({ delay: 150 });
+                                    clickedContinue = true;
+                                    break;
+                                }
+                            }
+                            if (!clickedContinue) {
+                                console.log(`[Browser] ⚠️ Tombol Continue tidak terdeteksi secara visual, mencoba menekan Enter...`);
+                                await page.keyboard.press('Enter');
+                            }
+                            await page.waitForTimeout(2000);
+                        }
+                        
+                        // Fill password
+                        let passwordSelFound = false;
+                        let usedPasswordSel = '';
+                        for (const sel of passwordSelectors) {
+                            try {
+                                await page.waitForSelector(sel, { state: 'visible', timeout: 10000 });
+                                usedPasswordSel = sel;
+                                passwordSelFound = true;
+                                break;
+                            } catch(e) {}
+                        }
+                        
+                        if (passwordSelFound) {
+                            await page.locator(usedPasswordSel).first().type(password, { delay: 100 });
+                            await page.waitForTimeout(1000);
+                            
+                            // Click log in submit button
+                            const loginSubmitSelectors = [
+                                'button[class*="login-button"]',
+                                'button:has-text("Log in")',
+                                'button:has-text("Masuk")',
+                                'button[type="submit"]'
+                            ];
+                            let clickedSubmit = false;
+                            for (const sel of loginSubmitSelectors) {
+                                if (await page.locator(sel).first().isVisible()) {
+                                    await page.locator(sel).first().click({ delay: 150 });
+                                    clickedSubmit = true;
+                                    break;
+                                }
+                            }
+                            if (!clickedSubmit) {
+                                console.log(`[Browser] ⚠️ Tombol Log in tidak terdeteksi secara visual, mencoba menekan Enter...`);
+                                await page.keyboard.press('Enter');
+                            }
+                            
+                            console.log(`[Browser] Menunggu login selesai...`);
+                            await page.waitForTimeout(5000);
+                            
+                            // Re-navigate to CLI link
+                            console.log(`[Browser] Navigasi ulang ke URL CLI Link setelah login...`);
+                            await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
+                            await page.waitForTimeout(2000);
+                        } else {
+                            throw new Error("Field password tidak muncul setelah memasukkan email");
+                        }
+                    } else if (activeElement === null) {
+                        throw new Error("Halaman verifikasi/login tidak termuat atau tidak dikenali.");
+                    }
+
+                    console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
+                    
                     let connectBtnFound = false;
                     const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
                                                .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
