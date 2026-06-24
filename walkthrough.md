@@ -35,9 +35,9 @@ Setelah proses *build* selesai, jalankan bot dengan menggunakan skrip pembantu y
 ./run.sh --alias "Worker-Manual" --source manual --emails "satu@kywa.uk; dua@kywa.uk" --browser chrome --proxy "socks5://192.168.1.1:1080"
 ```
 
-**Contoh: Mode Auto-Generate Tanpa Stealth Plugin**
+**Contoh: Mode Auto-Generate Password Tetap**
 ```bash
-./run.sh --alias "Fixed-Pass" --source auto --domain "kywa.uk" --count 5 --password-mode "fixed" --fixed-password "SuperRahasia123!" --stealth no
+./run.sh --alias "Fixed-Pass" --source auto --domain "kywa.uk" --count 5 --password-mode "fixed" --fixed-password "SuperRahasia123!"
 ```
 
 ### Parameter Referensi
@@ -53,7 +53,6 @@ Setelah proses *build* selesai, jalankan bot dengan menggunakan skrip pembantu y
 - `--retry`: Percobaan maksimal per tab browser jika gagal / *crash*
 - `--devices`: Pemilihan variasi User Agent (`desktop,mobile,tablet` dsb)
 - `--browser`: Memilih versi browser yang digunakan (`chromium` atau `chrome`). Disarankan menggunakan `chrome` untuk penyamaran yang lebih baik.
-- `--stealth`: Menyalakan plugin Stealth Puppeteer-Extra (`yes` atau `no`). Default: `yes`.
 - `--proxy`: Meneruskan koneksi bot via Proxy (Contoh: `socks5://user:pass@1.2.3.4:1080` atau `http://1.2.3.4:8080`).
 
 ## Melihat Riwayat Log
