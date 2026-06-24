@@ -716,13 +716,17 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             let connected = false;
             let cliAttempt = 0;
             const maxCliAttempts = 3;
-        while (!connected && cliAttempt < maxCliAttempts) {
+            while (!connected && cliAttempt < maxCliAttempts) {
                 cliAttempt++;
+                let cliPage = null;
                 try {
+                    console.log(`[Browser] Membuka tab baru untuk navigasi ke URL CLI Link...`);
+                    cliPage = await context.newPage();
+
                     console.log(`[Browser] Navigasi ke URL CLI Link untuk pengecekan awal (timeout 60 detik)...`);
-                    await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
+                    await cliPage.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
                     
-                    const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
+                    const connectLocator = cliPage.locator('button, input[type="submit"], a, [role="button"]')
                                                .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
                     
                     let isLoggedAndReady = false;
@@ -735,25 +739,25 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
                     if (!isLoggedAndReady) {
                         console.log(`[Browser] Navigasi ke halaman login Dropbox (https://www.dropbox.com/login)...`);
-                        await page.goto('https://www.dropbox.com/login', { waitUntil: 'domcontentloaded', timeout: gtMs });
-                        await page.waitForTimeout(3000);
+                        await cliPage.goto('https://www.dropbox.com/login', { waitUntil: 'domcontentloaded', timeout: gtMs });
+                        await cliPage.waitForTimeout(3000);
 
                         const loginEmailSel = 'input[type="email"], input[name*="email"], input[id^="susi_email"]';
                         const loginPasswordSel = 'input[type="password"], input[name="login_password"], input[id^="login_password"]';
 
-                        await page.waitForSelector(loginEmailSel, { state: 'visible', timeout: 15000 });
+                        await cliPage.waitForSelector(loginEmailSel, { state: 'visible', timeout: 15000 });
                         
                         // Fill email
-                        await page.locator(loginEmailSel).first().fill(email).catch(()=>{});
-                        let logEmailVal = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
+                        await cliPage.locator(loginEmailSel).first().fill(email).catch(()=>{});
+                        let logEmailVal = await cliPage.locator(loginEmailSel).first().inputValue().catch(() => '');
                         if (logEmailVal !== email) {
-                            await page.locator(loginEmailSel).first().fill('').catch(()=>{});
-                            await page.locator(loginEmailSel).first().type(email, { delay: 50 }).catch(()=>{});
+                            await cliPage.locator(loginEmailSel).first().fill('').catch(()=>{});
+                            await cliPage.locator(loginEmailSel).first().type(email, { delay: 50 }).catch(()=>{});
                         }
-                        await page.waitForTimeout(1000);
+                        await cliPage.waitForTimeout(1000);
 
                         // Check password visibility
-                        let passwordDirectlyVisible = await page.locator(loginPasswordSel).first().isVisible();
+                        let passwordDirectlyVisible = await cliPage.locator(loginPasswordSel).first().isVisible();
                         if (!passwordDirectlyVisible) {
                             // Click Continue
                             const loginContinueSelectors = [
@@ -765,27 +769,27 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                             ];
                             let clickedContinue = false;
                             for (const sel of loginContinueSelectors) {
-                                if (await page.locator(sel).first().isVisible()) {
-                                    await page.locator(sel).first().click({ delay: 150 });
+                                if (await cliPage.locator(sel).first().isVisible()) {
+                                    await cliPage.locator(sel).first().click({ delay: 150 });
                                     clickedContinue = true;
                                     break;
                                 }
                             }
                             if (!clickedContinue) {
-                                await page.keyboard.press('Enter');
+                                await cliPage.keyboard.press('Enter');
                             }
-                            await page.waitForTimeout(3000);
+                            await cliPage.waitForTimeout(3000);
                         }
 
                         // Fill password
-                        await page.waitForSelector(loginPasswordSel, { state: 'visible', timeout: 15000 });
-                        await page.locator(loginPasswordSel).first().fill(password).catch(()=>{});
-                        let logPassVal = await page.locator(loginPasswordSel).first().inputValue().catch(() => '');
+                        await cliPage.waitForSelector(loginPasswordSel, { state: 'visible', timeout: 15000 });
+                        await cliPage.locator(loginPasswordSel).first().fill(password).catch(()=>{});
+                        let logPassVal = await cliPage.locator(loginPasswordSel).first().inputValue().catch(() => '');
                         if (logPassVal !== password) {
-                            await page.locator(loginPasswordSel).first().fill('').catch(()=>{});
-                            await page.locator(loginPasswordSel).first().type(password, { delay: 50 }).catch(()=>{});
+                            await cliPage.locator(loginPasswordSel).first().fill('').catch(()=>{});
+                            await cliPage.locator(loginPasswordSel).first().type(password, { delay: 50 }).catch(()=>{});
                         }
-                        await page.waitForTimeout(1000);
+                        await cliPage.waitForTimeout(1000);
 
                         // Click Log In
                         const loginSubmitSelectors = [
@@ -796,33 +800,32 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         ];
                         let clickedSubmit = false;
                         for (const sel of loginSubmitSelectors) {
-                            if (await page.locator(sel).first().isVisible()) {
-                                await page.locator(sel).first().click({ delay: 150 });
+                            if (await cliPage.locator(sel).first().isVisible()) {
+                                await cliPage.locator(sel).first().click({ delay: 150 });
                                 clickedSubmit = true;
                                 break;
                             }
                         }
                         if (!clickedSubmit) {
-                            await page.keyboard.press('Enter');
+                            await cliPage.keyboard.press('Enter');
                         }
 
                         console.log(`[Browser] Menunggu login selesai...`);
-                        await page.waitForTimeout(7000);
+                        await cliPage.waitForTimeout(7000);
 
-                        // Check if logged in (URL doesn't contain login anymore, or page contains personal/home/dashboard)
-                        const currentUrl = page.url();
+                        // Check if logged in
+                        const currentUrl = cliPage.url();
                         if (currentUrl.includes('/login')) {
                             throw new Error("Gagal login: masih berada di halaman login.");
                         }
                         console.log(`[Browser] Login sukses, menavigasi kembali ke URL CLI Link...`);
-                        await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-                        await page.waitForTimeout(3000);
+                        await cliPage.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
+                        await cliPage.waitForTimeout(3000);
                     }
 
                     console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
                     
                     let connectBtnFound = false;
-                    
                     try {
                         await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
                         connectBtnFound = true;
@@ -830,7 +833,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
                     if (!connectBtnFound) {
                         const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
-                        await page.screenshot({ path: errScreenshot, fullPage: true }).catch(()=>{});
+                        await cliPage.screenshot({ path: errScreenshot, fullPage: true }).catch(()=>{});
                         throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
                     }
 
@@ -838,107 +841,112 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     await connectLocator.first().click();
                     console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
                     console.log(`[Browser] Menunggu konfirmasi berhasil dihubungkan...`);
-                    await page.waitForTimeout(3000); // Give it some time to process
+                    await cliPage.waitForTimeout(3000);
                     console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
                     
                     connected = true;
-                    // Sekarang aman untuk membunuh daemon
                     killDropbox();
-
-                    console.log(`\n[Browser] Membuka halaman Settings untuk verifikasi email...`);
-                    console.log(`[Navigasi] Ke halaman Settings/Account (timeout 60 detik)...`);
-                    await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
-                    
-                    const verifySelectors = [
-                        'button[aria-label="Verify email"]',
-                        'button[aria-label="Verifikasi email"]',
-                        'button.account-key-value-block__link:has-text("Verify email")',
-                        'button.account-key-value-block__link:has-text("Verifikasi email")',
-                        'button:has-text("Verify email")',
-                        'button:has-text("Verifikasi email")'
-                    ];
-
-                    console.log(`[Browser] Menunggu tombol Verify email muncul (timeout 15 detik)...`);
-                    let verifySelFound = '';
-                    const verifyDeadline = Date.now() + 15000;
-                    while (Date.now() < verifyDeadline) {
-                        for (const sel of verifySelectors) {
-                            try {
-                                if (await page.isVisible(sel)) {
-                                    verifySelFound = sel;
-                                    break;
-                                }
-                            } catch (e) {}
-                        }
-                        if (verifySelFound) break;
-                        await page.waitForTimeout(500);
-                    }
-
-                    let verifyClicked = false;
-                    if (verifySelFound) {
-                        console.log(`[Browser] ✓ Tombol Verify terdeteksi: ${verifySelFound}`);
-                        try {
-                            await page.click(verifySelFound);
-                            verifyClicked = true;
-                            console.log(`[Browser] ✓ Tombol Verify email diklik, menunggu modal...`);
-                        } catch (clickErr) {
-                            console.log(`[Browser] ⚠️ Gagal mengklik tombol Verify: ${clickErr.message}`);
-                        }
-                    } else {
-                        console.log(`[Browser] ⚠️ Tombol Verify email tidak ditemukan di halaman Settings.`);
-                        const screenshotPath = path.join(__dirname, 'data', `debug_verify_missing_${email.split('@')[0]}.png`);
-                        await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
-                        console.log(`[DEBUG] Screenshot halaman settings disimpan di: ./data/debug_verify_missing_${email.split('@')[0]}.png`);
-                    }
-
-                    if (verifyClicked) {
-                        await page.waitForTimeout(2000);
-                        const sendEmailSelectors = [
-                            'button.js-email-modal-button',
-                            'button:has-text("Send email")',
-                            'button:has-text("Kirim email")',
-                            'button:has-text("Send verification")',
-                            'button:has-text("Kirim verifikasi")',
-                            '//button[contains(text(),"Send email")]',
-                            '//button[contains(text(),"Kirim email")]'
-                        ];
-
-                        console.log(`[Browser] Menunggu tombol Send email di dalam modal (timeout 10 detik)...`);
-                        let sendSelFound = '';
-                        const sendDeadline = Date.now() + 10000;
-                        while (Date.now() < sendDeadline) {
-                            for (const sel of sendEmailSelectors) {
-                                try {
-                                    if (await page.isVisible(sel)) {
-                                        sendSelFound = sel;
-                                        break;
-                                    }
-                                } catch (e) {}
-                            }
-                            if (sendSelFound) break;
-                            await page.waitForTimeout(500);
-                        }
-
-                        if (sendSelFound) {
-                            console.log(`[Browser] ✓ Tombol Send email terdeteksi: ${sendSelFound}`);
-                            try {
-                                await page.click(sendSelFound);
-                                console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
-                            } catch (sendErr) {
-                                console.log(`[Browser] ⚠️ Gagal mengklik tombol Send email: ${sendErr.message}`);
-                            }
-                        } else {
-                            console.log(`[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.`);
-                            const screenshotPath = path.join(__dirname, 'data', `debug_modal_missing_${email.split('@')[0]}.png`);
-                            await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
-                            console.log(`[DEBUG] Screenshot modal disimpan di: ./data/debug_modal_missing_${email.split('@')[0]}.png`);
-                        }
-                    }
 
                 } catch (err) {
                     console.log(`[Browser] Error CLI Link (Attempt ${cliAttempt}): ${err.message}`);
                     if (cliAttempt >= maxCliAttempts) throw new Error("Gagal verifikasi CLI Link.");
                     await page.waitForTimeout(3000);
+                } finally {
+                    if (cliPage) {
+                        await cliPage.close().catch(()=>{});
+                    }
+                }
+            }
+
+            if (connected) {
+                console.log(`\n[Browser] Membuka halaman Settings untuk verifikasi email...`);
+                console.log(`[Navigasi] Ke halaman Settings/Account (timeout 60 detik)...`);
+                await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
+                
+                const verifySelectors = [
+                    'button[aria-label="Verify email"]',
+                    'button[aria-label="Verifikasi email"]',
+                    'button.account-key-value-block__link:has-text("Verify email")',
+                    'button.account-key-value-block__link:has-text("Verifikasi email")',
+                    'button:has-text("Verify email")',
+                    'button:has-text("Verifikasi email")'
+                ];
+
+                console.log(`[Browser] Menunggu tombol Verify email muncul (timeout 15 detik)...`);
+                let verifySelFound = '';
+                const verifyDeadline = Date.now() + 15000;
+                while (Date.now() < verifyDeadline) {
+                    for (const sel of verifySelectors) {
+                        try {
+                            if (await page.isVisible(sel)) {
+                                verifySelFound = sel;
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+                    if (verifySelFound) break;
+                    await page.waitForTimeout(500);
+                }
+
+                let verifyClicked = false;
+                if (verifySelFound) {
+                    console.log(`[Browser] ✓ Tombol Verify terdeteksi: ${verifySelFound}`);
+                    try {
+                        await page.click(verifySelFound);
+                        verifyClicked = true;
+                        console.log(`[Browser] ✓ Tombol Verify email diklik, menunggu modal...`);
+                    } catch (clickErr) {
+                        console.log(`[Browser] ⚠️ Gagal mengklik tombol Verify: ${clickErr.message}`);
+                    }
+                } else {
+                    console.log(`[Browser] ⚠️ Tombol Verify email tidak ditemukan di halaman Settings.`);
+                    const screenshotPath = path.join(__dirname, 'data', `debug_verify_missing_${email.split('@')[0]}.png`);
+                    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+                    console.log(`[DEBUG] Screenshot halaman settings disimpan di: ./data/debug_verify_missing_${email.split('@')[0]}.png`);
+                }
+
+                if (verifyClicked) {
+                    await page.waitForTimeout(2000);
+                    const sendEmailSelectors = [
+                        'button.js-email-modal-button',
+                        'button:has-text("Send email")',
+                        'button:has-text("Kirim email")',
+                        'button:has-text("Send verification")',
+                        'button:has-text("Kirim verifikasi")',
+                        '//button[contains(text(),"Send email")]',
+                        '//button[contains(text(),"Kirim email")]'
+                    ];
+
+                    console.log(`[Browser] Menunggu tombol Send email di dalam modal (timeout 10 detik)...`);
+                    let sendSelFound = '';
+                    const sendDeadline = Date.now() + 10000;
+                    while (Date.now() < sendDeadline) {
+                        for (const sel of sendEmailSelectors) {
+                            try {
+                                if (await page.isVisible(sel)) {
+                                    sendSelFound = sel;
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+                        if (sendSelFound) break;
+                        await page.waitForTimeout(500);
+                    }
+
+                    if (sendSelFound) {
+                        console.log(`[Browser] ✓ Tombol Send email terdeteksi: ${sendSelFound}`);
+                        try {
+                            await page.click(sendSelFound);
+                            console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+                        } catch (sendErr) {
+                            console.log(`[Browser] ⚠️ Gagal mengklik tombol Send email: ${sendErr.message}`);
+                        }
+                    } else {
+                        console.log(`[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.`);
+                        const screenshotPath = path.join(__dirname, 'data', `debug_modal_missing_${email.split('@')[0]}.png`);
+                        await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+                        console.log(`[DEBUG] Screenshot modal disimpan di: ./data/debug_modal_missing_${email.split('@')[0]}.png`);
+                    }
                 }
             }
 
