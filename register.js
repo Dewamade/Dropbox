@@ -1,8 +1,5 @@
 const { chromium, firefox } = require('playwright-extra');
-const stealth = require('puppeteer-extra-plugin-stealth')();
-// Kita tetap menggunakan stealth karena field email masih terbaca dengan baik
-chromium.use(stealth);
-firefox.use(stealth);
+const stealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -39,7 +36,9 @@ function parseArgs() {
         retry: 3,
         devices: 'desktop',
         browser: 'chromium',
-        headless: true
+        headless: true,
+        stealth: 'yes',
+        proxy: ''
     };
 
     for (let i = 0; i < args.length; i++) {
@@ -160,6 +159,8 @@ async function registerSingleEmail(email, params, selectedUaString) {
             console.log(`==========================================`);
             console.log(`- First Name: ${firstName.padEnd(70)} - Last Name : ${lastName}`);
             console.log(`- Password  : ${password}`);
+            console.log(`- Proxy     : ${params.proxy ? params.proxy : 'Direct Connection'}`);
+            console.log(`- Stealth   : ${params.stealth === 'yes' ? 'Aktif' : 'Mati'}`);
             console.log(`Membersihkan cookies, cache, dan data penyimpanan situs...`);
             console.log(`✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.`);
             console.log(`Membuka ${params.browser === 'firefox' ? 'Firefox' : params.browser === 'chrome' ? 'Google Chrome Resmi' : 'Chromium'} dengan mode User Agent: Generate Local`);
@@ -177,6 +178,10 @@ async function registerSingleEmail(email, params, selectedUaString) {
             ]
         };
         
+        if (params.proxy && params.proxy.trim() !== '') {
+            launchOptions.proxy = { server: params.proxy.trim() };
+        }
+
         if (params.browser === 'chrome') {
             launchOptions.executablePath = '/usr/bin/google-chrome';
             launchOptions.args.push('--disable-blink-features=AutomationControlled');
@@ -545,8 +550,15 @@ async function registerSingleEmail(email, params, selectedUaString) {
 // --- Main CLI Execution ---
 
 async function runCLI() {
-    const params = parseArgs();
     console.log("=== Dropbox Registration CLI ===");
+    const params = parseArgs();
+
+    if (params.stealth === 'yes') {
+        const stealth = stealthPlugin();
+        chromium.use(stealth);
+        firefox.use(stealth);
+    }
+
     console.log(JSON.stringify(params, null, 2));
 
     let emailList = [];
