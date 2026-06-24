@@ -58,7 +58,7 @@ function parseArgs() {
                 }
             }
             if (val === 'false') val = false;
-            if (val === 'true') val = true;
+            else if (val === 'true') val = true;
             params[key] = val;
         }
     }
@@ -169,7 +169,7 @@ async function registerSingleEmail(email, params, selectedUaString) {
         }
 
         const launchOptions = {
-            headless: headless !== undefined ? headless : true,
+            headless: params.headless,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -402,7 +402,7 @@ async function registerSingleEmail(email, params, selectedUaString) {
             console.log(`[dropboxd] Menjalankan via bash: ${dropboxCmd} (HOME=${__dirname})`);
             dropboxProc = spawn('bash', ['-c', dropboxCmd], {
                 cwd: __dirname,
-                env: { ...process.env, HOME: __dirname },
+                env: { ...process.env, HOME: __dirname, BROWSER: 'false', DISPLAY: '' },
             });
 
             await new Promise((resolve, reject) => {
