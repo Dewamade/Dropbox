@@ -848,23 +848,91 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     console.log(`\n[Browser] Membuka halaman Settings untuk verifikasi email...`);
                     console.log(`[Navigasi] Ke halaman Settings/Account (timeout 60 detik)...`);
                     await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
-                    await page.waitForTimeout(2000);
+                    
+                    const verifySelectors = [
+                        'button[aria-label="Verify email"]',
+                        'button[aria-label="Verifikasi email"]',
+                        'button.account-key-value-block__link:has-text("Verify email")',
+                        'button.account-key-value-block__link:has-text("Verifikasi email")',
+                        'button:has-text("Verify email")',
+                        'button:has-text("Verifikasi email")'
+                    ];
 
-                    const verifySelectors = ['button[aria-label="Verify email"]', 'button:has-text("Verify email")'];
-                    let verifyFound = false;
-                    for (const sel of verifySelectors) {
-                        try {
-                            if (await page.isVisible(sel)) {
-                                console.log(`[Browser] ✓ Tombol Verify terdeteksi via waitForSelector: ${sel}`);
-                                await page.click(sel);
-                                verifyFound = true;
-                                console.log(`[Browser] ✓ Tombol Verify email diklik, menunggu modal...`);
-                                break;
-                            }
-                        } catch(e) {}
+                    console.log(`[Browser] Menunggu tombol Verify email muncul (timeout 15 detik)...`);
+                    let verifySelFound = '';
+                    const verifyDeadline = Date.now() + 15000;
+                    while (Date.now() < verifyDeadline) {
+                        for (const sel of verifySelectors) {
+                            try {
+                                if (await page.isVisible(sel)) {
+                                    verifySelFound = sel;
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+                        if (verifySelFound) break;
+                        await page.waitForTimeout(500);
                     }
-                    if (verifyFound) {
-                        console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+
+                    let verifyClicked = false;
+                    if (verifySelFound) {
+                        console.log(`[Browser] ✓ Tombol Verify terdeteksi: ${verifySelFound}`);
+                        try {
+                            await page.click(verifySelFound);
+                            verifyClicked = true;
+                            console.log(`[Browser] ✓ Tombol Verify email diklik, menunggu modal...`);
+                        } catch (clickErr) {
+                            console.log(`[Browser] ⚠️ Gagal mengklik tombol Verify: ${clickErr.message}`);
+                        }
+                    } else {
+                        console.log(`[Browser] ⚠️ Tombol Verify email tidak ditemukan di halaman Settings.`);
+                        const screenshotPath = path.join(__dirname, 'data', `debug_verify_missing_${email.split('@')[0]}.png`);
+                        await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+                        console.log(`[DEBUG] Screenshot halaman settings disimpan di: ./data/debug_verify_missing_${email.split('@')[0]}.png`);
+                    }
+
+                    if (verifyClicked) {
+                        await page.waitForTimeout(2000);
+                        const sendEmailSelectors = [
+                            'button.js-email-modal-button',
+                            'button:has-text("Send email")',
+                            'button:has-text("Kirim email")',
+                            'button:has-text("Send verification")',
+                            'button:has-text("Kirim verifikasi")',
+                            '//button[contains(text(),"Send email")]',
+                            '//button[contains(text(),"Kirim email")]'
+                        ];
+
+                        console.log(`[Browser] Menunggu tombol Send email di dalam modal (timeout 10 detik)...`);
+                        let sendSelFound = '';
+                        const sendDeadline = Date.now() + 10000;
+                        while (Date.now() < sendDeadline) {
+                            for (const sel of sendEmailSelectors) {
+                                try {
+                                    if (await page.isVisible(sel)) {
+                                        sendSelFound = sel;
+                                        break;
+                                    }
+                                } catch (e) {}
+                            }
+                            if (sendSelFound) break;
+                            await page.waitForTimeout(500);
+                        }
+
+                        if (sendSelFound) {
+                            console.log(`[Browser] ✓ Tombol Send email terdeteksi: ${sendSelFound}`);
+                            try {
+                                await page.click(sendSelFound);
+                                console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+                            } catch (sendErr) {
+                                console.log(`[Browser] ⚠️ Gagal mengklik tombol Send email: ${sendErr.message}`);
+                            }
+                        } else {
+                            console.log(`[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.`);
+                            const screenshotPath = path.join(__dirname, 'data', `debug_modal_missing_${email.split('@')[0]}.png`);
+                            await page.screenshot({ path: screenshotPath, fullPage: true }).catch(()=>{});
+                            console.log(`[DEBUG] Screenshot modal disimpan di: ./data/debug_modal_missing_${email.split('@')[0]}.png`);
+                        }
                     }
 
                 } catch (err) {
