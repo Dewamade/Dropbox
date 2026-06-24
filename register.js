@@ -74,7 +74,7 @@ function parseArgs() {
         timeout: 60,
         retry: 3,
         devices: 'desktop',
-        browser: 'chromium',
+        browser: 'firefox',
         headless: true,
         proxy: ''
     };
@@ -262,16 +262,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
         const launchOptions = {
             headless: params.headless,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-infobars',
-                '--no-first-run',
-                '--no-service-autorun',
-                '--password-store=basic'
-            ]
+            args: []
         };
         
         if (params.proxy && params.proxy.trim() !== '') {
@@ -288,20 +279,40 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             } else {
                 launchOptions.executablePath = '/usr/bin/google-chrome';
             }
-            launchOptions.args.push('--disable-blink-features=AutomationControlled');
+            launchOptions.args.push(
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-infobars',
+                '--no-first-run',
+                '--no-service-autorun',
+                '--password-store=basic',
+                '--disable-blink-features=AutomationControlled'
+            );
         } else if (params.browser !== 'firefox' && params.browser !== 'chrome') {
-            launchOptions.args.push('--disable-blink-features=AutomationControlled');
+            launchOptions.args.push(
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-infobars',
+                '--no-first-run',
+                '--no-service-autorun',
+                '--password-store=basic',
+                '--disable-blink-features=AutomationControlled'
+            );
         }
 
-        if (params.headless) {
-            if (params.browser !== 'firefox') {
-                launchOptions.args.push('--headless=new');
-            }
+        if (params.headless && params.browser !== 'firefox') {
+            launchOptions.args.push('--headless=new');
             launchOptions.args.push('--window-size=1280,720');
         }
 
         // Add argument to exclude automation switches
-        launchOptions.ignoreDefaultArgs = ['--enable-automation'];
+        if (params.browser !== 'firefox') {
+            launchOptions.ignoreDefaultArgs = ['--enable-automation'];
+        }
 
         const engine = params.browser === 'firefox' ? firefox : chromium;
         

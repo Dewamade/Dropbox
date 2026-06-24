@@ -91,7 +91,7 @@ Berikut adalah daftar parameter CLI yang didukung oleh `register.js`:
 | `--timeout` | Waktu habis (detik) per interaksi UI Browser | `60` | `--timeout=120` |
 | `--retry` | Jumlah percobaan ulang per email jika gagal | `3` | `--retry=3` |
 | `--devices` | Tipe simulasi perangkat (rotasi User Agent) | `desktop` | `--devices="desktop,mobile,tablet"` |
-| `--browser` | Engine browser yang digunakan | `chromium` | `--browser="chrome"` atau `"chromium"` atau `"firefox"` |
+| `--browser` | Engine browser yang digunakan | `firefox` | `--browser="firefox"` atau `"chrome"` atau `"chromium"` |
 | `--headless` | Menjalankan browser tanpa UI grafis | `true` | `--headless=false` |
 | `--proxy` | Meneruskan koneksi bot via server proxy | `""` | `--proxy="socks5://192.168.1.1:1080"` |
 
