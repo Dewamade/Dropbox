@@ -215,9 +215,9 @@ async function registerSingleEmail(email, params, selectedUaString) {
         try {
             await page.goto('https://api.ipify.org', { waitUntil: 'domcontentloaded', timeout: gtMs });
             ipResult = await page.textContent('body');
-            console.log(`[Playwright] Public IP (Direct): ${ipResult}`);
+            console.log(`[Playwright] Public IP (${params.proxy ? 'Proxy' : 'Direct'}): ${ipResult}`);
         } catch(e) {
-            console.log(`[Playwright] Public IP (Direct): Gagal mengambil IP`);
+            console.log(`[Playwright] Public IP (${params.proxy ? 'Proxy' : 'Direct'}): Gagal mengambil IP`);
         }
         
         console.log(`[Playwright] User Agent (post-nav): ${selectedUaString}`);
