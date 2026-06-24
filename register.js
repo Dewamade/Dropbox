@@ -13,6 +13,45 @@ const tabletUas = [
     'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 ];
 
+function getUserAgent(browserName, deviceType) {
+    let list = baseUas;
+    const bName = (browserName || 'chrome').toLowerCase();
+    const dType = (deviceType || 'desktop').toLowerCase();
+    
+    // Filter by browser engine to prevent bot detection due to capability mismatch
+    if (bName === 'firefox') {
+        list = list.filter(ua => ua.includes('Firefox') || ua.includes('Gecko/'));
+    } else {
+        // Chromium / Chrome / Edge
+        list = list.filter(ua => ua.includes('Chrome') || ua.includes('Chromium') || ua.includes('Edg/'));
+    }
+    
+    // Filter by device type
+    if (dType === 'mobile') {
+        list = list.filter(u => u.includes('Mobile') || u.includes('iPhone') || (u.includes('Android') && u.includes('Mobile')));
+    } else if (dType === 'tablet') {
+        const customTablets = tabletUas.filter(ua => {
+            if (bName === 'firefox') return ua.includes('Firefox') || ua.includes('Gecko/');
+            return ua.includes('Chrome') || ua.includes('Chromium') || (ua.includes('Safari') && !ua.includes('Firefox'));
+        });
+        list = list.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(customTablets);
+    } else {
+        // Desktop
+        list = list.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android'));
+    }
+    
+    // Fallback if list is empty
+    if (list.length === 0) {
+        if (bName === 'firefox') {
+            return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0';
+        } else {
+            return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/125.0.0.0 Safari/537.36';
+        }
+    }
+    
+    return list[Math.floor(Math.random() * list.length)];
+}
+
 const uaLists = {
     desktop: baseUas.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android')),
     mobile: baseUas.filter(u => u.includes('Mobile') || u.includes('iPhone')),
@@ -415,7 +454,14 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
         console.log(`✓ Field email ditemukan via waitForSelector: ${usedEmailSelector}`);
         await page.waitForTimeout(2000);
-        await page.type(usedEmailSelector, email, { delay: 100 });
+        await page.locator(usedEmailSelector).first().fill(email);
+        // Verify value completeness to avoid partial typing errors
+        let emailVal = await page.locator(usedEmailSelector).first().inputValue().catch(() => '');
+        if (emailVal !== email) {
+            console.log(`⚠️ Email tidak terisi lengkap, mencoba mengisi ulang...`);
+            await page.locator(usedEmailSelector).first().fill('');
+            await page.locator(usedEmailSelector).first().type(email, { delay: 50 });
+        }
         console.log(`✓ Mengisi Email`);
         
         const nameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[name="register-first-name"]'];
@@ -505,13 +551,36 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         if (step2Mode === 'signup' && isOneStep) {
             console.log(`✓ Form Langkah 2 terdeteksi via waitForSelector: ${usedNameSelector}`);
             await page.waitForTimeout(2000);
-            await page.type(usedNameSelector, firstName, { delay: 100 }).catch(()=>{});
+
+            // First Name
+            await page.locator(usedNameSelector).first().fill(firstName).catch(()=>{});
+            let fnameVal = await page.locator(usedNameSelector).first().inputValue().catch(() => '');
+            if (fnameVal !== firstName) {
+                await page.locator(usedNameSelector).first().fill('').catch(()=>{});
+                await page.locator(usedNameSelector).first().type(firstName, { delay: 50 }).catch(()=>{});
+            }
             console.log(`✓ Mengisi First Name (human-typed)`);
-            await page.waitForTimeout(2000);
-            await page.type('input[name="lname"], input[name="register-last-name"]', lastName, { delay: 100 }).catch(()=>{});
+            await page.waitForTimeout(1000);
+
+            // Last Name
+            const lnameSel = 'input[name="lname"], input[name="register-last-name"]';
+            await page.locator(lnameSel).first().fill(lastName).catch(()=>{});
+            let lnameVal = await page.locator(lnameSel).first().inputValue().catch(() => '');
+            if (lnameVal !== lastName) {
+                await page.locator(lnameSel).first().fill('').catch(()=>{});
+                await page.locator(lnameSel).first().type(lastName, { delay: 50 }).catch(()=>{});
+            }
             console.log(`✓ Mengisi Last Name (human-typed)`);
-            await page.waitForTimeout(2000);
-            await page.type('input[name="password"], input[name="register-password"]', password, { delay: 100 }).catch(()=>{});
+            await page.waitForTimeout(1000);
+
+            // Password
+            const pwordSel = 'input[name="password"], input[name="register-password"]';
+            await page.locator(pwordSel).first().fill(password).catch(()=>{});
+            let pwordVal = await page.locator(pwordSel).first().inputValue().catch(() => '');
+            if (pwordVal !== password) {
+                await page.locator(pwordSel).first().fill('').catch(()=>{});
+                await page.locator(pwordSel).first().type(password, { delay: 50 }).catch(()=>{});
+            }
             console.log(`✓ Mengisi Password (human-typed)`);
 
             try { await page.evaluate(() => { const cb = document.querySelector('input[type="checkbox"][name="agree"]'); if (cb && !cb.checked) cb.click(); }); } catch (_) {}
@@ -582,8 +651,12 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             if (await page.locator(loginEmailSel).first().isVisible()) {
                 const filledEmail = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
                 if (filledEmail !== email) {
-                    await page.locator(loginEmailSel).first().fill('');
-                    await page.locator(loginEmailSel).first().type(email, { delay: 100 });
+                    await page.locator(loginEmailSel).first().fill(email).catch(()=>{});
+                    let logEmailVal = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
+                    if (logEmailVal !== email) {
+                        await page.locator(loginEmailSel).first().fill('').catch(()=>{});
+                        await page.locator(loginEmailSel).first().type(email, { delay: 50 }).catch(()=>{});
+                    }
                 }
             }
             
@@ -618,7 +691,12 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             }
 
             if (passwordSelFound) {
-                await page.locator(usedPasswordSel).first().type(password, { delay: 100 });
+                await page.locator(usedPasswordSel).first().fill(password).catch(()=>{});
+                let logPassVal = await page.locator(usedPasswordSel).first().inputValue().catch(() => '');
+                if (logPassVal !== password) {
+                    await page.locator(usedPasswordSel).first().fill('').catch(()=>{});
+                    await page.locator(usedPasswordSel).first().type(password, { delay: 50 }).catch(()=>{});
+                }
                 await page.waitForTimeout(1000);
                 
                 // Click log in submit button
@@ -758,7 +836,12 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         console.log(`[Browser] ⚠️ Terdeteksi halaman login. Mencoba login otomatis dengan kredensial: ${email}`);
                         
                         // Fill email
-                        await page.locator(loginEmailSel).first().type(email, { delay: 100 });
+                        await page.locator(loginEmailSel).first().fill(email).catch(()=>{});
+                        let logEmailVal2 = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
+                        if (logEmailVal2 !== email) {
+                            await page.locator(loginEmailSel).first().fill('').catch(()=>{});
+                            await page.locator(loginEmailSel).first().type(email, { delay: 50 }).catch(()=>{});
+                        }
                         await page.waitForTimeout(1000);
                         
                         // Check if password field is visible (1-step or 2-step form)
@@ -808,7 +891,12 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         }
                         
                         if (passwordSelFound) {
-                            await page.locator(usedPasswordSel).first().type(password, { delay: 100 });
+                            await page.locator(usedPasswordSel).first().fill(password).catch(()=>{});
+                            let logPassVal2 = await page.locator(usedPasswordSel).first().inputValue().catch(() => '');
+                            if (logPassVal2 !== password) {
+                                await page.locator(usedPasswordSel).first().fill('').catch(()=>{});
+                                await page.locator(usedPasswordSel).first().type(password, { delay: 50 }).catch(()=>{});
+                            }
                             await page.waitForTimeout(1000);
                             
                             // Click log in submit button
@@ -987,8 +1075,7 @@ async function runCLI() {
         console.log(`[Email ${i + 1}/${emailList.length}] Mulai memproses: ${email}`);
         
         const deviceType = devices[uaRotationIndex % devices.length] || 'desktop';
-        const list = uaLists[deviceType] || uaLists.desktop;
-        const ua = list[Math.floor(Math.random() * list.length)];
+        const ua = getUserAgent(params.browser, deviceType);
         uaRotationIndex++;
 
         const maxAttempts = parseInt(params.retry, 10);
@@ -1026,7 +1113,7 @@ async function runCLI() {
     process.exit(0);
 }
 
-module.exports = { registerSingleEmail, killAllBrowsers };
+module.exports = { registerSingleEmail, killAllBrowsers, getUserAgent };
 
 if (require.main === module) {
     runCLI().catch(err => {

@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { registerSingleEmail } = require('./register.js');
+const { registerSingleEmail, getUserAgent } = require('./register.js');
 const { saveRegistration, getAllRegistrations, clearRegistrations } = require('./db.js');
 
 const app = express();
@@ -311,8 +311,7 @@ wss.on('connection', (ws) => {
                                 let selectedDeviceType = '';
                                 if (uaMode !== 'extension' && deviceTypes && deviceTypes.length > 0) {
                                     selectedDeviceType = deviceTypes[uaRotationIndex % deviceTypes.length];
-                                    const list = uaLists[selectedDeviceType] || uaLists.desktop;
-                                    selectedUaString = list[Math.floor(Math.random() * list.length)];
+                                    selectedUaString = getUserAgent('chromium', selectedDeviceType);
                                     uaRotationIndex++;
                                 }
 
