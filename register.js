@@ -455,7 +455,9 @@ async function registerSingleEmail(email, params, selectedUaString) {
                         'button:has-text("Connect")',
                         'button[aria-label="Connect"]',
                         'button:has-text("Hubungkan")',
-                        'input[type="submit"][value*="Connect"]'
+                        'input[type="submit"][value*="Connect"]',
+                        'button[type="submit"]',
+                        'button.auth-button'
                     ];
 
                     let connectBtnFound = false;
@@ -469,7 +471,11 @@ async function registerSingleEmail(email, params, selectedUaString) {
                         } catch (_) {}
                     }
 
-                    if (!connectBtnFound) throw new Error("Tombol Connect tidak ditemukan di halaman verifikasi.");
+                    if (!connectBtnFound) {
+                        const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
+                        await page.screenshot({ path: errScreenshot, fullPage: true }).catch(()=>{});
+                        throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
+                    }
 
                     console.log(`[Browser] ✓ Tombol Connect terdeteksi via waitForSelector: ${usedConnectSel}`);
                     await page.click(usedConnectSel);
