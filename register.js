@@ -293,6 +293,13 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             launchOptions.args.push('--disable-blink-features=AutomationControlled');
         }
 
+        if (params.headless) {
+            if (params.browser !== 'firefox') {
+                launchOptions.args.push('--headless=new');
+            }
+            launchOptions.args.push('--window-size=1280,720');
+        }
+
         // Add argument to exclude automation switches
         launchOptions.ignoreDefaultArgs = ['--enable-automation'];
 
