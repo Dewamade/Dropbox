@@ -528,28 +528,13 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                     console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
                     await page.waitForTimeout(2000);
 
-                    const connectSelectors = [
-                        'button:has-text("Connect")',
-                        'button[aria-label="Connect"]',
-                        'button:has-text("Hubungkan")',
-                        'input[type="submit"][value*="Connect"]',
-                        'a:has-text("Connect")',
-                        'button[type="submit"]',
-                        'button.auth-button'
-                    ];
-
                     let connectBtnFound = false;
-                    let usedConnectSel = '';
+                    const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
+                                               .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
+                    
                     try {
-                        const combinedConnectSel = connectSelectors.join(', ');
-                        await page.waitForSelector(combinedConnectSel, { state: 'visible', timeout: gtMs });
-                        for (const sel of connectSelectors) {
-                            if (await page.isVisible(sel)) {
-                                connectBtnFound = true;
-                                usedConnectSel = sel;
-                                break;
-                            }
-                        }
+                        await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
+                        connectBtnFound = true;
                     } catch (_) {}
 
                     if (!connectBtnFound) {
@@ -558,8 +543,8 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
                     }
 
-                    console.log(`[Browser] ✓ Tombol Connect terdeteksi via waitForSelector: ${usedConnectSel}`);
-                    await page.click(usedConnectSel);
+                    console.log(`[Browser] ✓ Tombol Connect terdeteksi.`);
+                    await connectLocator.first().click();
                     console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
                     console.log(`[Browser] Menunggu konfirmasi berhasil dihubungkan...`);
                     await page.waitForTimeout(3000); // Give it some time to process
