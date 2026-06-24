@@ -301,10 +301,12 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         selectedUaString = selectedUaOrProxyType;
     }
 
-    // Force rotation of User Agent string on every browser launch
-    const devicesList = (params.devices || 'desktop').split(',').map(d => d.trim().toLowerCase());
-    const chosenDeviceType = devicesList[Math.floor(Math.random() * devicesList.length)] || 'desktop';
-    selectedUaString = getUserAgent(chosenDeviceType);
+    // Use the passed User Agent, or generate a fresh one if missing (to ensure consistency across logs/database)
+    if (!selectedUaString) {
+        const devicesList = (params.devices || 'desktop').split(',').map(d => d.trim().toLowerCase());
+        const chosenDeviceType = devicesList[Math.floor(Math.random() * devicesList.length)] || 'desktop';
+        selectedUaString = getUserAgent(chosenDeviceType);
+    }
 
     const { url, passwordMode, fixedPassword, timeout, alias, headless, isRetry } = params;
 
