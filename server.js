@@ -311,7 +311,7 @@ wss.on('connection', (ws) => {
                                 let selectedDeviceType = '';
                                 if (uaMode !== 'extension' && deviceTypes && deviceTypes.length > 0) {
                                     selectedDeviceType = deviceTypes[uaRotationIndex % deviceTypes.length];
-                                    selectedUaString = getUserAgent('chromium', selectedDeviceType);
+                                    selectedUaString = getUserAgent(selectedDeviceType);
                                     uaRotationIndex++;
                                 }
 

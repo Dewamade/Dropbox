@@ -1,4 +1,4 @@
-const { chromium, firefox } = require('playwright');
+const { firefox } = require('playwright');
 
 const { spawn, execSync } = require('child_process');
 const path = require('path');
@@ -7,34 +7,23 @@ const topUserAgents = require('top-user-agents');
 const { saveRegistration } = require('./db.js');
 
 const baseUas = topUserAgents.filter(ua => !ua.includes('NT 6'));
+console.log(`[Top-User-Agents] Berhasil memuat ${topUserAgents.length} User Agents (${baseUas.length} valid).`);
+
 const tabletUas = [
     'Mozilla/5.0 (iPad; CPU OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
     'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 ];
 
-function getUserAgent(browserName, deviceType) {
+function getUserAgent(deviceType) {
     let list = baseUas;
-    const bName = (browserName || 'chrome').toLowerCase();
     const dType = (deviceType || 'desktop').toLowerCase();
-
-    // Filter by browser engine to prevent bot detection due to capability mismatch
-    if (bName === 'firefox') {
-        list = list.filter(ua => ua.includes('Firefox') || ua.includes('Gecko/'));
-    } else {
-        // Chromium / Chrome / Edge
-        list = list.filter(ua => ua.includes('Chrome') || ua.includes('Chromium') || ua.includes('Edg/'));
-    }
 
     // Filter by device type
     if (dType === 'mobile') {
         list = list.filter(u => u.includes('Mobile') || u.includes('iPhone') || (u.includes('Android') && u.includes('Mobile')));
     } else if (dType === 'tablet') {
-        const customTablets = tabletUas.filter(ua => {
-            if (bName === 'firefox') return ua.includes('Firefox') || ua.includes('Gecko/');
-            return ua.includes('Chrome') || ua.includes('Chromium') || (ua.includes('Safari') && !ua.includes('Firefox'));
-        });
-        list = list.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(customTablets);
+        list = list.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(tabletUas);
     } else {
         // Desktop
         list = list.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android'));
@@ -42,21 +31,13 @@ function getUserAgent(browserName, deviceType) {
 
     // Fallback if list is empty
     if (list.length === 0) {
-        if (bName === 'firefox') {
-            return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0';
-        } else {
-            return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/125.0.0.0 Safari/537.36';
-        }
+        return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/125.0.0.0 Safari/537.36';
     }
 
-    return list[Math.floor(Math.random() * list.length)];
+    const chosenUa = list[Math.floor(Math.random() * list.length)];
+    console.log(`[Top-User-Agents] Berhasil mengambil dan menggunakan UA: ${chosenUa} (Tipe: ${dType})`);
+    return chosenUa;
 }
-
-const uaLists = {
-    desktop: baseUas.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android')),
-    mobile: baseUas.filter(u => u.includes('Mobile') || u.includes('iPhone')),
-    tablet: baseUas.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(tabletUas)
-};
 
 // --- Parsers and Utilities ---
 
@@ -230,9 +211,15 @@ function clearProfileData(profilePath) {
 
 
 function killAllBrowsers() {
-    try { execSync('pkill -9 -f chromium', { stdio: 'ignore' }); } catch (_) { }
-    try { execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) { }
-    try { execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) { }
+    if (process.platform === 'win32') {
+        try { execSync('taskkill /F /IM firefox.exe /T', { stdio: 'ignore' }); } catch (_) { }
+        try { execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' }); } catch (_) { }
+        try { execSync('taskkill /F /IM msedge.exe /T', { stdio: 'ignore' }); } catch (_) { }
+    } else {
+        try { execSync('pkill -9 -f chromium', { stdio: 'ignore' }); } catch (_) { }
+        try { execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) { }
+        try { execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) { }
+    }
 }
 
 async function hasCaptcha(page) {
@@ -314,11 +301,10 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         selectedUaString = selectedUaOrProxyType;
     }
 
-    if (!selectedUaString) {
-        const devices = (params.devices || 'desktop').split(',').map(d => d.trim().toLowerCase());
-        const deviceType = devices[Math.floor(Math.random() * devices.length)] || 'desktop';
-        selectedUaString = getUserAgent(params.browser || 'firefox', deviceType);
-    }
+    // Force rotation of User Agent string on every browser launch
+    const devicesList = (params.devices || 'desktop').split(',').map(d => d.trim().toLowerCase());
+    const chosenDeviceType = devicesList[Math.floor(Math.random() * devicesList.length)] || 'desktop';
+    selectedUaString = getUserAgent(chosenDeviceType);
 
     const { url, passwordMode, fixedPassword, timeout, alias, headless, isRetry } = params;
 
@@ -351,9 +337,9 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             console.log(`- Proxy     : ${params.proxy ? params.proxy : 'Direct Connection'}`);
             console.log(`Membersihkan cookies, cache, dan data penyimpanan situs...`);
             console.log(`✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.`);
-            console.log(`Membuka ${params.browser === 'firefox' ? 'Firefox' : params.browser === 'chrome' ? 'Google Chrome Resmi' : 'Chromium'} dengan mode User Agent: Generate Local`);
+            console.log(`Membuka Firefox dengan mode User Agent: Generate Local`);
         } else {
-            console.log(`\nMembuka ${params.browser === 'firefox' ? 'Firefox' : params.browser === 'chrome' ? 'Google Chrome Resmi' : 'Chromium'} dengan mode User Agent: Generate Local (Percobaan Ulang)`);
+            console.log(`\nMembuka Firefox dengan mode User Agent: Generate Local (Percobaan Ulang)`);
         }
 
         const profilePath = path.join(__dirname, 'data', 'firefox-profile');
@@ -372,49 +358,6 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             launchOptions.proxy = { server: proxyStr };
         }
 
-        if (params.browser === 'chrome') {
-            if (process.platform === 'win32') {
-                launchOptions.channel = 'chrome';
-            } else {
-                launchOptions.executablePath = '/usr/bin/google-chrome';
-            }
-            launchOptions.args.push(
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-infobars',
-                '--no-first-run',
-                '--no-service-autorun',
-                '--password-store=basic',
-                '--disable-blink-features=AutomationControlled'
-            );
-        } else if (params.browser !== 'firefox' && params.browser !== 'chrome') {
-            launchOptions.args.push(
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-infobars',
-                '--no-first-run',
-                '--no-service-autorun',
-                '--password-store=basic',
-                '--disable-blink-features=AutomationControlled'
-            );
-        }
-
-        if (params.headless && params.browser !== 'firefox') {
-            launchOptions.args.push('--headless=new');
-            launchOptions.args.push('--window-size=1280,720');
-        }
-
-        // Add argument to exclude automation switches
-        if (params.browser !== 'firefox') {
-            launchOptions.ignoreDefaultArgs = ['--enable-automation'];
-        }
-
-        const engine = params.browser === 'firefox' ? firefox : chromium;
-
         const contextOptions = {
             headless: launchOptions.headless,
             userAgent: selectedUaString,
@@ -429,19 +372,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             contextOptions.proxy = launchOptions.proxy;
         }
 
-        if (launchOptions.channel) {
-            contextOptions.channel = launchOptions.channel;
-        }
-
-        if (launchOptions.executablePath) {
-            contextOptions.executablePath = launchOptions.executablePath;
-        }
-
-        if (launchOptions.ignoreDefaultArgs) {
-            contextOptions.ignoreDefaultArgs = launchOptions.ignoreDefaultArgs;
-        }
-
-        context = await engine.launchPersistentContext(profilePath, contextOptions);
+        context = await firefox.launchPersistentContext(profilePath, contextOptions);
         page = context.pages()[0] || await context.newPage();
 
         // Advanced evasions to make browser tracking significantly harder
@@ -1060,9 +991,6 @@ async function runCLI() {
         process.exit(1);
     }
 
-    const devices = params.devices.split(',').map(d => d.trim().toLowerCase());
-    let uaRotationIndex = 0;
-
     let totalSuccess = 0;
     let totalVerif = 0;
     let totalFailed = 0;
@@ -1081,11 +1009,7 @@ async function runCLI() {
             // Set parameter isRetry jika ini adalah iterasi ke-2 atau lebih
             const runParams = { ...params, isRetry: attempt > 1 };
 
-            const deviceType = devices[uaRotationIndex % devices.length] || 'desktop';
-            const ua = getUserAgent(params.browser, deviceType);
-            uaRotationIndex++;
-
-            const result = await registerSingleEmail(email, runParams, ua);
+            const result = await registerSingleEmail(email, runParams);
 
             if (result.success) {
                 success = true;

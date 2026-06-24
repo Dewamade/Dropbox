@@ -8,8 +8,8 @@ COPY package.json package-lock.json* ./
 # Instalasi npm package
 RUN npm install
 
-# Menginstal dependensi Chromium, Google Chrome Asli, dan Firefox untuk Playwright
-RUN npx playwright install --with-deps chromium chrome firefox
+# Menginstal Firefox beserta dependensinya untuk Playwright
+RUN npx playwright install --with-deps firefox
 
 # Menyalin seluruh kode sumber dan binary
 COPY . .

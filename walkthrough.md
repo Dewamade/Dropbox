@@ -72,13 +72,13 @@ Untuk melakukan pengetesan alur UI secara langsung di Windows:
 1. Instal dependensi:
    ```bash
    npm install
-   npx playwright install chromium chrome
+   npx playwright install firefox
    ```
-2. Jalankan perintah (menggunakan browser Chrome non-headless agar visual terlihat):
+2. Jalankan perintah (menggunakan browser Firefox non-headless agar visual terlihat):
    ```bash
-   node register.js --emails="email_anda@domain.com" --password-mode="fixed" --fixed-password="PasswordAnda" --browser=chrome --headless=false
+   node register.js --emails="email_anda@domain.com" --password-mode="fixed" --fixed-password="PasswordAnda" --headless=false
    ```
-*Catatan: Saat dijalankan langsung di Windows, daemon `dropboxd` (yang merupakan binary Linux) tidak akan berhasil berjalan, tetapi alur login/signup di browser Chrome akan berjalan 100% secara otomatis hingga halaman verifikasi dan pengiriman email verifikasi.*
+*Catatan: Saat dijalankan langsung di Windows, daemon `dropboxd` (yang merupakan binary Linux) tidak akan berhasil berjalan, tetapi alur login/signup di browser Firefox akan berjalan 100% secara otomatis hingga halaman verifikasi dan pengiriman email verifikasi.*
 
 ---
 
@@ -99,7 +99,6 @@ Berikut adalah daftar parameter CLI yang didukung oleh `register.js`:
 | `--timeout` | Waktu habis (detik) per interaksi UI Browser | `60` | `--timeout=120` |
 | `--retry` | Jumlah percobaan ulang per email jika gagal | `3` | `--retry=3` |
 | `--devices` | Tipe simulasi perangkat (rotasi User Agent) | `desktop` | `--devices="desktop,mobile,tablet"` |
-| `--browser` | Engine browser yang digunakan | `firefox` | `--browser="firefox"` atau `"chrome"` atau `"chromium"` |
 | `--headless` | Menjalankan browser tanpa UI grafis | `true` | `--headless=false` |
 | `--proxy` | Meneruskan koneksi bot via server proxy | `""` | `--proxy="socks5://192.168.1.1:1080"` |
 
