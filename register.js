@@ -1,9 +1,6 @@
 const { chromium, firefox } = require('playwright-extra');
 const stealthPlugin = require('puppeteer-extra-plugin-stealth');
-// Load stealth secara global agar server.js juga mendapatkannya
-const stealth = stealthPlugin();
-chromium.use(stealth);
-firefox.use(stealth);
+let isStealthActive = false;
 
 const { spawn, execSync } = require('child_process');
 const path = require('path');
@@ -135,6 +132,13 @@ async function hasCaptcha(page) {
 // --- Main Email Registration Logic ---
 
 async function registerSingleEmail(email, params, selectedUaString) {
+    if (params && params.stealth !== 'no' && !isStealthActive) {
+        const stealth = stealthPlugin();
+        chromium.use(stealth);
+        firefox.use(stealth);
+        isStealthActive = true;
+    }
+
     const { url, passwordMode, fixedPassword, timeout, alias, headless, isRetry } = params;
     
     const globalTimeout = parseInt(timeout, 10) || 60;
@@ -160,7 +164,6 @@ async function registerSingleEmail(email, params, selectedUaString) {
     try {
         if (!isRetry) {
             console.log(`\nMemulai pendaftaran untuk email: ${email}`);
-            console.log(`Koneksi             : Direct Connection (Tanpa Proxy)`);
             console.log(`==========================================`);
             console.log(`- First Name: ${firstName.padEnd(70)} - Last Name : ${lastName}`);
             console.log(`- Password  : ${password}`);
