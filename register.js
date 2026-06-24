@@ -162,9 +162,9 @@ async function registerSingleEmail(email, params, selectedUaString) {
             console.log(`- Password  : ${password}`);
             console.log(`Membersihkan cookies, cache, dan data penyimpanan situs...`);
             console.log(`✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.`);
-            console.log(`Membuka ${params.browser === 'firefox' ? 'Firefox' : 'Chromium'} dengan mode User Agent: Generate Local`);
+            console.log(`Membuka ${params.browser === 'firefox' ? 'Firefox' : params.browser === 'chrome' ? 'Google Chrome Resmi' : 'Chromium'} dengan mode User Agent: Generate Local`);
         } else {
-            console.log(`\nMembuka ${params.browser === 'firefox' ? 'Firefox' : 'Chromium'} dengan mode User Agent: Generate Local (Percobaan Ulang)`);
+            console.log(`\nMembuka ${params.browser === 'firefox' ? 'Firefox' : params.browser === 'chrome' ? 'Google Chrome Resmi' : 'Chromium'} dengan mode User Agent: Generate Local (Percobaan Ulang)`);
         }
 
         const launchOptions = {
@@ -177,7 +177,10 @@ async function registerSingleEmail(email, params, selectedUaString) {
             ]
         };
         
-        if (params.browser !== 'firefox') {
+        if (params.browser === 'chrome') {
+            launchOptions.executablePath = '/usr/bin/google-chrome';
+            launchOptions.args.push('--disable-blink-features=AutomationControlled');
+        } else if (params.browser !== 'firefox' && params.browser !== 'chrome') {
             launchOptions.args.push('--disable-blink-features=AutomationControlled');
         }
 
