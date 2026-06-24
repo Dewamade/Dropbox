@@ -719,54 +719,43 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         while (!connected && cliAttempt < maxCliAttempts) {
                 cliAttempt++;
                 try {
-                    console.log(`[Browser] Navigasi ke URL CLI Link (timeout 60 detik)...`);
+                    console.log(`[Browser] Navigasi ke URL CLI Link untuk pengecekan awal (timeout 60 detik)...`);
                     await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
                     
-                    const loginEmailSel = 'input[type="email"], input[name*="email"], input[id^="susi_email"]';
-
-                    console.log(`[Browser] Menunggu halaman verifikasi atau halaman login dimuat...`);
-                    let activeElement = null;
-                    const checkDeadline = Date.now() + gtMs;
-                    while (Date.now() < checkDeadline) {
-                        // Check login email field first
-                        if (await page.locator(loginEmailSel).first().isVisible()) {
-                            activeElement = 'login';
-                            break;
-                        }
-                        // Check connect button
-                        const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
-                                                   .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
-                        if (await connectLocator.first().isVisible()) {
-                            activeElement = 'connect';
-                            break;
-                        }
-                        await page.waitForTimeout(500);
+                    const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
+                                               .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
+                    
+                    let isLoggedAndReady = false;
+                    try {
+                        await connectLocator.first().waitFor({ state: 'visible', timeout: 8000 });
+                        isLoggedAndReady = true;
+                    } catch (e) {
+                        console.log(`[Browser] Tombol Connect tidak ditemukan secara langsung. Berasumsi perlu login terlebih dahulu...`);
                     }
 
-                    if (activeElement === 'login') {
-                        console.log(`[Browser] ⚠️ Terdeteksi halaman login. Mencoba login otomatis dengan kredensial: ${email}`);
+                    if (!isLoggedAndReady) {
+                        console.log(`[Browser] Navigasi ke halaman login Dropbox (https://www.dropbox.com/login)...`);
+                        await page.goto('https://www.dropbox.com/login', { waitUntil: 'domcontentloaded', timeout: gtMs });
+                        await page.waitForTimeout(3000);
+
+                        const loginEmailSel = 'input[type="email"], input[name*="email"], input[id^="susi_email"]';
+                        const loginPasswordSel = 'input[type="password"], input[name="login_password"], input[id^="login_password"]';
+
+                        await page.waitForSelector(loginEmailSel, { state: 'visible', timeout: 15000 });
                         
                         // Fill email
                         await page.locator(loginEmailSel).first().fill(email).catch(()=>{});
-                        let logEmailVal2 = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
-                        if (logEmailVal2 !== email) {
+                        let logEmailVal = await page.locator(loginEmailSel).first().inputValue().catch(() => '');
+                        if (logEmailVal !== email) {
                             await page.locator(loginEmailSel).first().fill('').catch(()=>{});
                             await page.locator(loginEmailSel).first().type(email, { delay: 50 }).catch(()=>{});
                         }
                         await page.waitForTimeout(1000);
-                        
-                        // Check if password field is visible (1-step or 2-step form)
-                        const passwordSelectors = ['input[type="password"]', 'input[name="login_password"]', 'input[id^="login_password"]'];
-                        let passwordDirectlyVisible = false;
-                        for (const sel of passwordSelectors) {
-                            if (await page.locator(sel).first().isVisible()) {
-                                passwordDirectlyVisible = true;
-                                break;
-                            }
-                        }
-                        
+
+                        // Check password visibility
+                        let passwordDirectlyVisible = await page.locator(loginPasswordSel).first().isVisible();
                         if (!passwordDirectlyVisible) {
-                            // Multi-step: click continue first
+                            // Click Continue
                             const loginContinueSelectors = [
                                 'button.email-submit-button',
                                 'button[class*="email-submit-button"]',
@@ -783,72 +772,56 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                                 }
                             }
                             if (!clickedContinue) {
-                                console.log(`[Browser] ⚠️ Tombol Continue tidak terdeteksi secara visual, mencoba menekan Enter...`);
                                 await page.keyboard.press('Enter');
                             }
-                            await page.waitForTimeout(2000);
+                            await page.waitForTimeout(3000);
                         }
-                        
+
                         // Fill password
-                        let passwordSelFound = false;
-                        let usedPasswordSel = '';
-                        for (const sel of passwordSelectors) {
-                            try {
-                                await page.waitForSelector(sel, { state: 'visible', timeout: 10000 });
-                                usedPasswordSel = sel;
-                                passwordSelFound = true;
+                        await page.waitForSelector(loginPasswordSel, { state: 'visible', timeout: 15000 });
+                        await page.locator(loginPasswordSel).first().fill(password).catch(()=>{});
+                        let logPassVal = await page.locator(loginPasswordSel).first().inputValue().catch(() => '');
+                        if (logPassVal !== password) {
+                            await page.locator(loginPasswordSel).first().fill('').catch(()=>{});
+                            await page.locator(loginPasswordSel).first().type(password, { delay: 50 }).catch(()=>{});
+                        }
+                        await page.waitForTimeout(1000);
+
+                        // Click Log In
+                        const loginSubmitSelectors = [
+                            'button[class*="login-button"]',
+                            'button:has-text("Log in")',
+                            'button:has-text("Masuk")',
+                            'button[type="submit"]'
+                        ];
+                        let clickedSubmit = false;
+                        for (const sel of loginSubmitSelectors) {
+                            if (await page.locator(sel).first().isVisible()) {
+                                await page.locator(sel).first().click({ delay: 150 });
+                                clickedSubmit = true;
                                 break;
-                            } catch(e) {}
+                            }
                         }
-                        
-                        if (passwordSelFound) {
-                            await page.locator(usedPasswordSel).first().fill(password).catch(()=>{});
-                            let logPassVal2 = await page.locator(usedPasswordSel).first().inputValue().catch(() => '');
-                            if (logPassVal2 !== password) {
-                                await page.locator(usedPasswordSel).first().fill('').catch(()=>{});
-                                await page.locator(usedPasswordSel).first().type(password, { delay: 50 }).catch(()=>{});
-                            }
-                            await page.waitForTimeout(1000);
-                            
-                            // Click log in submit button
-                            const loginSubmitSelectors = [
-                                'button[class*="login-button"]',
-                                'button:has-text("Log in")',
-                                'button:has-text("Masuk")',
-                                'button[type="submit"]'
-                            ];
-                            let clickedSubmit = false;
-                            for (const sel of loginSubmitSelectors) {
-                                if (await page.locator(sel).first().isVisible()) {
-                                    await page.locator(sel).first().click({ delay: 150 });
-                                    clickedSubmit = true;
-                                    break;
-                                }
-                            }
-                            if (!clickedSubmit) {
-                                console.log(`[Browser] ⚠️ Tombol Log in tidak terdeteksi secara visual, mencoba menekan Enter...`);
-                                await page.keyboard.press('Enter');
-                            }
-                            
-                            console.log(`[Browser] Menunggu login selesai...`);
-                            await page.waitForTimeout(5000);
-                            
-                            // Re-navigate to CLI link
-                            console.log(`[Browser] Navigasi ulang ke URL CLI Link setelah login...`);
-                            await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-                            await page.waitForTimeout(2000);
-                        } else {
-                            throw new Error("Field password tidak muncul setelah memasukkan email");
+                        if (!clickedSubmit) {
+                            await page.keyboard.press('Enter');
                         }
-                    } else if (activeElement === null) {
-                        throw new Error("Halaman verifikasi/login tidak termuat atau tidak dikenali.");
+
+                        console.log(`[Browser] Menunggu login selesai...`);
+                        await page.waitForTimeout(7000);
+
+                        // Check if logged in (URL doesn't contain login anymore, or page contains personal/home/dashboard)
+                        const currentUrl = page.url();
+                        if (currentUrl.includes('/login')) {
+                            throw new Error("Gagal login: masih berada di halaman login.");
+                        }
+                        console.log(`[Browser] Login sukses, menavigasi kembali ke URL CLI Link...`);
+                        await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
+                        await page.waitForTimeout(3000);
                     }
 
                     console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
                     
                     let connectBtnFound = false;
-                    const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
-                                               .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
                     
                     try {
                         await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
