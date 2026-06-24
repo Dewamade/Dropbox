@@ -1,5 +1,10 @@
 const { chromium, firefox } = require('playwright-extra');
 const stealthPlugin = require('puppeteer-extra-plugin-stealth');
+// Load stealth secara global agar server.js juga mendapatkannya
+const stealth = stealthPlugin();
+chromium.use(stealth);
+firefox.use(stealth);
+
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -423,7 +428,7 @@ async function registerSingleEmail(email, params, selectedUaString) {
                         cliLinkUrl = match[0];
                         clearTimeout(deadline);
                         console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
-                        killDropbox();
+                        // JANGAN kill dropboxd di sini, karena daemon harus hidup saat verifikasi!
                         resolve();
                     }
                 };
@@ -485,6 +490,8 @@ async function registerSingleEmail(email, params, selectedUaString) {
                     console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
                     
                     connected = true;
+                    // Sekarang aman untuk membunuh daemon
+                    killDropbox();
 
                     console.log(`\n[Browser] Membuka halaman Settings untuk verifikasi email...`);
                     console.log(`[Navigasi] Ke halaman Settings/Account (timeout 60 detik)...`);
@@ -558,12 +565,6 @@ async function registerSingleEmail(email, params, selectedUaString) {
 async function runCLI() {
     console.log("=== Dropbox Registration CLI ===");
     const params = parseArgs();
-
-    if (params.stealth === 'yes') {
-        const stealth = stealthPlugin();
-        chromium.use(stealth);
-        firefox.use(stealth);
-    }
 
     console.log(JSON.stringify(params, null, 2));
 
