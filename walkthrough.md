@@ -12,7 +12,7 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
    - Skrip fokus mendeteksi tombol **Connect** secara langsung pada halaman tersebut hingga batas waktu (timeout) tercapai.
 3. **Restorasi Verifikasi Email & Modal Konfirmasi**:
    - Setelah sukses terhubung, skrip menavigasi ke halaman `/account`.
-   - Menunggu tombol "Verify email" / "Verifikasi email" muncul (timeout 15 detik), mengkliknya, lalu menunggu modal terbuka untuk mengklik tombol konfirmasi **"Send email"** / **"Kirim email"** (mendukung multibahasa).
+   - Menunggu tombol "Verify email" / "Verifikasi email" muncul (timeout 60 detik), mengkliknya, lalu menunggu modal terbuka untuk mengklik tombol konfirmasi **"Send email"** / **"Kirim email"** (mendukung multibahasa).
 4. **Optimasi Mode Headless (Anti-Detection)**:
    - Jika berjalan dalam mode `headless: true`, skrip menggunakan `--headless=new` (mode headless terbaru Chrome yang identik dengan grafis penuh) dan menetapkan `--window-size=1280,720` untuk melewati sensor deteksi bot Cloudflare/Akamai.
 5. **Dukungan Lintas Platform (Windows & Docker Linux)**:
@@ -23,8 +23,9 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
 7. **Restorasi Profil Persisten & Script Evasion (Penyamaran)**:
    - Skrip dikembalikan untuk menggunakan satu folder profil persisten bersama (`./data/firefox-profile`). Cache browser, data startup, sertifikat SSL, dan status profil tetap dipertahankan antar-sesi pendaftaran (hanya membersihkan data sensitif seperti cookies/locks menggunakan fungsi `clearProfileData` di awal siklus). Ini mereplikasi 'warmed-up profile' yang meningkatkan kepercayaan anti-bot.
    - Menyisipkan kembali script penyamaran `addInitScript` untuk menyembunyikan properti `navigator.webdriver`, memalsukan list plugins tiruan, dan me-override izin notifikasi API.
-
-
+8. **Rotasi User Agent per Launch & Fallback**:
+   - Skrip memutar User Agent pada setiap peluncuran browser (termasuk pada percobaan ulang/retry untuk email yang sama).
+   - Menyediakan fallback pemilihan User Agent secara otomatis di dalam `registerSingleEmail` jika tidak ada User Agent yang diberikan oleh pemanggil.
 
 ---
 

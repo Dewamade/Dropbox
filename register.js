@@ -314,6 +314,12 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         selectedUaString = selectedUaOrProxyType;
     }
 
+    if (!selectedUaString) {
+        const devices = (params.devices || 'desktop').split(',').map(d => d.trim().toLowerCase());
+        const deviceType = devices[Math.floor(Math.random() * devices.length)] || 'desktop';
+        selectedUaString = getUserAgent(params.browser || 'firefox', deviceType);
+    }
+
     const { url, passwordMode, fixedPassword, timeout, alias, headless, isRetry } = params;
 
     const globalTimeout = parseInt(timeout, 10) || 60;
@@ -1066,10 +1072,6 @@ async function runCLI() {
         console.log(`\n------------------------------------------------------------`);
         console.log(`[Email ${i + 1}/${emailList.length}] Mulai memproses: ${email}`);
 
-        const deviceType = devices[uaRotationIndex % devices.length] || 'desktop';
-        const ua = getUserAgent(params.browser, deviceType);
-        uaRotationIndex++;
-
         const maxAttempts = parseInt(params.retry, 10);
         let success = false;
 
@@ -1078,6 +1080,10 @@ async function runCLI() {
 
             // Set parameter isRetry jika ini adalah iterasi ke-2 atau lebih
             const runParams = { ...params, isRetry: attempt > 1 };
+
+            const deviceType = devices[uaRotationIndex % devices.length] || 'desktop';
+            const ua = getUserAgent(params.browser, deviceType);
+            uaRotationIndex++;
 
             const result = await registerSingleEmail(email, runParams, ua);
 
