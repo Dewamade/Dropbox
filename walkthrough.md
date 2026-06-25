@@ -26,6 +26,9 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
 8. **Rotasi User Agent per Launch & Fallback**:
    - Skrip memutar User Agent pada setiap peluncuran browser (termasuk pada percobaan ulang/retry untuk email yang sama).
    - Menyediakan fallback pemilihan User Agent secara otomatis di dalam `registerSingleEmail` jika tidak ada User Agent yang diberikan oleh pemanggil.
+9. **Eksekusi Dropbox Daemon via Docker Container**:
+   - Dropbox daemon (`dropbox-lnx.x86_64`) diluncurkan dalam container Ubuntu `ubuntu:24.04` terpisah dengan isolasi lingkungan, volume mapping, dan host networking.
+   - Penanganan siklus hidup container dikontrol menggunakan nama container unik per email (`dropbox-daemon-<username>`), dan bot secara otomatis mengeksekusi `docker stop` untuk membersihkannya setelah verifikasi selesai atau saat terjadi kegagalan.
 
 ---
 

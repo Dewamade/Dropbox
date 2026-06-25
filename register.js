@@ -645,8 +645,12 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
         let dropboxProc = null;
         let cliLinkUrl = null;
+        const containerName = `dropbox-daemon-${email.split('@')[0]}`;
         const killDropbox = () => {
             if (dropboxProc) try { dropboxProc.kill('SIGTERM'); } catch (_) { }
+            if (process.platform !== 'win32') {
+                try { execSync(`docker stop ${containerName}`, { stdio: 'ignore' }); } catch (_) { }
+            }
             try { execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) { }
             try { execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) { }
         };
@@ -654,17 +658,13 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
         try {
             console.log(`\n[dropboxd] Memulai proses Dropbox daemon...`);
             let dropboxCmd = '';
-            if (fs.existsSync(path.join(__dirname, 'app', '.dropbox-dist', 'dropboxd'))) {
-                dropboxCmd = './app/.dropbox-dist/dropboxd';
-            } else if (fs.existsSync(path.join(__dirname, 'app', 'dropboxd'))) {
-                dropboxCmd = './app/dropboxd';
-            } else if (fs.existsSync(path.join(__dirname, '.dropbox-dist', 'dropboxd'))) {
-                dropboxCmd = './.dropbox-dist/dropboxd';
+            if (process.platform === 'win32') {
+                dropboxCmd = 'echo "Dropbox daemon not supported directly on Windows"';
             } else {
-                dropboxCmd = './app/.dropbox-dist/dropboxd';
+                dropboxCmd = `docker run -i --rm --init --name ${containerName} -v ~/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropbox-lnx.x86_64-256.4.3790/dropbox`;
             }
 
-            console.log(`[dropboxd] Menjalankan via bash: ${dropboxCmd} (HOME=${__dirname})`);
+            console.log(`[dropboxd] Menjalankan: ${dropboxCmd}`);
             dropboxProc = spawn('bash', ['-c', dropboxCmd], {
                 cwd: __dirname,
                 env: { ...process.env, HOME: __dirname, BROWSER: 'false', DISPLAY: '' },
