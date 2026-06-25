@@ -57,7 +57,8 @@ function parseArgs() {
         devices: 'desktop',
         browser: 'firefox',
         headless: true,
-        proxy: ''
+        proxy: '',
+        host: 'wsl'
     };
 
     for (let i = 0; i < args.length; i++) {
@@ -200,7 +201,8 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             headless: headless,
             proxy: proxyStr,
             alias,
-            isRetry
+            isRetry,
+            host: 'wsl'
         };
     } else {
         // New style call
@@ -662,8 +664,55 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 connected = true;
             } else {
                 console.log(`\n[dropboxd] Memulai proses Dropbox daemon...`);
-                const hostHome = process.env.HOME || '/root';
-                const dropboxCmd = `docker run -i --rm --init --name ${containerName} -v ${hostHome}/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropbox-lnx.x86_64-256.4.3790/dropbox`;
+                let hostHome = '/root';
+                let hostAppPath = '';
+
+                const inDocker = fs.existsSync('/.dockerenv');
+                if (!inDocker) {
+                    // Running directly on the host (WSL, Linux, etc.)
+                    const os = require('os');
+                    hostHome = os.homedir();
+                    hostAppPath = path.join(hostHome, 'Dropbox', 'app');
+                } else {
+                    // Running inside Docker, inspect the self container mounts to dynamically find the host path
+                    try {
+                        const os = require('os');
+                        const hostname = os.hostname();
+                        const inspectJson = execSync(`docker inspect ${hostname}`, { stdio: 'pipe' }).toString();
+                        const data = JSON.parse(inspectJson)[0];
+                        const appMount = data.Mounts.find(m => m.Destination === '/app' || m.Destination === '/app/data');
+                        if (appMount && appMount.Source) {
+                            let projectPath = appMount.Source;
+                            if (appMount.Destination === '/app/data') {
+                                projectPath = path.dirname(appMount.Source); // Parent of /app/data
+                            }
+                            hostAppPath = path.join(projectPath, 'app');
+                            hostHome = path.dirname(projectPath);
+                        }
+                    } catch (e) {
+                        // Inspect failed (e.g. docker command or socket not available)
+                    }
+                }
+
+                // Fallback using --host if auto-detection was not successful
+                if (!hostAppPath) {
+                    const hostParam = (params.host || 'wsl').toLowerCase();
+                    if (hostParam === 'wsl') {
+                        hostHome = '/home/wijayad';
+                    } else if (hostParam === 'vps') {
+                        hostHome = '/root';
+                    } else {
+                        hostHome = params.host; // Custom path
+                    }
+                    hostAppPath = path.join(hostHome, 'Dropbox', 'app');
+                }
+
+                // Replace Windows backslashes with forward slashes for Docker mounts
+                hostAppPath = hostAppPath.replace(/\\/g, '/');
+                hostHome = hostHome.replace(/\\/g, '/');
+
+                console.log(`[dropboxd] Menggunakan host path untuk daemon volume mount: ${hostAppPath}`);
+                const dropboxCmd = `docker run -i --rm --init --name ${containerName} -v ${hostAppPath}:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropbox-lnx.x86_64-256.4.3790/dropbox`;
 
                 console.log(`[dropboxd] Menjalankan: ${dropboxCmd}`);
                 dropboxProc = spawn('bash', ['-c', dropboxCmd], {

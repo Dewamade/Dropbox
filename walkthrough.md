@@ -32,6 +32,7 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
 9. **Eksekusi Dropbox Daemon via Docker Container**:
    - Dropbox daemon (`dropbox-lnx.x86_64`) diluncurkan dalam container Ubuntu `ubuntu:24.04` terpisah dengan isolasi lingkungan, volume mapping, dan host networking.
    - Penanganan siklus hidup container dikontrol menggunakan nama container unik per email (`dropbox-daemon-<username>`), dan bot secara otomatis mengeksekusi `docker stop` untuk membersihkannya setelah verifikasi selesai atau saat terjadi kegagalan.
+   - Menggunakan fitur **Auto-Detection Host Path** yang mendeteksi jalur folder proyek secara dinamis di host dengan mem-parsing `docker inspect` dari container bot itu sendiri. Hal ini membebaskan Anda dari pengaturan jalur nama user secara manual pada VPS non-root maupun lingkungan WSL.
 
 ---
 
@@ -107,6 +108,7 @@ Berikut adalah daftar parameter CLI yang didukung oleh `register.js`:
 | `--devices` | Tipe simulasi perangkat (rotasi User Agent) | `desktop` | `--devices="desktop,mobile,tablet"` |
 | `--headless` | Menjalankan browser tanpa UI grafis | `true` | `--headless=false` |
 | `--proxy` | Meneruskan koneksi bot via server proxy | `""` | `--proxy="socks5://192.168.1.1:1080"` |
+| `--host` | Tipe/path host untuk mounting Docker daemon | `wsl` | `--host="vps"` atau `--host="/home/ubuntu"` |
 
 ---
 
