@@ -751,6 +751,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 }
             }
 
+            let emailSent = false;
             if (connected) {
                 console.log(`\n[Browser] Membuka halaman Settings untuk verifikasi email...`);
                 console.log(`[Navigasi] Ke halaman Settings/Account (timeout 60 detik)...`);
@@ -801,7 +802,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 if (verifyClicked) {
                     await page.waitForTimeout(2000);
                     const sendEmailSelectors = [
-                        'button.js-email-modal-button',
+                        'button.js-email-modal-button.dig-Button--primary',
                         'button:has-text("Send email")',
                         'button:has-text("Kirim email")',
                         'button:has-text("Send verification")',
@@ -831,6 +832,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         try {
                             await page.click(sendSelFound);
                             console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+                            emailSent = true;
                         } catch (sendErr) {
                             console.log(`[Browser] ⚠️ Gagal mengklik tombol Send email: ${sendErr.message}`);
                         }
@@ -843,7 +845,7 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 }
             }
 
-            finalStatus = connected ? 'VERIF' : 'failed';
+            finalStatus = connected ? (emailSent ? 'VERIF' : 'success') : 'failed';
 
         } catch (dropboxErr) {
             console.log(`[dropboxd] Error: ${dropboxErr.message}`);

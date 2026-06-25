@@ -12,7 +12,9 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
    - Skrip fokus mendeteksi tombol **Connect** secara langsung pada halaman tersebut hingga batas waktu (timeout) tercapai.
 3. **Restorasi Verifikasi Email & Modal Konfirmasi**:
    - Setelah sukses terhubung, skrip menavigasi ke halaman `/account`.
-   - Menunggu tombol "Verify email" / "Verifikasi email" muncul (timeout 60 detik), mengkliknya, lalu menunggu modal terbuka untuk mengklik tombol konfirmasi **"Send email"** / **"Kirim email"** (mendukung multibahasa).
+   - Menunggu tombol "Verify email" / "Verifikasi email" muncul (timeout 60 detik), mengkliknya.
+   - Menunggu modal terbuka, lalu mengklik tombol konfirmasi primary **"Send email"** / **"Kirim email"** dengan selector khusus (`button.js-email-modal-button.dig-Button--primary`) untuk menghindari klik pada tombol "Cancel" yang memiliki kelas modal yang sama.
+   - Melacak status pengiriman email (`emailSent`) secara dinamis untuk menentukan status akhir (`VERIF` jika sukses terkirim, `success` jika hanya sukses registrasi & link daemon tanpa verifikasi email).
 4. **Optimasi Mode Headless (Anti-Detection)**:
    - Jika berjalan dalam mode `headless: true`, skrip menggunakan `--headless=new` (mode headless terbaru Chrome yang identik dengan grafis penuh) dan menetapkan `--window-size=1280,720` untuk melewati sensor deteksi bot Cloudflare/Akamai.
 5. **Dukungan Lintas Platform (Windows & Docker Linux)**:
