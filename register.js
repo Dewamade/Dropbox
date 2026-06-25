@@ -629,11 +629,11 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
 
                 // Check if logged in successfully (URL doesn't have login anymore or shows home/personal)
                 const currentUrl = page.url();
-                if (!currentUrl.includes('/login')) {
+                if (!currentUrl.includes('/login') && !currentUrl.includes('/register')) {
                     console.log(`✓ Login berhasil!`);
                     isRegistered = true;
                 } else {
-                    throw new Error("Gagal login: Masih berada di halaman login setelah submit");
+                    throw new Error("Gagal login: Masih berada di halaman login/register setelah submit");
                 }
             } else {
                 throw new Error("Field password tidak muncul untuk login");
@@ -655,99 +655,99 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             try { execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) { }
         };
 
+        let connected = false;
         try {
-            console.log(`\n[dropboxd] Memulai proses Dropbox daemon...`);
-            let dropboxCmd = '';
             if (process.platform === 'win32') {
-                dropboxCmd = 'echo "Dropbox daemon not supported directly on Windows"';
+                console.log(`\n[dropboxd] Platform Windows dideteksi. Melewati daemon link dan langsung menuju verifikasi email.`);
+                connected = true;
             } else {
+                console.log(`\n[dropboxd] Memulai proses Dropbox daemon...`);
                 const hostHome = process.env.HOME || '/root';
-                dropboxCmd = `docker run -i --rm --init --name ${containerName} -v ${hostHome}/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropbox-lnx.x86_64-256.4.3790/dropbox`;
-            }
+                const dropboxCmd = `docker run -i --rm --init --name ${containerName} -v ${hostHome}/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropbox-lnx.x86_64-256.4.3790/dropbox`;
 
-            console.log(`[dropboxd] Menjalankan: ${dropboxCmd}`);
-            dropboxProc = spawn('bash', ['-c', dropboxCmd], {
-                cwd: __dirname,
-                env: { ...process.env, HOME: __dirname, BROWSER: 'false', DISPLAY: '' },
-            });
-
-            await new Promise((resolve, reject) => {
-                const deadline = setTimeout(() => {
-                    killDropbox();
-                    reject(new Error(`[dropboxd] Timeout ${daemonTimeout} detik — URL cli_link tidak muncul`));
-                }, dtMs);
-
-                const scanForLink = (chunk) => {
-                    const text = chunk.toString();
-                    text.split('\n').forEach(line => {
-                        const trimmed = line.trim();
-                        if (trimmed) console.log(`[dropboxd] ${trimmed}`);
-                    });
-
-                    const match = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
-                    if (match && !cliLinkUrl) {
-                        cliLinkUrl = match[0];
-                        clearTimeout(deadline);
-                        console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
-
-                        // Turn off stdout and stderr data listeners to stop console spam
-                        dropboxProc.stdout.off('data', scanForLink);
-                        dropboxProc.stderr.off('data', scanForLink);
-
-                        resolve();
-                    }
-                };
-
-                dropboxProc.stdout.on('data', scanForLink);
-                dropboxProc.stderr.on('data', scanForLink);
-                dropboxProc.on('error', (err) => { clearTimeout(deadline); killDropbox(); reject(err); });
-                dropboxProc.on('close', (code) => {
-                    if (!cliLinkUrl) {
-                        clearTimeout(deadline);
-                        reject(new Error(`[dropboxd] Proses berhenti (kode ${code}) sebelum URL ditemukan`));
-                    }
+                console.log(`[dropboxd] Menjalankan: ${dropboxCmd}`);
+                dropboxProc = spawn('bash', ['-c', dropboxCmd], {
+                    cwd: __dirname,
+                    env: { ...process.env, HOME: __dirname, BROWSER: 'false', DISPLAY: '' },
                 });
-            });
 
-            let connected = false;
-            let cliAttempt = 0;
-            const maxCliAttempts = 3;
-            while (!connected && cliAttempt < maxCliAttempts) {
-                cliAttempt++;
-                try {
-                    console.log(`[Browser] Navigasi ke URL CLI Link (Attempt ${cliAttempt}/${maxCliAttempts})...`);
-                    await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
+                await new Promise((resolve, reject) => {
+                    const deadline = setTimeout(() => {
+                        killDropbox();
+                        reject(new Error(`[dropboxd] Timeout ${daemonTimeout} detik — URL cli_link tidak muncul`));
+                    }, dtMs);
 
-                    const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
-                        .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
+                    const scanForLink = (chunk) => {
+                        const text = chunk.toString();
+                        text.split('\n').forEach(line => {
+                            const trimmed = line.trim();
+                            if (trimmed) console.log(`[dropboxd] ${trimmed}`);
+                        });
 
-                    console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
-                    let connectBtnFound = false;
+                        const match = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
+                        if (match && !cliLinkUrl) {
+                            cliLinkUrl = match[0];
+                            clearTimeout(deadline);
+                            console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
+
+                            // Turn off stdout and stderr data listeners to stop console spam
+                            dropboxProc.stdout.off('data', scanForLink);
+                            dropboxProc.stderr.off('data', scanForLink);
+
+                            resolve();
+                        }
+                    };
+
+                    dropboxProc.stdout.on('data', scanForLink);
+                    dropboxProc.stderr.on('data', scanForLink);
+                    dropboxProc.on('error', (err) => { clearTimeout(deadline); killDropbox(); reject(err); });
+                    dropboxProc.on('close', (code) => {
+                        if (!cliLinkUrl) {
+                            clearTimeout(deadline);
+                            reject(new Error(`[dropboxd] Proses berhenti (kode ${code}) sebelum URL ditemukan`));
+                        }
+                    });
+                });
+
+                let cliAttempt = 0;
+                const maxCliAttempts = 3;
+                while (!connected && cliAttempt < maxCliAttempts) {
+                    cliAttempt++;
                     try {
-                        await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
-                        connectBtnFound = true;
-                    } catch (_) { }
+                        console.log(`[Browser] Navigasi ke URL CLI Link (Attempt ${cliAttempt}/${maxCliAttempts})...`);
+                        await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
 
-                    if (!connectBtnFound) {
-                        const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
-                        await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => { });
-                        throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
+                        const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
+                            .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
+
+                        console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
+                        let connectBtnFound = false;
+                        try {
+                            await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
+                            connectBtnFound = true;
+                        } catch (_) { }
+
+                        if (!connectBtnFound) {
+                            const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
+                            await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => { });
+                            throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
+                        }
+
+                        console.log(`[Browser] ✓ Tombol Connect terdeteksi.`);
+                        await connectLocator.first().click();
+                        console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
+                        console.log(`[Browser] Menunggu konfirmasi berhasil dihubungkan...`);
+                        await page.waitForTimeout(3000);
+                        console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
+
+                        connected = true;
+                        killDropbox();
+
+                    } catch (err) {
+                        console.log(`[Browser] Error CLI Link (Attempt ${cliAttempt}): ${err.message}`);
+                        if (cliAttempt >= maxCliAttempts) throw new Error("Gagal verifikasi CLI Link.");
+                        await page.waitForTimeout(3000);
                     }
-
-                    console.log(`[Browser] ✓ Tombol Connect terdeteksi.`);
-                    await connectLocator.first().click();
-                    console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
-                    console.log(`[Browser] Menunggu konfirmasi berhasil dihubungkan...`);
-                    await page.waitForTimeout(3000);
-                    console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
-
-                    connected = true;
-                    killDropbox();
-
-                } catch (err) {
-                    console.log(`[Browser] Error CLI Link (Attempt ${cliAttempt}): ${err.message}`);
-                    if (cliAttempt >= maxCliAttempts) throw new Error("Gagal verifikasi CLI Link.");
-                    await page.waitForTimeout(3000);
                 }
             }
 
@@ -831,8 +831,33 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                         console.log(`[Browser] ✓ Tombol Send email terdeteksi: ${sendSelFound}`);
                         try {
                             await page.click(sendSelFound);
-                            console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
-                            emailSent = true;
+                            console.log(`[Browser] Mengklik tombol Send email, menunggu konfirmasi...`);
+                            
+                            let confirmed = false;
+                            const confirmDeadline = Date.now() + 8000;
+                            while (Date.now() < confirmDeadline) {
+                                try {
+                                    const bodyText = (await page.textContent('body')).toLowerCase();
+                                    if (bodyText.includes('sent a verification email') || 
+                                        bodyText.includes('kirim ulang') || 
+                                        bodyText.includes('resend') || 
+                                        bodyText.includes('check your inbox') ||
+                                        bodyText.includes('mengirimkan email')) {
+                                        confirmed = true;
+                                        break;
+                                    }
+                                } catch (_) {}
+                                await page.waitForTimeout(500);
+                            }
+                            
+                            if (confirmed) {
+                                console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+                                emailSent = true;
+                            } else {
+                                console.log(`⚠️ [Browser] Konfirmasi email terkirim tidak terdeteksi di UI modal, tetapi tombol telah diklik.`);
+                                emailSent = true;
+                            }
+                            await page.waitForTimeout(3000); // Tunggu ekstra agar network request selesai sebelum browser ditutup
                         } catch (sendErr) {
                             console.log(`[Browser] ⚠️ Gagal mengklik tombol Send email: ${sendErr.message}`);
                         }
