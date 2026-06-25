@@ -53,7 +53,7 @@ Kami menyediakan skrip instalasi `setup.sh` untuk menyiapkan seluruh kebutuhan b
 Jalankan perintah berikut pada VPS Anda:
 ```bash
 # Mengunduh dan menjalankan script setup
-curl -sSL https://raw.githubusercontent.com/jacksatriadi-jpg/Dropbox/docker/setup.sh -o setup.sh
+curl -sSL https://raw.githubusercontent.com/jacksatriadi-jpg/Dropbox/nodocker/setup.sh -o setup.sh
 chmod +x setup.sh
 ./setup.sh
 ```

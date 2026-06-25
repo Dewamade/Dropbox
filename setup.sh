@@ -58,6 +58,16 @@ npx playwright install --with-deps firefox
 # Create data directory
 mkdir -p data
 
+# Extract dropbox.tar.gz if it exists
+if [ -f "app/dropbox.tar.gz" ]; then
+    echo "Extracting app/dropbox.tar.gz..."
+    tar -xzf app/dropbox.tar.gz -C app/
+    rm app/dropbox.tar.gz
+    echo "✓ app/dropbox.tar.gz extracted successfully."
+else
+    echo "⚠️ app/dropbox.tar.gz not found. Make sure you place it in the app/ directory."
+fi
+
 echo "=================================================="
 echo " Setup Completed Successfully! "
 echo "=================================================="
