@@ -1,6 +1,6 @@
-# Panduan Lengkap Dropbox CLI (Dockerized & Headless Optimized)
+# Panduan Lengkap Dropbox CLI (Headless Firefox & Native VPS Optimized)
 
-Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon (`dropboxd`) otomatis berbasis **Playwright** yang dirancang untuk berjalan di lingkungan **Docker Linux (VPS)** maupun **Windows lokal**.
+Aplikasi ini adalah bot pendaftaran akun Dropbox otomatis berbasis **Playwright Firefox** yang dirancang untuk berjalan secara langsung (*native*) di lingkungan **Linux VPS (Ubuntu/Debian)**, **WSL**, maupun **Windows lokal**. Dropbox daemon (`dropboxd`) diluncurkan secara otomatis menggunakan container Docker untuk menjaga kebersihan dan isolasi sistem.
 
 ---
 
@@ -17,10 +17,9 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
    - Menunggu pembaruan teks konfirmasi sukses terkirim (misalnya, `"sent a verification email"`, `"check your inbox"`, dll.) muncul di modal, serta menambahkan penundaan 3 detik untuk memastikan request HTTP terkirim seutuhnya sebelum browser dimatikan.
    - Melacak status pengiriman email (`emailSent`) secara dinamis untuk menentukan status akhir (`VERIF` jika sukses terkirim, `success` jika hanya sukses registrasi & link daemon tanpa verifikasi email).
 4. **Optimasi Mode Headless (Anti-Detection)**:
-   - Jika berjalan dalam mode `headless: true`, skrip menggunakan `--headless=new` (mode headless terbaru Chrome yang identik dengan grafis penuh) dan menetapkan `--window-size=1280,720` untuk melewati sensor deteksi bot Cloudflare/Akamai.
-5. **Dukungan Lintas Platform (Windows & Docker Linux)**:
-   - Di Windows, menggunakan instalasi Google Chrome Resmi lokal (`channel: 'chrome'`).
-   - Di Docker Linux, menggunakan Google Chrome Desktop resmi `/usr/bin/google-chrome`.
+   - Jika berjalan dalam mode `headless: true`, skrip meluncurkan browser Firefox dengan optimasi parameter headless terbaru untuk menghindari deteksi bot oleh Dropbox.
+5. **Dukungan Lintas Platform (Windows & Linux VPS / WSL)**:
+   - Berjalan secara native menggunakan browser Firefox pada Windows maupun Linux VPS dengan instalasi dependensi otomatis yang disiapkan oleh Playwright.
 6. **Injeksi Parameter Lokalisasi & Zona Waktu**:
    - Skrip secara eksplisit menginjeksikan `locale: 'en-US'` dan `timezoneId: 'America/New_York'` pada pengaturan browser context. Ini mereplikasi behavior browser desktop normal dan meniadakan indikasi ketidaksesuaian/inkonsistensi profile di server VPS (yang secara default tidak memiliki zona waktu atau bermarkas di luar target pasar), sehingga secara signifikan mengurangi kemunculan CAPTCHA pendaftaran.
 7. **Pembersihan Profil & Script Evasion (Penyamaran)**:
@@ -32,47 +31,49 @@ Aplikasi ini adalah bot pendaftaran akun Dropbox dan penghubung perangkat daemon
 9. **Eksekusi Dropbox Daemon via Docker Container**:
    - Dropbox daemon (`dropbox-lnx.x86_64`) diluncurkan dalam container Ubuntu `ubuntu:24.04` terpisah dengan isolasi lingkungan, volume mapping, dan host networking.
    - Penanganan siklus hidup container dikontrol menggunakan nama container unik per email (`dropbox-daemon-<username>`), dan bot secara otomatis mengeksekusi `docker stop` untuk membersihkannya setelah verifikasi selesai atau saat terjadi kegagalan.
-   - Menggunakan fitur **Auto-Detection Host Path** yang mendeteksi jalur folder proyek secara dinamis di host dengan mem-parsing `docker inspect` dari container bot itu sendiri. Hal ini membebaskan Anda dari pengaturan jalur nama user secara manual pada VPS non-root maupun lingkungan WSL.
+   - Menggunakan fitur **Dynamic Path Resolution** untuk mendeteksi jalur folder proyek secara otomatis menggunakan `__dirname` host untuk penyesuaian volume mounting, sehingga tidak diperlukan konfigurasi manual.
 
 ---
 
-## 🛠️ Cara Deploy & Menggunakan di VPS (Docker)
+## 🛠️ Cara Deploy & Menggunakan di VPS (Direct Node & Dockerized Daemon)
+
+Project ini dijalankan secara langsung (*native*) menggunakan Node.js pada VPS, tetapi ia akan secara otomatis meluncurkan dan mengisolasi Dropbox daemon di dalam container Docker minimal saat mengaitkan akun.
 
 ### 1. Persiapan File
-Pastikan Anda telah menaruh file kompresi Dropbox dengan nama **`dropbox.tar.gz`** ke dalam sub-direktori `app/` sebelum melakukan proses build. 
+Pastikan Anda menaruh file kompresi Dropbox dengan nama **`dropbox.tar.gz`** ke dalam sub-direktori `app/` sebelum menjalankan instalasi.
 ```text
 Dropbox/
 ├── app/
 │   └── dropbox.tar.gz
 ```
 
-### 2. Membangun (Build) Docker Image di VPS
-Masuk ke direktori root proyek di VPS Anda, lalu jalankan perintah:
+### 2. Instalasi Otomatis via `setup.sh`
+Kami menyediakan skrip instalasi `setup.sh` untuk menyiapkan seluruh kebutuhan bot (seperti Node.js 20, Git, Docker, dependensi NPM, serta browser Firefox Playwright) pada VPS Ubuntu/Debian yang bersih.
+
+Jalankan perintah berikut pada VPS Anda:
 ```bash
-docker compose build --no-cache
+# Mengunduh dan menjalankan script setup
+curl -sSL https://raw.githubusercontent.com/jacksatriadi-jpg/Dropbox/docker/setup.sh -o setup.sh
+chmod +x setup.sh
+./setup.sh
 ```
 
-> [!TIP]
-> Socket Docker (`/var/run/docker.sock`) di-mount ke container secara otomatis di `docker-compose.yml` agar penentuan path host project dinamis via `docker inspect` berjalan sempurna tanpa konfigurasi manual.
-
-*Proses ini memakan waktu beberapa menit karena mengunduh node dependencies serta menginstal browser Google Chrome Desktop resmi beserta dependensi grafis Linux.*
-
-### 3. Menjalankan Bot via Docker CLI (`run.sh`)
-Gunakan berkas pembantu `run.sh` untuk menjalankan bot di dalam container:
+### 3. Menjalankan Bot di VPS
+Setelah instalasi selesai, masuk ke folder `Dropbox/` dan jalankan script menggunakan `node register.js` dengan opsi/parameter yang diinginkan:
 
 **Contoh: Mode Auto-Generate (10 Akun otomatis)**
 ```bash
-./run.sh --alias "VPS-Worker-Auto" --url "https://www.dropbox.com/register" --source auto --domain "kywa.uk" --count 10 --timeout 120 --retry 3 --devices "desktop"
+node register.js --alias "VPS-Worker-Auto" --url "https://www.dropbox.com/register" --source auto --domain "kywa.uk" --count 10 --timeout 120 --retry 3 --devices "desktop"
 ```
 
 **Contoh: Mode Manual Input dengan Proxy SOCKS5**
 ```bash
-./run.sh --alias "VPS-Worker-Manual" --source manual --emails "satu@kywa.uk; dua@kywa.uk" --browser chrome --proxy "socks5://192.168.1.1:1080"
+node register.js --alias "VPS-Worker-Manual" --source manual --emails "satu@kywa.uk; dua@kywa.uk" --proxy "socks5://192.168.1.1:1080"
 ```
 
 **Contoh: Mode Password Tetap**
 ```bash
-./run.sh --alias "VPS-Fixed" --source auto --domain "kywa.uk" --count 5 --password-mode "fixed" --fixed-password "SuperRahasia123!"
+node register.js --alias "VPS-Fixed" --source auto --domain "kywa.uk" --count 5 --password-mode "fixed" --fixed-password "SuperRahasia123!"
 ```
 
 ---

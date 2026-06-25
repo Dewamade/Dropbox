@@ -42,8 +42,8 @@ if [ -d "$PROJECT_DIR" ]; then
     echo "Directory $PROJECT_DIR already exists. Moving into it..."
     cd "$PROJECT_DIR"
 else
-    echo "Cloning the 'docker' branch of the repository..."
-    git clone -b docker https://github.com/jacksatriadi-jpg/Dropbox.git
+    echo "Cloning the 'nodocker' branch of the repository..."
+    git clone -b nodocker https://github.com/jacksatriadi-jpg/Dropbox.git
     cd "$PROJECT_DIR"
 fi
 
