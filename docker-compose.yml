@@ -7,6 +7,7 @@ services:
     container_name: dropbox-bot-cli
     volumes:
       - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: "no"
     # Contoh argumen CLI saat container dijalankan:
     command: >

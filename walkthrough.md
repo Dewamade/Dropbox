@@ -51,6 +51,10 @@ Masuk ke direktori root proyek di VPS Anda, lalu jalankan perintah:
 ```bash
 docker compose build --no-cache
 ```
+
+> [!TIP]
+> Socket Docker (`/var/run/docker.sock`) di-mount ke container secara otomatis di `docker-compose.yml` agar penentuan path host project dinamis via `docker inspect` berjalan sempurna tanpa konfigurasi manual.
+
 *Proses ini memakan waktu beberapa menit karena mengunduh node dependencies serta menginstal browser Google Chrome Desktop resmi beserta dependensi grafis Linux.*
 
 ### 3. Menjalankan Bot via Docker CLI (`run.sh`)

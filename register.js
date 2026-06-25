@@ -670,9 +670,9 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
                 const inDocker = fs.existsSync('/.dockerenv');
                 if (!inDocker) {
                     // Running directly on the host (WSL, Linux, etc.)
-                    const os = require('os');
-                    hostHome = os.homedir();
-                    hostAppPath = path.join(hostHome, 'Dropbox', 'app');
+                    // __dirname is the absolute path to the project directory on the host
+                    hostAppPath = path.join(__dirname, 'app');
+                    hostHome = path.dirname(__dirname);
                 } else {
                     // Running inside Docker, inspect the self container mounts to dynamically find the host path
                     try {
