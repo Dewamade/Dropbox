@@ -661,7 +661,8 @@ async function registerSingleEmail(emailOrUrl, paramsOrEmail, selectedUaOrProxyT
             if (process.platform === 'win32') {
                 dropboxCmd = 'echo "Dropbox daemon not supported directly on Windows"';
             } else {
-                dropboxCmd = `docker run -i --rm --init --name ${containerName} -v ~/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropbox-lnx.x86_64-256.4.3790/dropbox`;
+                const hostHome = process.env.HOME || '/root';
+                dropboxCmd = `docker run -i --rm --init --name ${containerName} -v ${hostHome}/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropbox-lnx.x86_64-256.4.3790/dropbox`;
             }
 
             console.log(`[dropboxd] Menjalankan: ${dropboxCmd}`);
