@@ -114,8 +114,8 @@ else
             git checkout "$BRANCH" || git checkout -b "$BRANCH" "origin/$BRANCH"
         fi
     else
-        echo -e "Mengkloning repositori Dropbox branch '${BRANCH}'..."
-        git clone -b "$BRANCH" "$REPO_URL"
+        echo -e "Mengkloning repositori Dropbox branch '${BRANCH}' (shallow clone)..."
+        git clone --depth 1 -b "$BRANCH" "$REPO_URL"
         cd Dropbox || exit 1
     fi
 fi
