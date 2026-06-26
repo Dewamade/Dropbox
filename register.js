@@ -451,6 +451,37 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
 
             const appDir = path.join(__dirname, 'app');
+
+            // Choose a random EgressRegion for Psiphon
+            const regions = ["AT","BE","CA","CH","CZ","DE","DK","ES","FI","FR","GB","ID","IE","IN","IT","JP","LT","NL","NO","PL","RO","RS","SE","SG","US"];
+            const randomRegion = regions[Math.floor(Math.random() * regions.length)];
+            console.log(`[Psiphon] Mengatur EgressRegion ke random region: ${randomRegion}`);
+
+            const configPath = path.join(appDir, 'psiphon.config');
+            try {
+                let configSourcePath = configPath;
+                if (!fs.existsSync(configSourcePath)) {
+                    configSourcePath = path.join(__dirname, 'psiphon.config');
+                }
+                
+                if (fs.existsSync(configSourcePath)) {
+                    const rawConfig = fs.readFileSync(configSourcePath, 'utf8');
+                    const config = JSON.parse(rawConfig);
+                    config.EgressRegion = randomRegion;
+                    
+                    if (!fs.existsSync(appDir)) {
+                        fs.mkdirSync(appDir, { recursive: true });
+                    }
+                    
+                    fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf8');
+                    console.log(`[Psiphon] ✓ Config EgressRegion berhasil di-update ke ${randomRegion}`);
+                } else {
+                    console.log(`[Psiphon Warning] File config asal tidak ditemukan di: ${configSourcePath}`);
+                }
+            } catch (configErr) {
+                console.log(`[Psiphon Error] Gagal memodifikasi config EgressRegion: ${configErr.message}`);
+            }
+
             // Launch psiphon-tunnel-core-x86_64 -config psiphon.config in app directory
             psiphonProc = spawn('./psiphon-tunnel-core-x86_64', ['-config', 'psiphon.config'], {
                 cwd: appDir
