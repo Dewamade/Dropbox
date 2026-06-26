@@ -8,26 +8,28 @@ Proyek ini menyediakan antarmuka web (Dashboard) modern untuk mengotomatisasi pe
 
 Anda dapat memilih antara menggunakan script otomatis (sangat disarankan) atau melakukan setup secara manual.
 
-### Metode A: Setup Otomatis (Direkomendasikan untuk Linux / Termux)
+### Metode A: Setup Otomatis (1 Command via curl/wget)
 
-Kami telah menyediakan script [setup.sh](setup.sh) untuk menyiapkan seluruh kebutuhan sistem secara otomatis.
+Kami telah menyediakan script setup otomatis yang dapat diunduh dan dijalankan secara langsung dengan **satu perintah** dari terminal Anda:
 
-1. Buka terminal Anda dan masuk ke direktori proyek:
-   ```bash
-   cd Dropbox
-   ```
-2. Berikan izin eksekusi pada script setup:
-   ```bash
-   chmod +x setup.sh
-   ```
-3. Jalankan script setup:
-   ```bash
-   ./setup.sh
-   ```
+**Menggunakan `curl`:**
+```bash
+curl -sSL https://raw.githubusercontent.com/jacksatriadi-jpg/Dropbox/webui/setup.sh | bash
+```
 
-Script ini akan mendeteksi lingkungan Anda, memasang dependensi Node.js, mengunduh browser Firefox untuk Playwright, serta menyiapkan aplikasi daemon Dropbox resmi di folder `app/`.
+**Menggunakan `wget`:**
+```bash
+wget -qO- https://raw.githubusercontent.com/jacksatriadi-jpg/Dropbox/webui/setup.sh | bash
+```
+
+> [!NOTE]
+> Setelah instalasi satu perintah di atas selesai, Anda perlu masuk ke direktori proyek sebelum menjalankan aplikasi:
+> ```bash
+> cd Dropbox
+> ```
 
 ---
+
 
 ### Metode B: Setup Manual
 
