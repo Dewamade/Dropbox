@@ -20,18 +20,23 @@ function killAllBrowsers() {
 function killAllBox64() {
     try { require('child_process').execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) {}
     try { require('child_process').execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) {}
+    try { require('child_process').execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' }); } catch (_) {}
+    console.log('[Kill] Semua proses box64/dropboxd/docker dihentikan paksa.');
+}
+
+function killAllVpnProxy() {
     try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
     try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) {}
-    try { require('child_process').execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' }); } catch (_) {}
     warpActive = false;
     psiphonActive = false;
     global.psiphonRegion = null;
-    console.log('[Kill] Semua proses box64/dropboxd/docker/psiphon/warp dihentikan paksa dan status di-reset.');
+    console.log('[Kill] Semua proses Psiphon/Warp dihentikan paksa dan status di-reset.');
 }
 
 // Expose globally so server.js can call them
 global.killAllBrowsers = killAllBrowsers;
 global.killAllBox64 = killAllBox64;
+global.killAllVpnProxy = killAllVpnProxy;
 
 
 // Helper function to get user input from the console

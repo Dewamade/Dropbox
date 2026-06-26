@@ -146,6 +146,7 @@ wss.on('connection', (ws) => {
                 }
                 if (global.killAllBrowsers) global.killAllBrowsers();
                 if (global.killAllBox64) global.killAllBox64();
+                if (global.killAllVpnProxy) global.killAllVpnProxy();
                 safeSend(ws, { type: 'status', status: 'stopped' });
                 return;
             }
@@ -517,6 +518,9 @@ wss.on('connection', (ws) => {
                     isRunning = false;
                     activeWs = null;
                     global.activeWs = null;
+                    if (global.killAllBrowsers) global.killAllBrowsers();
+                    if (global.killAllBox64) global.killAllBox64();
+                    if (global.killAllVpnProxy) global.killAllVpnProxy();
                 }
             }
         } catch (err) {
