@@ -12,21 +12,21 @@ let psiphonProc = null;
 
 // ── Kill helpers (accessible from server.js via global) ─────────────────────
 function killAllBrowsers() {
-    try { require('child_process').execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) {}
-    try { require('child_process').execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) {}
+    try { require('child_process').execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) { }
+    try { require('child_process').execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) { }
     console.log('[Kill] Semua proses Firefox/Playwright dihentikan paksa.');
 }
 
 function killAllBox64() {
-    try { require('child_process').execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) {}
-    try { require('child_process').execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) {}
-    try { require('child_process').execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' }); } catch (_) {}
+    try { require('child_process').execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) { }
+    try { require('child_process').execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) { }
+    try { require('child_process').execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' }); } catch (_) { }
     console.log('[Kill] Semua proses box64/dropboxd/docker dihentikan paksa.');
 }
 
 function killAllVpnProxy() {
-    try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
-    try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) {}
+    try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
+    try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) { }
     warpActive = false;
     psiphonActive = false;
     global.psiphonRegion = null;
@@ -107,7 +107,7 @@ async function hasCaptcha(page) {
                     return true;
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
     }
     return false;
 }
@@ -178,7 +178,7 @@ function getServerPublicIp() {
             });
             req.setTimeout(7000, () => { req.destroy(); clearTimeout(timer); resolve(null); });
             req.on('error', () => { clearTimeout(timer); resolve(null); });
-        } catch(e) { clearTimeout(timer); resolve(null); }
+        } catch (e) { clearTimeout(timer); resolve(null); }
     });
 }
 
@@ -207,11 +207,11 @@ function deleteDirRecursive(dirPath) {
                 } else {
                     try {
                         fs.unlinkSync(curPath);
-                    } catch (e) {}
+                    } catch (e) { }
                 }
             });
             fs.rmdirSync(dirPath);
-        } catch (e) {}
+        } catch (e) { }
     }
 }
 
@@ -257,7 +257,7 @@ function clearProfileData(profilePath) {
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     // Delete directories entirely
@@ -267,7 +267,7 @@ function clearProfileData(profilePath) {
             if (fs.existsSync(dirPath)) {
                 deleteDirRecursive(dirPath);
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     // Clean storage default directory while preserving moz-extensions (extension settings)
@@ -286,25 +286,25 @@ function clearProfileData(profilePath) {
                 }
             }
             console.log('✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.');
-        } catch (e) {}
+        } catch (e) { }
     }
 }
 
 // Single registration process for one email
 async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false, uaMode = 'generate', selectedUaString = '', selectedDeviceType = 'desktop') {
     const gtMs = globalTimeout * 1000;
-    
+
     if (proxyType !== 'psiphon') {
         global.psiphonRegion = null;
     }
-    
+
     let proxyServer = null;
     if (proxyType === 'warp') {
         proxyServer = 'socks5://127.0.0.1:8086';
 
         // Ensure psiphon is stopped
         if (psiphonActive) {
-            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
             psiphonActive = false;
             console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
         }
@@ -377,7 +377,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
                 console.log(`[Warp] Menjalankan: warp-ctl stop`);
                 await runCmd('warp-ctl stop', 5000);
-                for(let i = 0; i < 5; i++) {
+                for (let i = 0; i < 5; i++) {
                     if (await checkWarp('stop')) break;
                     await new Promise(r => setTimeout(r, 1000));
                 }
@@ -419,7 +419,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
         // Ensure warp is stopped
         if (warpActive) {
-            try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) {}
+            try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) { }
             warpActive = false;
             console.log(`[Warp] Koneksi Warp dihentikan.`);
         }
@@ -448,12 +448,12 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             console.log(`\nMengaktifkan koneksi Psiphon...`);
 
             // Stop existing psiphon binary if running
-            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
 
             const appDir = path.join(__dirname, 'app');
 
             // Choose a random EgressRegion for Psiphon
-            const regions = ["AT","BE","CA","CH","CZ","DE","DK","ES","FI","FR","GB","ID","IE","IN","IT","JP","LT","NL","NO","PL","RO","RS","SE","SG","US"];
+            const regions = ["AT", "BE", "CA", "CH", "CZ", "DE", "DK", "ES", "FI", "FR", "GB", "IE", "IN", "IT", "JP", "LT", "NL", "NO", "PL", "RO", "RS", "SE", "SG", "US"];
             const randomRegion = regions[Math.floor(Math.random() * regions.length)];
             console.log(`[Psiphon] Mengatur EgressRegion ke random region: ${randomRegion}`);
 
@@ -463,16 +463,16 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 if (!fs.existsSync(configSourcePath)) {
                     configSourcePath = path.join(__dirname, 'psiphon.config');
                 }
-                
+
                 if (fs.existsSync(configSourcePath)) {
                     const rawConfig = fs.readFileSync(configSourcePath, 'utf8');
                     const config = JSON.parse(rawConfig);
                     config.EgressRegion = randomRegion;
-                    
+
                     if (!fs.existsSync(appDir)) {
                         fs.mkdirSync(appDir, { recursive: true });
                     }
-                    
+
                     fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf8');
                     console.log(`[Psiphon] ✓ Config EgressRegion berhasil di-update ke ${randomRegion}`);
                 } else {
@@ -507,7 +507,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                         if (global.debugProxy) {
                             global.safeSend({ type: 'vpn_log', message: `[Psiphon stderr] ${trimmed}` });
                         }
-                        
+
                         // Parse JSON notices to find connected server region
                         try {
                             const match = trimmed.match(/\{.*\}/);
@@ -528,7 +528,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                                     }
                                 }
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 });
             });
@@ -549,7 +549,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 if (abortController && abortController.shouldStop) {
                     throw new Error("Pendaftaran dihentikan oleh pengguna.");
                 }
-                
+
                 if (!portReady) {
                     portReady = await checkPort('127.0.0.1', 3080, 1000);
                 }
@@ -577,12 +577,12 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
         // Ensure warp is stopped when using direct or custom socks5 to prevent conflicts
         if (warpActive) {
             const { exec } = require('child_process');
-            exec('warp-ctl stop', { timeout: 5000 }, () => {});
+            exec('warp-ctl stop', { timeout: 5000 }, () => { });
             warpActive = false;
             console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Proxy Socks5).`);
         }
         if (psiphonActive) {
-            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
             psiphonActive = false;
             console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
         }
@@ -590,12 +590,12 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
         // Direct connection — stop warp and psiphon if previously active
         if (warpActive) {
             const { exec } = require('child_process');
-            exec('warp-ctl stop', { timeout: 5000 }, () => {});
+            exec('warp-ctl stop', { timeout: 5000 }, () => { });
             warpActive = false;
             console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Direct Connection).`);
         }
         if (psiphonActive) {
-            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
             psiphonActive = false;
             console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
         }
@@ -649,12 +649,12 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                     fs.unlinkSync(filePath);
                     console.log(`✓ Membersihkan file lock profil: ${file}`);
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
     }
 
     console.log(`Membuka Firefox dengan mode User Agent: ${uaMode === 'extension' ? 'Ekstensi (Profile)' : `Generate Local (${selectedDeviceType})`}`);
-    
+
     // Launch with timeout to avoid hanging if proxy is not ready
     const launchTimeout = Math.max(gtMs, 60000);
     let context;
@@ -677,7 +677,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
     try {
         context = await Promise.race([
             launchFirefoxMode(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error(`[Firefox] Launch timeout ${launchTimeout/1000}s — proxy mungkin tidak tersedia`)), launchTimeout))
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`[Firefox] Launch timeout ${launchTimeout / 1000}s — proxy mungkin tidak tersedia`)), launchTimeout))
         ]);
     } catch (launchErr) {
         // If warp proxy caused a hang, retry without proxy
@@ -715,14 +715,14 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             playwrightUA = await infoPage.evaluate(() => navigator.userAgent).catch(() => 'Unknown');
             console.log(`[Playwright] User Agent (post-nav): ${playwrightUA}`);
 
-        } catch(ipErr) {
+        } catch (ipErr) {
             console.log(`[Playwright] Gagal cek IP/UA via browser: ${ipErr.message.split('\n')[0]}`);
             // Fallback: Node.js direct IP, raw UA from blank page
             serverIp = await getServerPublicIp() || 'Unknown';
             console.log(`[Server] Public IP (fallback/direct): ${serverIp}`);
             playwrightUA = await infoPage.evaluate(() => navigator.userAgent).catch(() => 'Unknown');
         }
-    } catch(e) {
+    } catch (e) {
         console.log(`[Playwright] Error infoPage: ${e.message}`);
         serverIp = await getServerPublicIp() || 'Unknown';
     }
@@ -760,7 +760,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             try {
                 console.log("[Abort] Menutup browser context secara paksa karena perintah berhenti...");
                 await context.close();
-            } catch (e) {}
+            } catch (e) { }
         };
         // If stopped while launching, abort immediately
         if (abortController.shouldStop) {
@@ -768,14 +768,14 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             throw new Error("Pendaftaran dihentikan oleh pengguna.");
         }
     }
-    
+
     if (isInit) {
         console.log("\n========================================================");
         console.log("MODE INISIALISASI AKTIF (-init=true)");
         console.log("Silakan pasang ekstensi dan lakukan konfigurasi secara manual.");
         console.log("Tutup jendela browser Firefox setelah Anda selesai untuk melanjutkan.");
         console.log("========================================================\n");
-        
+
         await new Promise(resolve => {
             context.on('close', resolve);
         });
@@ -788,7 +788,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
     // Advanced evasions to make browser tracking significantly harder
     await context.addInitScript(() => {
         // 1. Evade navigator.webdriver
-        try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) {}
+        try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) { }
 
         // 2. Mock Plugins list (biasanya 0 pada headless/bot)
         try {
@@ -800,7 +800,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             ];
             Object.defineProperty(navigator, 'plugins', { get: () => pluginData });
             Object.defineProperty(navigator, 'mimeTypes', { get: () => [{ type: 'application/pdf', suffixes: 'pdf', description: '', enabledPlugin: pluginData[0] }] });
-        } catch (e) {}
+        } catch (e) { }
 
         // 3. Override permissions API
         try {
@@ -809,7 +809,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 parameters.name === 'notifications' ?
                     Promise.resolve({ state: Notification.permission }) :
                     originalQuery(parameters);
-        } catch (e) {}
+        } catch (e) { }
     });
 
     // launchPersistentContext secara bawaan sudah membuka 1 halaman kosong.
@@ -836,306 +836,306 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
         if (tabAttempt > 1) {
             console.log(`\n[Tab Reload] Mencoba ulang proses pendaftaran di tab yang sama (Percobaan ${tabAttempt}/${maxTabAttempts})...`);
         }
-        
+
         try {
-            console.log(`[Navigasi] Ke: ${url} (timeout ${gtMs/1000} detik)`);
+            console.log(`[Navigasi] Ke: ${url} (timeout ${gtMs / 1000} detik)`);
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs });
             // Wait for network to quiet down so JS-rendered form has time to appear
-            try { await page.waitForLoadState('networkidle', { timeout: Math.min(gtMs, 20000) }); } catch (_) {}
+            try { await page.waitForLoadState('networkidle', { timeout: Math.min(gtMs, 20000) }); } catch (_) { }
             await checkTooManyAttempts(page);
 
-        console.log("Mencari form input pendaftaran...");
-        // More human-like: random wait before starting
-        await page.waitForTimeout(2000 + Math.random() * 2000);
+            console.log("Mencari form input pendaftaran...");
+            // More human-like: random wait before starting
+            await page.waitForTimeout(2000 + Math.random() * 2000);
 
-        // Optional: Dismiss cookie banners
-        try {
-            const cookieBannerButton = page.locator('button:has-text("Accept"), button:has-text("Setuju"), #consent-accept-button');
-            if (await cookieBannerButton.isVisible()) {
-                await cookieBannerButton.click();
-                console.log("✓ Menutup banner cookie");
-                await page.waitForTimeout(1000);
-            }
-        } catch (e) {}
-
-        // --- STEP 1: Fill Email & Click Continue ---
-        console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout} detik)...`);
-        const emailSelectors = [
-            'input[id^="susi_email"]',
-            'input[type="email"]',
-            'input[name="email"]',
-            'input[placeholder*="Email"]',
-            'input[placeholder*="email"]'
-        ];
-        
-        // First try a direct waitForSelector — more efficient than polling
-        let activeEmailSelector = null;
-        for (const sel of emailSelectors) {
+            // Optional: Dismiss cookie banners
             try {
-                await page.waitForSelector(sel, { state: 'visible', timeout: Math.min(gtMs, 15000) });
-                activeEmailSelector = sel;
-                console.log(`✓ Field email ditemukan via waitForSelector: ${sel}`);
-                break;
-            } catch (_) {}
-        }
-
-        // Fallback: if still not found, scroll page to trigger lazy rendering and poll
-        if (!activeEmailSelector) {
-            console.log(`[Langkah 1] waitForSelector habis, scroll dan polling...`);
-            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) {}
-            await page.waitForTimeout(2000);
-
-            const emailDeadline = Date.now() + gtMs;
-            while (Date.now() < emailDeadline && !activeEmailSelector) {
-                for (const selector of emailSelectors) {
-                    try {
-                        const isVisible = await page.locator(selector).first().isVisible();
-                        if (isVisible) { activeEmailSelector = selector; break; }
-                    } catch (e) {}
+                const cookieBannerButton = page.locator('button:has-text("Accept"), button:has-text("Setuju"), #consent-accept-button');
+                if (await cookieBannerButton.isVisible()) {
+                    await cookieBannerButton.click();
+                    console.log("✓ Menutup banner cookie");
+                    await page.waitForTimeout(1000);
                 }
-                if (!activeEmailSelector) await page.waitForTimeout(1000);
-            }
-        }
+            } catch (e) { }
 
-        if (!activeEmailSelector) {
-            // Throw BROWSER_KILL_REQUIRED so server kills all browsers and performs Warp retry
-            throw new Error(`BROWSER_KILL_REQUIRED: Field email tidak muncul dalam ${globalTimeout} detik (waitForSelector + fallback scroll habis).`);
-        }
+            // --- STEP 1: Fill Email & Click Continue ---
+            console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout} detik)...`);
+            const emailSelectors = [
+                'input[id^="susi_email"]',
+                'input[type="email"]',
+                'input[name="email"]',
+                'input[placeholder*="Email"]',
+                'input[placeholder*="email"]'
+            ];
 
-        await humanType(activeEmailSelector, email);
-        console.log("✓ Mengisi Email");
-
-        await page.waitForTimeout(500 + Math.random() * 800);
-
-        // Click "Continue" with humanized mouse movement
-        console.log("Mengklik tombol 'Continue'...");
-        const continueSelectors = [
-            'button.email-submit-button',
-            'button:has-text("Continue")',
-            'button:has-text("Lanjutkan")',
-            'button[type="submit"]'
-        ];
-        let clickedContinue = false;
-        for (const selector of continueSelectors) {
-            try {
-                if (await page.isVisible(selector)) {
-                    await humanClick(selector);
-                    clickedContinue = true;
-                    console.log("✓ Mengklik tombol Continue (human-click)");
+            // First try a direct waitForSelector — more efficient than polling
+            let activeEmailSelector = null;
+            for (const sel of emailSelectors) {
+                try {
+                    await page.waitForSelector(sel, { state: 'visible', timeout: Math.min(gtMs, 15000) });
+                    activeEmailSelector = sel;
+                    console.log(`✓ Field email ditemukan via waitForSelector: ${sel}`);
                     break;
-                }
-            } catch (e) {}
-        }
+                } catch (_) { }
+            }
 
-        if (!clickedContinue) {
-            console.log("Peringatan: Tombol Continue tidak terdeteksi, mencoba menekan Enter...");
-            let enterPressed = false;
-            for (const selector of emailSelectors) {
+            // Fallback: if still not found, scroll page to trigger lazy rendering and poll
+            if (!activeEmailSelector) {
+                console.log(`[Langkah 1] waitForSelector habis, scroll dan polling...`);
+                try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) { }
+                await page.waitForTimeout(2000);
+
+                const emailDeadline = Date.now() + gtMs;
+                while (Date.now() < emailDeadline && !activeEmailSelector) {
+                    for (const selector of emailSelectors) {
+                        try {
+                            const isVisible = await page.locator(selector).first().isVisible();
+                            if (isVisible) { activeEmailSelector = selector; break; }
+                        } catch (e) { }
+                    }
+                    if (!activeEmailSelector) await page.waitForTimeout(1000);
+                }
+            }
+
+            if (!activeEmailSelector) {
+                // Throw BROWSER_KILL_REQUIRED so server kills all browsers and performs Warp retry
+                throw new Error(`BROWSER_KILL_REQUIRED: Field email tidak muncul dalam ${globalTimeout} detik (waitForSelector + fallback scroll habis).`);
+            }
+
+            await humanType(activeEmailSelector, email);
+            console.log("✓ Mengisi Email");
+
+            await page.waitForTimeout(500 + Math.random() * 800);
+
+            // Click "Continue" with humanized mouse movement
+            console.log("Mengklik tombol 'Continue'...");
+            const continueSelectors = [
+                'button.email-submit-button',
+                'button:has-text("Continue")',
+                'button:has-text("Lanjutkan")',
+                'button[type="submit"]'
+            ];
+            let clickedContinue = false;
+            for (const selector of continueSelectors) {
                 try {
                     if (await page.isVisible(selector)) {
-                        await page.locator(selector).press('Enter');
-                        enterPressed = true;
-                        break;
-                    }
-                } catch (e) {}
-            }
-            if (!enterPressed) {
-                await page.keyboard.press('Enter');
-            }
-        }
-
-        // Wait for Step 2 fields to load and be visible
-        await page.waitForTimeout(2000);
-        await checkTooManyAttempts(page);
-        const step2Timeout = Math.round(globalTimeout / 2);
-        console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout ${step2Timeout} detik)...`);
-        
-        const firstNameSelectors = [
-            'input[id^="fname"]',
-            'input[name="fname"]',
-            'input[autocomplete="given-name"]',
-            'input[placeholder*="First name"]',
-            'input[placeholder*="Nama depan"]'
-        ];
-
-        let step2Visible = false;
-        // First try a direct waitForSelector
-        for (const sel of firstNameSelectors) {
-            try {
-                await page.waitForSelector(sel, { state: 'visible', timeout: Math.min(gtMs / 2, 10000) });
-                step2Visible = true;
-                console.log(`✓ Form Langkah 2 terdeteksi via waitForSelector: ${sel}`);
-                break;
-            } catch (_) {}
-        }
-
-        // Fallback: if still not found, scroll page to trigger lazy rendering and poll
-        if (!step2Visible) {
-            console.log(`[Langkah 2] waitForSelector habis, scroll dan polling...`);
-            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) {}
-            await page.waitForTimeout(2000);
-
-            const step2Deadline = Date.now() + (gtMs / 2);
-            while (Date.now() < step2Deadline && !step2Visible) {
-                for (const selector of firstNameSelectors) {
-                    try {
-                        const isVisible = await page.locator(selector).first().isVisible();
-                        if (isVisible) { step2Visible = true; break; }
-                    } catch (e) {}
-                }
-                if (!step2Visible) await page.waitForTimeout(1000);
-            }
-        }
-
-        if (!step2Visible) {
-            throw new Error(`BROWSER_KILL_REQUIRED: Form Langkah 2 tidak muncul dalam ${step2Timeout} detik.`);
-        }
-
-        // Fill First Name
-        let firstNameFilled = false;
-        for (const selector of firstNameSelectors) {
-            try {
-                if (await page.isVisible(selector)) {
-                    await humanType(selector, firstName);
-                    firstNameFilled = true;
-                    console.log("✓ Mengisi First Name (human-typed)");
-                    break;
-                }
-            } catch (e) {}
-        }
-
-        await page.waitForTimeout(400 + Math.random() * 600);
-
-        // Fill Last Name
-        const lastNameSelectors = [
-            'input[id^="lname"]',
-            'input[name="lname"]',
-            'input[autocomplete="family-name"]',
-            'input[placeholder*="Last name"]',
-            'input[placeholder*="Nama belakang"]'
-        ];
-        let lastNameFilled = false;
-        for (const selector of lastNameSelectors) {
-            try {
-                if (await page.isVisible(selector)) {
-                    await humanType(selector, lastName);
-                    lastNameFilled = true;
-                    console.log("✓ Mengisi Last Name (human-typed)");
-                    break;
-                }
-            } catch (e) {}
-        }
-
-        await page.waitForTimeout(400 + Math.random() * 600);
-
-        // Fill Password
-        const passwordSelectors = [
-            'input[id^="password"]',
-            'input[name="password"]',
-            'input[type="password"]',
-            'input[placeholder*="Password"]',
-            'input[placeholder*="Kata sandi"]'
-        ];
-        let passwordFilled = false;
-        for (const selector of passwordSelectors) {
-            try {
-                if (await page.isVisible(selector)) {
-                    await humanType(selector, password);
-                    passwordFilled = true;
-                    console.log("✓ Mengisi Password (human-typed)");
-                    break;
-                }
-            } catch (e) {}
-        }
-
-        await page.waitForTimeout(600 + Math.random() * 800);
-
-        // Click Agree to Terms Checkbox (if present)
-        const checkboxSelectors = [
-            'input[type="checkbox"][name="tos_agree"]',
-            'input[type="checkbox"]',
-            '.agree-checkbox'
-        ];
-        for (const selector of checkboxSelectors) {
-            try {
-                if (await page.isVisible(selector)) {
-                    const isChecked = await page.isChecked(selector);
-                    if (!isChecked) {
                         await humanClick(selector);
-                        console.log("✓ Menyetujui syarat dan ketentuan (TOS)");
+                        clickedContinue = true;
+                        console.log("✓ Mengklik tombol Continue (human-click)");
                         break;
                     }
+                } catch (e) { }
+            }
+
+            if (!clickedContinue) {
+                console.log("Peringatan: Tombol Continue tidak terdeteksi, mencoba menekan Enter...");
+                let enterPressed = false;
+                for (const selector of emailSelectors) {
+                    try {
+                        if (await page.isVisible(selector)) {
+                            await page.locator(selector).press('Enter');
+                            enterPressed = true;
+                            break;
+                        }
+                    } catch (e) { }
                 }
-            } catch (e) {}
-        }
+                if (!enterPressed) {
+                    await page.keyboard.press('Enter');
+                }
+            }
 
-        await page.waitForTimeout(1000);
+            // Wait for Step 2 fields to load and be visible
+            await page.waitForTimeout(2000);
+            await checkTooManyAttempts(page);
+            const step2Timeout = Math.round(globalTimeout / 2);
+            console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout ${step2Timeout} detik)...`);
 
-        // Highlight/Focus Agree and Sign Up button
-        const submitSelectors = [
-            'button._register-button_1k6no_4',
-            'button:has-text("Agree and sign up")',
-            'button:has-text("Setuju dan daftar")',
-            'button[type="submit"]',
-            'button:has-text("Sign up")'
-        ];
-        
-        console.log("\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...");
+            const firstNameSelectors = [
+                'input[id^="fname"]',
+                'input[name="fname"]',
+                'input[autocomplete="given-name"]',
+                'input[placeholder*="First name"]',
+                'input[placeholder*="Nama depan"]'
+            ];
 
-        let clickedSubmit = false;
-        for (const selector of submitSelectors) {
-            try {
-                if (await page.isVisible(selector)) {
-                    await page.click(selector);
-                    clickedSubmit = true;
-                    console.log("✓ Berhasil mengklik tombol Daftar.");
+            let step2Visible = false;
+            // First try a direct waitForSelector
+            for (const sel of firstNameSelectors) {
+                try {
+                    await page.waitForSelector(sel, { state: 'visible', timeout: Math.min(gtMs / 2, 10000) });
+                    step2Visible = true;
+                    console.log(`✓ Form Langkah 2 terdeteksi via waitForSelector: ${sel}`);
                     break;
-                }
-            } catch (e) {}
-        }
+                } catch (_) { }
+            }
 
-        if (!clickedSubmit) {
-            console.log("Mencoba mengirimkan form dengan menekan Enter...");
-            let enterPressed = false;
+            // Fallback: if still not found, scroll page to trigger lazy rendering and poll
+            if (!step2Visible) {
+                console.log(`[Langkah 2] waitForSelector habis, scroll dan polling...`);
+                try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) { }
+                await page.waitForTimeout(2000);
+
+                const step2Deadline = Date.now() + (gtMs / 2);
+                while (Date.now() < step2Deadline && !step2Visible) {
+                    for (const selector of firstNameSelectors) {
+                        try {
+                            const isVisible = await page.locator(selector).first().isVisible();
+                            if (isVisible) { step2Visible = true; break; }
+                        } catch (e) { }
+                    }
+                    if (!step2Visible) await page.waitForTimeout(1000);
+                }
+            }
+
+            if (!step2Visible) {
+                throw new Error(`BROWSER_KILL_REQUIRED: Form Langkah 2 tidak muncul dalam ${step2Timeout} detik.`);
+            }
+
+            // Fill First Name
+            let firstNameFilled = false;
+            for (const selector of firstNameSelectors) {
+                try {
+                    if (await page.isVisible(selector)) {
+                        await humanType(selector, firstName);
+                        firstNameFilled = true;
+                        console.log("✓ Mengisi First Name (human-typed)");
+                        break;
+                    }
+                } catch (e) { }
+            }
+
+            await page.waitForTimeout(400 + Math.random() * 600);
+
+            // Fill Last Name
+            const lastNameSelectors = [
+                'input[id^="lname"]',
+                'input[name="lname"]',
+                'input[autocomplete="family-name"]',
+                'input[placeholder*="Last name"]',
+                'input[placeholder*="Nama belakang"]'
+            ];
+            let lastNameFilled = false;
+            for (const selector of lastNameSelectors) {
+                try {
+                    if (await page.isVisible(selector)) {
+                        await humanType(selector, lastName);
+                        lastNameFilled = true;
+                        console.log("✓ Mengisi Last Name (human-typed)");
+                        break;
+                    }
+                } catch (e) { }
+            }
+
+            await page.waitForTimeout(400 + Math.random() * 600);
+
+            // Fill Password
+            const passwordSelectors = [
+                'input[id^="password"]',
+                'input[name="password"]',
+                'input[type="password"]',
+                'input[placeholder*="Password"]',
+                'input[placeholder*="Kata sandi"]'
+            ];
+            let passwordFilled = false;
             for (const selector of passwordSelectors) {
                 try {
                     if (await page.isVisible(selector)) {
-                        await page.locator(selector).press('Enter');
-                        enterPressed = true;
+                        await humanType(selector, password);
+                        passwordFilled = true;
+                        console.log("✓ Mengisi Password (human-typed)");
                         break;
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
-            if (!enterPressed) {
-                await page.keyboard.press('Enter');
+
+            await page.waitForTimeout(600 + Math.random() * 800);
+
+            // Click Agree to Terms Checkbox (if present)
+            const checkboxSelectors = [
+                'input[type="checkbox"][name="tos_agree"]',
+                'input[type="checkbox"]',
+                '.agree-checkbox'
+            ];
+            for (const selector of checkboxSelectors) {
+                try {
+                    if (await page.isVisible(selector)) {
+                        const isChecked = await page.isChecked(selector);
+                        if (!isChecked) {
+                            await humanClick(selector);
+                            console.log("✓ Menyetujui syarat dan ketentuan (TOS)");
+                            break;
+                        }
+                    }
+                } catch (e) { }
             }
-            clickedSubmit = true;
-        }
 
-        console.log("\nTombol Daftar telah diklik secara otomatis.");
-        console.log("Catatan: Jika ada CAPTCHA yang muncul di layar browser, silakan selesaikan secara manual.");
-        console.log("Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...");
+            await page.waitForTimeout(1000);
 
-        // Loop to check if the user has successfully registered
-        console.log(`\n[Langkah 3] Menunggu redirect URL sukses pendaftaran (timeout ${globalTimeout} detik)...`);
-        const regDeadline = Date.now() + gtMs;
-        while (Date.now() < regDeadline) {
-            await page.waitForTimeout(2000);
-            await checkTooManyAttempts(page);
-            const currentUrl = page.url();
-            
-            // Check for trial_first, verify_email, or general successful redirection strings
-            if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') || (!currentUrl.includes('/register') && !currentUrl.includes('/login') && (currentUrl.includes('/home') || currentUrl.includes('/personal') || currentUrl.includes('/dashboard') || currentUrl.includes('dropbox.com/h')))) {
-                console.log(`\n✓ Pendaftaran/Verifikasi terdeteksi! URL saat ini: ${currentUrl}`);
-                isRegistered = true;
-                break;
+            // Highlight/Focus Agree and Sign Up button
+            const submitSelectors = [
+                'button._register-button_1k6no_4',
+                'button:has-text("Agree and sign up")',
+                'button:has-text("Setuju dan daftar")',
+                'button[type="submit"]',
+                'button:has-text("Sign up")'
+            ];
+
+            console.log("\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...");
+
+            let clickedSubmit = false;
+            for (const selector of submitSelectors) {
+                try {
+                    if (await page.isVisible(selector)) {
+                        await page.click(selector);
+                        clickedSubmit = true;
+                        console.log("✓ Berhasil mengklik tombol Daftar.");
+                        break;
+                    }
+                } catch (e) { }
             }
-        }
 
-        if (!isRegistered) {
-            console.log(`\n⚠️ URL tidak berubah dalam ${globalTimeout} detik setelah menekan tombol daftar.`);
-            throw new Error("NO_URL_CHANGE");
-        }
+            if (!clickedSubmit) {
+                console.log("Mencoba mengirimkan form dengan menekan Enter...");
+                let enterPressed = false;
+                for (const selector of passwordSelectors) {
+                    try {
+                        if (await page.isVisible(selector)) {
+                            await page.locator(selector).press('Enter');
+                            enterPressed = true;
+                            break;
+                        }
+                    } catch (e) { }
+                }
+                if (!enterPressed) {
+                    await page.keyboard.press('Enter');
+                }
+                clickedSubmit = true;
+            }
+
+            console.log("\nTombol Daftar telah diklik secara otomatis.");
+            console.log("Catatan: Jika ada CAPTCHA yang muncul di layar browser, silakan selesaikan secara manual.");
+            console.log("Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...");
+
+            // Loop to check if the user has successfully registered
+            console.log(`\n[Langkah 3] Menunggu redirect URL sukses pendaftaran (timeout ${globalTimeout} detik)...`);
+            const regDeadline = Date.now() + gtMs;
+            while (Date.now() < regDeadline) {
+                await page.waitForTimeout(2000);
+                await checkTooManyAttempts(page);
+                const currentUrl = page.url();
+
+                // Check for trial_first, verify_email, or general successful redirection strings
+                if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') || (!currentUrl.includes('/register') && !currentUrl.includes('/login') && (currentUrl.includes('/home') || currentUrl.includes('/personal') || currentUrl.includes('/dashboard') || currentUrl.includes('dropbox.com/h')))) {
+                    console.log(`\n✓ Pendaftaran/Verifikasi terdeteksi! URL saat ini: ${currentUrl}`);
+                    isRegistered = true;
+                    break;
+                }
+            }
+
+            if (!isRegistered) {
+                console.log(`\n⚠️ URL tidak berubah dalam ${globalTimeout} detik setelah menekan tombol daftar.`);
+                throw new Error("NO_URL_CHANGE");
+            }
 
         } catch (innerError) {
             const errMsg = (innerError.message || '').toLowerCase();
@@ -1152,8 +1152,8 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
             // ── Hard browser errors: session gone, context closed, etc ───────
             const isBrowserCrash = errMsg.includes('target closed') || errMsg.includes('context') ||
-                                   errMsg.includes('ns_error') || errMsg.includes('session') ||
-                                   errMsg.includes('connection refused') || errMsg.includes('crashed');
+                errMsg.includes('ns_error') || errMsg.includes('session') ||
+                errMsg.includes('connection refused') || errMsg.includes('crashed');
             if (isBrowserCrash) {
                 console.log(`\n💥 Error berat browser (Percobaan ${tabAttempt}): ${innerError.message.split('\n')[0]}`);
                 throw new Error(`BROWSER_KILL_REQUIRED: ${innerError.message}`);
@@ -1166,7 +1166,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             }
             console.log(`[Tab Reload] Memuat ulang URL dan mengulangi pendaftaran (timeout ${globalTimeout} detik)...`);
             try { await page.reload({ waitUntil: 'domcontentloaded', timeout: gtMs }); } catch (_) {
-                try { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs }); } catch (__) {}
+                try { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs }); } catch (__) { }
             }
             await page.waitForTimeout(2000);
         }
@@ -1183,19 +1183,19 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             const { spawn, execSync } = require('child_process');
             const homeDir = process.env.HOME || '/root';
             let dropboxProc = null;
-            let cliLinkUrl  = null;
+            let cliLinkUrl = null;
 
             const killDropbox = () => {
                 if (dropboxProc) {
-                    try { dropboxProc.kill('SIGTERM'); } catch (_) {}
+                    try { dropboxProc.kill('SIGTERM'); } catch (_) { }
                 }
                 try {
                     execSync('pkill -9 -f dropbox-lnx.x86_64-256.4.3790', { stdio: 'ignore' });
                     console.log('[dropboxd] ✓ Proses dropbox lama berhasil dihentikan (pkill).');
-                } catch (_) {}
+                } catch (_) { }
                 try {
                     execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' });
-                } catch (_) {}
+                } catch (_) { }
             };
 
             let finalStatus = 'VERIF';
@@ -1287,12 +1287,12 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                                 connectBtnFound = true;
                                 console.log(`[Browser] ✓ Tombol Connect terdeteksi via waitForSelector: ${sel}`);
                                 break;
-                            } catch (_) {}
+                            } catch (_) { }
                         }
 
                         if (!connectBtnFound) {
                             console.log(`[Browser] waitForSelector habis, scroll dan polling untuk Connect...`);
-                            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) {}
+                            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) { }
                             await page.waitForTimeout(2000);
 
                             const connectDeadline = Date.now() + (gtMs * 2);
@@ -1301,7 +1301,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                                     try {
                                         const isVisible = await page.locator(sel).first().isVisible();
                                         if (isVisible) { connectBtnFound = true; break; }
-                                    } catch (e) {}
+                                    } catch (e) { }
                                 }
                                 if (!connectBtnFound) await page.waitForTimeout(1000);
                             }
@@ -1320,7 +1320,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                                     connected = true;
                                     break;
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
 
                         if (!connected) {
@@ -1349,7 +1349,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                             const bodyText = (await page.innerText('body')).toLowerCase();
                             confirmedSuccess = successKeywords.some(kw => bodyText.includes(kw));
                             if (confirmedSuccess) break;
-                        } catch (e) {}
+                        } catch (e) { }
                         await page.waitForTimeout(1500);
                     }
 
@@ -1360,119 +1360,119 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                     }
                 }
 
-            // ── Verify email flow ──────
-            console.log('\n[Browser] Membuka halaman Settings untuk verifikasi email...');
-            
-            let verifyClicked = false;
-            let emailSent = false;
-            let verifAttempt = 0;
-            const maxVerifAttempts = globalRetry || 3;
+                // ── Verify email flow ──────
+                console.log('\n[Browser] Membuka halaman Settings untuk verifikasi email...');
 
-            while (verifAttempt < maxVerifAttempts && !verifyClicked) {
-                verifAttempt++;
-                if (verifAttempt > 1) {
-                    console.log(`\n[Tab Reload] Mencoba ulang verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts})...`);
-                }
+                let verifyClicked = false;
+                let emailSent = false;
+                let verifAttempt = 0;
+                const maxVerifAttempts = globalRetry || 3;
 
-                try {
-                    // Direct navigation to settings bypasses the need to click the account menu
-                    console.log(`[Navigasi] Ke halaman Settings/Account (timeout ${globalTimeout} detik)...`);
-                    await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
-                    
-                    // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
-                    const verifySelectors = [
-                        'button[aria-label="Verify email"]',
-                        'button.account-key-value-block__link:has-text("Verify email")',
-                        'button:has-text("Verify email")',
-                        'button:has-text("Verifikasi email")',
-                    ];
-                    
-                    let verifyBtnFound = false;
-                    for (const sel of verifySelectors) {
-                        try {
-                            await page.waitForSelector(sel, { state: 'visible', timeout: gtMs / 2 });
-                            verifyBtnFound = true;
-                            console.log(`[Browser] ✓ Tombol Verify terdeteksi via waitForSelector: ${sel}`);
-                            break;
-                        } catch (_) {}
+                while (verifAttempt < maxVerifAttempts && !verifyClicked) {
+                    verifAttempt++;
+                    if (verifAttempt > 1) {
+                        console.log(`\n[Tab Reload] Mencoba ulang verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts})...`);
                     }
 
-                    if (!verifyBtnFound) {
-                        console.log(`[Browser] waitForSelector habis, scroll dan polling untuk Verify...`);
-                        try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) {}
-                        await page.waitForTimeout(2000);
+                    try {
+                        // Direct navigation to settings bypasses the need to click the account menu
+                        console.log(`[Navigasi] Ke halaman Settings/Account (timeout ${globalTimeout} detik)...`);
+                        await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
 
-                        const verifyDeadline = Date.now() + (gtMs / 2);
-                        while (Date.now() < verifyDeadline && !verifyBtnFound) {
-                            for (const sel of verifySelectors) {
-                                try {
-                                    const isVisible = await page.locator(sel).first().isVisible();
-                                    if (isVisible) { verifyBtnFound = true; break; }
-                                } catch (e) {}
-                            }
-                            if (!verifyBtnFound) await page.waitForTimeout(1000);
-                        }
-                    }
-
-                    if (verifyBtnFound) {
-                        for (const sel of verifySelectors) {
-                            try {
-                                if (await page.isVisible(sel)) {
-                                    await page.click(sel);
-                                    console.log('[Browser] ✓ Tombol Verify email diklik, menunggu modal...');
-                                    verifyClicked = true;
-                                    break;
-                                }
-                            } catch (e) {}
-                        }
-                    }
-
-                    if (verifyClicked) {
-                        // Click Send email button inside the modal
-                        const sendEmailSelectors = [
-                            'button.js-email-modal-button.dig-Button--primary',
-                            'button:has-text("Send email")',
-                            'button:has-text("Kirim email")',
+                        // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
+                        const verifySelectors = [
+                            'button[aria-label="Verify email"]',
+                            'button.account-key-value-block__link:has-text("Verify email")',
+                            'button:has-text("Verify email")',
+                            'button:has-text("Verifikasi email")',
                         ];
 
-                        let sendBtnFound = false;
-                        for (const sel of sendEmailSelectors) {
+                        let verifyBtnFound = false;
+                        for (const sel of verifySelectors) {
                             try {
-                                await page.waitForSelector(sel, { state: 'visible', timeout: 5000 });
-                                sendBtnFound = true;
+                                await page.waitForSelector(sel, { state: 'visible', timeout: gtMs / 2 });
+                                verifyBtnFound = true;
+                                console.log(`[Browser] ✓ Tombol Verify terdeteksi via waitForSelector: ${sel}`);
                                 break;
-                            } catch (_) {}
+                            } catch (_) { }
                         }
 
-                        if (sendBtnFound) {
-                            for (const sel of sendEmailSelectors) {
+                        if (!verifyBtnFound) {
+                            console.log(`[Browser] waitForSelector habis, scroll dan polling untuk Verify...`);
+                            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) { }
+                            await page.waitForTimeout(2000);
+
+                            const verifyDeadline = Date.now() + (gtMs / 2);
+                            while (Date.now() < verifyDeadline && !verifyBtnFound) {
+                                for (const sel of verifySelectors) {
+                                    try {
+                                        const isVisible = await page.locator(sel).first().isVisible();
+                                        if (isVisible) { verifyBtnFound = true; break; }
+                                    } catch (e) { }
+                                }
+                                if (!verifyBtnFound) await page.waitForTimeout(1000);
+                            }
+                        }
+
+                        if (verifyBtnFound) {
+                            for (const sel of verifySelectors) {
                                 try {
                                     if (await page.isVisible(sel)) {
                                         await page.click(sel);
-                                        console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
-                                        emailSent = true;
+                                        console.log('[Browser] ✓ Tombol Verify email diklik, menunggu modal...');
+                                        verifyClicked = true;
                                         break;
                                     }
-                                } catch (e) {}
+                                } catch (e) { }
                             }
                         }
 
-                        if (!emailSent) {
-                            console.log('[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.');
+                        if (verifyClicked) {
+                            // Click Send email button inside the modal
+                            const sendEmailSelectors = [
+                                'button.js-email-modal-button.dig-Button--primary',
+                                'button:has-text("Send email")',
+                                'button:has-text("Kirim email")',
+                            ];
+
+                            let sendBtnFound = false;
+                            for (const sel of sendEmailSelectors) {
+                                try {
+                                    await page.waitForSelector(sel, { state: 'visible', timeout: 5000 });
+                                    sendBtnFound = true;
+                                    break;
+                                } catch (_) { }
+                            }
+
+                            if (sendBtnFound) {
+                                for (const sel of sendEmailSelectors) {
+                                    try {
+                                        if (await page.isVisible(sel)) {
+                                            await page.click(sel);
+                                            console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email}!`);
+                                            emailSent = true;
+                                            break;
+                                        }
+                                    } catch (e) { }
+                                }
+                            }
+
+                            if (!emailSent) {
+                                console.log('[Browser] ⚠️ Tombol Send email tidak ditemukan di modal.');
+                            }
+                        } else {
+                            console.log(`[Browser] ⚠️ Tombol Verify email tidak ditemukan pada percobaan ${verifAttempt}.`);
                         }
-                    } else {
-                        console.log(`[Browser] ⚠️ Tombol Verify email tidak ditemukan pada percobaan ${verifAttempt}.`);
+                    } catch (err) {
+                        console.log(`\n⚠️ Error saat navigasi/verifikasi email (Percobaan ${verifAttempt}): ${err.message}`);
+                        if (verifAttempt >= maxVerifAttempts) {
+                            console.log(`Batas maksimal percobaan verifikasi email tercapai.`);
+                        }
+                        await page.waitForTimeout(2000);
                     }
-                } catch (err) {
-                    console.log(`\n⚠️ Error saat navigasi/verifikasi email (Percobaan ${verifAttempt}): ${err.message}`);
-                    if (verifAttempt >= maxVerifAttempts) {
-                        console.log(`Batas maksimal percobaan verifikasi email tercapai.`);
-                    }
-                    await page.waitForTimeout(2000);
                 }
-            }
-            const finalStatusVal = verifyClicked ? 'success' : 'VERIF';
-            finalStatus = finalStatusVal;
+                const finalStatusVal = verifyClicked ? 'success' : 'VERIF';
+                finalStatus = finalStatusVal;
             } finally {
                 // Kill daemon + any lingering dropbox processes
                 killDropbox();
@@ -1494,9 +1494,9 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
         }
         // Always close the browser context to clear cookies, session data, and anti-fingerprinting details before the next iteration
         console.log(`Menutup browser context untuk ${email}...`);
-        try { await context.close(); } catch (e) {}
+        try { await context.close(); } catch (e) { }
         if (browserObj) {
-            try { await browserObj.close(); } catch (e) {}
+            try { await browserObj.close(); } catch (e) { }
         }
         // Force-kill any lingering Firefox/playwright + box64 processes
         killAllBrowsers();
@@ -1544,8 +1544,8 @@ async function run() {
 
     // Parse and filter out empty email entries
     const emails = bulkEmailsInput.split(';')
-                                  .map(e => e.trim())
-                                  .filter(e => e.length > 0);
+        .map(e => e.trim())
+        .filter(e => e.length > 0);
 
     if (emails.length === 0) {
         console.error("Error: Tidak ada email valid yang ditemukan!");
@@ -1559,7 +1559,7 @@ async function run() {
     for (let i = 0; i < emails.length; i++) {
         const email = emails[i];
         console.log(`\n---------------------------------------------------------`);
-        console.log(`Memproses email ke-${i+1} dari ${emails.length}`);
+        console.log(`Memproses email ke-${i + 1} dari ${emails.length}`);
         console.log(`---------------------------------------------------------`);
 
         // Proxy type
@@ -1567,11 +1567,11 @@ async function run() {
         if (useProxy) {
             proxyType = 'warp';
         }
-        
+
         // Retry logic for proxy errors or "Too many attempts"
         let registrationSuccess = false;
         let attempts = 0;
-        const maxAttempts = 3; 
+        const maxAttempts = 3;
         let currentProxyType = proxyType;
 
         while (!registrationSuccess && attempts < maxAttempts) {
@@ -1595,7 +1595,7 @@ async function run() {
                 }
             } catch (error) {
                 console.log(`\n⚠️ Terjadi kesalahan saat registrasi: ${error.message}`);
-                
+
                 const errorMsg = (error.message || '').toLowerCase();
                 const isConnectionError = [
                     'net::err',
@@ -1617,7 +1617,7 @@ async function run() {
                 }
             }
         }
-        
+
 
     }
 
