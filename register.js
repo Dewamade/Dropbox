@@ -8,6 +8,7 @@ const PROFILE_PATH = path.join(__dirname, 'firefox-profile');
 // Track whether Warp/Psiphon is already active (avoid unnecessary stop/start between cycles)
 let warpActive = false;
 let psiphonActive = false;
+let psiphonProc = null;
 
 // ── Kill helpers (accessible from server.js via global) ─────────────────────
 function killAllBrowsers() {
@@ -20,8 +21,12 @@ function killAllBox64() {
     try { require('child_process').execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) {}
     try { require('child_process').execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) {}
     try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+    try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) {}
     try { require('child_process').execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' }); } catch (_) {}
-    console.log('[Kill] Semua proses box64/dropboxd/docker/psiphon dihentikan paksa.');
+    warpActive = false;
+    psiphonActive = false;
+    global.psiphonRegion = null;
+    console.log('[Kill] Semua proses box64/dropboxd/docker/psiphon/warp dihentikan paksa dan status di-reset.');
 }
 
 // Expose globally so server.js can call them
@@ -284,6 +289,10 @@ function clearProfileData(profilePath) {
 async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false, uaMode = 'generate', selectedUaString = '', selectedDeviceType = 'desktop') {
     const gtMs = globalTimeout * 1000;
     
+    if (proxyType !== 'psiphon') {
+        global.psiphonRegion = null;
+    }
+    
     let proxyServer = null;
     if (proxyType === 'warp') {
         proxyServer = 'socks5://127.0.0.1:8086';
@@ -414,20 +423,22 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
         if (isRetry && psiphonActive) {
             console.log(`\n[Psiphon] Retry terdeteksi, memaksa restart Psiphon...`);
             psiphonActive = false;
+            global.psiphonRegion = null;
         }
 
-        if (psiphonActive) {
-            // Verify port is still open
-            const portOk = await checkPort('127.0.0.1', 3080, 2000);
-            if (portOk) {
-                console.log(`\n[Psiphon] Koneksi Psiphon sudah aktif di 127.0.0.1:3080`);
-            } else {
-                console.log(`\n[Psiphon] Port 3080 tidak lagi tersedia, restart Psiphon...`);
+        if (psiphonActive && psiphonProc && psiphonProc.exitCode === null) {
+            const displayReg = global.psiphonRegion ? ` (Region: ${global.psiphonRegion})` : '';
+            console.log(`\n[Psiphon] Koneksi Psiphon sudah aktif di 127.0.0.1:3080${displayReg} (Process PID: ${psiphonProc.pid})`);
+        } else {
+            if (psiphonActive) {
+                console.log(`\n[Psiphon] Proses Psiphon tidak aktif di memori, restart Psiphon...`);
                 psiphonActive = false;
+                global.psiphonRegion = null;
             }
         }
 
         if (!psiphonActive) {
+            global.psiphonRegion = null;
             const { spawn } = require('child_process');
             console.log(`\nMengaktifkan koneksi Psiphon...`);
 
@@ -436,7 +447,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
             const appDir = path.join(__dirname, 'app');
             // Launch psiphon-tunnel-core-x86_64 -config psiphon.config in app directory
-            const psiphonProc = spawn('./psiphon-tunnel-core-x86_64', ['-config', 'psiphon.config'], {
+            psiphonProc = spawn('./psiphon-tunnel-core-x86_64', ['-config', 'psiphon.config'], {
                 cwd: appDir
             });
 
@@ -456,8 +467,32 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             psiphonProc.stderr.on('data', (data) => {
                 data.toString().split('\n').forEach(line => {
                     const trimmed = line.trim();
-                    if (trimmed && global.debugProxy) {
-                        global.safeSend({ type: 'vpn_log', message: `[Psiphon stderr] ${trimmed}` });
+                    if (trimmed) {
+                        if (global.debugProxy) {
+                            global.safeSend({ type: 'vpn_log', message: `[Psiphon stderr] ${trimmed}` });
+                        }
+                        
+                        // Parse JSON notices to find connected server region
+                        try {
+                            const match = trimmed.match(/\{.*\}/);
+                            if (match) {
+                                const jsonObj = JSON.parse(match[0]);
+                                if (jsonObj.noticeType === 'ConnectedServerRegion' && jsonObj.data && jsonObj.data.serverRegion) {
+                                    const region = jsonObj.data.serverRegion;
+                                    console.log(`[Psiphon] Terhubung ke region: ${region}`);
+                                    global.psiphonRegion = region;
+                                    // Send dynamic update to client UI
+                                    if (global.safeSend) {
+                                        global.safeSend({
+                                            type: 'info',
+                                            info: {
+                                                mode: `Psiphon (${region})`
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                        } catch (e) {}
                     }
                 });
             });
@@ -469,22 +504,35 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 }
             });
 
-            // Wait for port 3080 to be ready (up to 15 seconds)
+            // Wait for port 3080 to be ready and ConnectedServerRegion to be populated (up to 30 seconds)
             let portReady = false;
-            for (let i = 0; i < 15; i++) {
+            let regionDetected = false;
+            console.log(`[Psiphon] Menunggu koneksi tunnel dan region terdeteksi...`);
+
+            for (let i = 0; i < 30; i++) {
                 if (abortController && abortController.shouldStop) {
                     throw new Error("Pendaftaran dihentikan oleh pengguna.");
                 }
-                portReady = await checkPort('127.0.0.1', 3080, 1000);
-                if (portReady) break;
+                
+                if (!portReady) {
+                    portReady = await checkPort('127.0.0.1', 3080, 1000);
+                }
+                if (global.psiphonRegion) {
+                    regionDetected = true;
+                }
+                if (portReady && regionDetected) {
+                    break;
+                }
                 await new Promise(r => setTimeout(r, 1000));
             }
 
-            if (portReady) {
-                console.log(`[Psiphon] ✓ Port 3080 tersedia. Koneksi siap.`);
+            if (portReady && regionDetected) {
+                console.log(`[Psiphon] ✓ Terkoneksi ke region: ${global.psiphonRegion}. Port 3080 siap.`);
+                console.log(`[Psiphon] Memberikan jeda 3 detik agar koneksi stabil...`);
+                await new Promise(r => setTimeout(r, 3000));
                 psiphonActive = true;
             } else {
-                throw new Error("Gagal mengaktifkan Psiphon proxy pada port 3080.");
+                throw new Error("Gagal mengaktifkan Psiphon proxy atau mendeteksi region dalam 30 detik.");
             }
         }
     } else if (proxyType === 'socks5') {
@@ -646,11 +694,20 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
     // Broadcast Info ke UI WebSockets
     if (global.safeSend) {
+        let displayMode = 'Direct Connection';
+        if (proxyType === 'warp') {
+            displayMode = 'Warp+Socks5';
+        } else if (proxyType === 'psiphon') {
+            displayMode = global.psiphonRegion ? `Psiphon (${global.psiphonRegion})` : 'Psiphon';
+        } else if (proxyType === 'socks5') {
+            displayMode = `Socks5 Only (${proxyHost})`;
+        }
+
         global.safeSend({
             type: 'info',
             info: {
                 alias: alias || '-',
-                mode: proxyType === 'warp' ? 'Warp+Socks5' : (proxyType === 'socks5' ? `Socks5 Only (${proxyHost})` : 'Direct Connection'),
+                mode: displayMode,
                 email: email,
                 ip: serverIp,
                 ua: playwrightUA

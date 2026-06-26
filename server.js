@@ -144,6 +144,8 @@ wss.on('connection', (ws) => {
                         await currentAbortController.abort();
                     }
                 }
+                if (global.killAllBrowsers) global.killAllBrowsers();
+                if (global.killAllBox64) global.killAllBox64();
                 safeSend(ws, { type: 'status', status: 'stopped' });
                 return;
             }
