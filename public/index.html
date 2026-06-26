@@ -166,6 +166,14 @@
                     <label for="socks5-host">Socks5 Host:Port</label>
                     <input type="text" id="socks5-host" placeholder="Contoh: 127.0.0.1:1080">
                 </div>
+                <div class="form-group" id="misc-group" style="gap: 0.4rem; grid-column: 1 / -1;">
+                    <label>Lain-Lain</label>
+                    <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.2rem;">
+                        <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;">
+                            <input type="checkbox" id="debug-proxy"> Debug Koneksi VPN/Proxy
+                        </label>
+                    </div>
+                </div>
                 <div class="btn-group">
                     <button class="btn" id="start-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -261,6 +269,25 @@
                     <div class="log-line log-info">[Info] Dashboard siap. Silakan masukkan parameter pendaftaran.</div>
                 </div>
             </section>
+            
+            <!-- Debug VPN/Proxy Log Console -->
+            <section class="log-container" id="vpn-log-container" style="display: none; margin-top: 1rem;">
+                <div class="panel-title" style="justify-content: space-between;">
+                    <span style="display: flex; align-items: center; gap: 0.5rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                            <path d="m9 12 2 2 4-4"/>
+                        </svg>
+                        Log Debug VPN/Proxy
+                    </span>
+                    <button id="clear-vpn-btn" style="background: none; border: none; color: #71717a; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+                        Hapus Log VPN
+                    </button>
+                </div>
+                <div class="log-panel" id="vpn-log-panel">
+                    <div class="log-line log-info">[Info] Menunggu aktivitas debug VPN/Proxy...</div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -344,6 +371,18 @@
         const useSocks5Checkbox = document.getElementById('use-socks5');
         const socks5InputGroup = document.getElementById('socks5-input-group');
         const socks5HostInput = document.getElementById('socks5-host');
+
+        const debugProxyCheckbox  = document.getElementById('debug-proxy');
+        const vpnLogContainer     = document.getElementById('vpn-log-container');
+        const vpnLogPanel         = document.getElementById('vpn-log-panel');
+        const clearVpnBtn         = document.getElementById('clear-vpn-btn');
+
+        debugProxyCheckbox.addEventListener('change', (e) => {
+            vpnLogContainer.style.display = e.target.checked ? 'flex' : 'none';
+            saveSettings();
+        });
+
+        clearVpnBtn.addEventListener('click', () => { vpnLogPanel.innerHTML = ''; });
 
         const viewUaBtn = document.getElementById('view-ua-btn');
         const uaModal = document.getElementById('ua-modal');
@@ -443,7 +482,8 @@
                 uaMode: uaGenerateRadio.checked ? 'generate' : 'extension',
                 dtDesktop: document.getElementById('dt-desktop').checked,
                 dtMobile: document.getElementById('dt-mobile').checked,
-                dtTablet: document.getElementById('dt-tablet').checked
+                dtTablet: document.getElementById('dt-tablet').checked,
+                debugProxy: debugProxyCheckbox.checked
             };
             localStorage.setItem('dropbox_signup_settings', JSON.stringify(settings));
         }
@@ -477,6 +517,11 @@
                     if (settings.usePsiphon !== undefined) usePsiphonCheckbox.checked = settings.usePsiphon;
                     if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
                     
+                    if (settings.debugProxy !== undefined) {
+                        debugProxyCheckbox.checked = settings.debugProxy;
+                    }
+                    vpnLogContainer.style.display = debugProxyCheckbox.checked ? 'flex' : 'none';
+                    
                     if (settings.passwordMode === 'fixed') {
                         pwFixedRadio.checked = true;
                     } else {
@@ -501,7 +546,8 @@
         const inputsToSave = [
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
             globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
-            useSocks5Checkbox, usePsiphonCheckbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio
+            useSocks5Checkbox, usePsiphonCheckbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio,
+            debugProxyCheckbox
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
         inputsToSave.forEach(el => el.addEventListener('keyup', saveSettings));
@@ -742,6 +788,8 @@
                     }
                 } else if (data.type === 'log') {
                     handleLogMessage(data.message);
+                } else if (data.type === 'vpn_log') {
+                    handleVpnLogMessage(data.message);
                 } else if (data.type === 'info') {
                     if (data.info.alias) infoAlias.innerText = data.info.alias;
                     if (data.info.mode) infoMode.innerText = data.info.mode;
@@ -814,6 +862,25 @@
             appendLog(className, msg);
         }
 
+        function handleVpnLogMessage(msg) {
+            let className = 'log-info';
+            const lower = msg.toLowerCase();
+
+            if (lower.includes('error') || lower.includes('failed') || lower.includes('fail') || lower.includes('⚠️') || lower.includes('critical')) {
+                className = 'log-err';
+            } else if (lower.includes('success') || lower.includes('connected') || lower.includes('✓') || lower.includes('active')) {
+                className = 'log-success';
+            } else if (lower.includes('warning') || lower.includes('warn') || lower.includes('peringatan')) {
+                className = 'log-warn';
+            }
+
+            const line = document.createElement('div');
+            line.className = `log-line ${className}`;
+            line.innerText = msg;
+            vpnLogPanel.appendChild(line);
+            vpnLogPanel.scrollTop = vpnLogPanel.scrollHeight;
+        }
+
         function updateProgress(current, total, status, successCount, failedCount, verifCount) {
             const pct = Math.round((current / total) * 100);
             progressPercentage.innerText = `${pct}%`;
@@ -840,6 +907,7 @@
             pwRandomRadio.disabled = disabled;
             pwFixedRadio.disabled = disabled;
             fixedPasswordInput.disabled = disabled;
+            debugProxyCheckbox.disabled = disabled;
         }
 
         function updateStatus(status) {
@@ -961,7 +1029,8 @@
                     passwordMode,
                     fixedPassword,
                     uaMode,
-                    deviceTypes
+                    deviceTypes,
+                    debugProxy: debugProxyCheckbox.checked
                 }));
             } else {
                 alert('WebSocket belum siap. Silakan muat ulang halaman.');

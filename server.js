@@ -170,8 +170,10 @@ wss.on('connection', (ws) => {
                 const { 
                     action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
-                    useDirect, useWarp, useSocks5, usePsiphon, socks5Host, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes 
+                    useDirect, useWarp, useSocks5, usePsiphon, socks5Host, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes, debugProxy 
                 } = data;
+
+                global.debugProxy = !!debugProxy;
                 
                 let emails = [];
                 if (emailMode === 'auto') {
@@ -247,18 +249,40 @@ wss.on('connection', (ws) => {
                         const runWarpRestart = async () => {
                             const { exec } = require('child_process');
                             const runCmd = (cmd, tms = 8000) => new Promise(resolve => {
-                                exec(cmd, { timeout: tms }, () => resolve());
+                                const proc = exec(cmd, { timeout: tms }, () => resolve());
+                                if (global.debugProxy) {
+                                    proc.stdout.on('data', (data) => {
+                                        data.toString().split('\n').forEach(line => {
+                                            const trimmed = line.trim();
+                                            if (trimmed) safeSend({ type: 'vpn_log', message: `[Warp Command: ${cmd}] ${trimmed}` });
+                                        });
+                                    });
+                                    proc.stderr.on('data', (data) => {
+                                        data.toString().split('\n').forEach(line => {
+                                            const trimmed = line.trim();
+                                            if (trimmed) safeSend({ type: 'vpn_log', message: `[Warp Command Err: ${cmd}] ${trimmed}` });
+                                        });
+                                    });
+                                }
                                 setTimeout(resolve, tms + 500);
                             });
 
                             const checkWarp = (desiredStatus) => new Promise(resolve => {
-                                exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
+                                const proc = exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
                                     if (err) return resolve(false);
                                     const out = (stdout || '').toLowerCase();
                                     if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
                                     else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
                                     else resolve(false);
                                 });
+                                if (global.debugProxy) {
+                                    proc.stdout.on('data', (data) => {
+                                        data.toString().split('\n').forEach(line => {
+                                            const trimmed = line.trim();
+                                            if (trimmed) safeSend({ type: 'vpn_log', message: `[Warp Status] ${trimmed}` });
+                                        });
+                                    });
+                                }
                             });
 
                             console.log(`\n[Warp Restart] Menjalankan: warp-ctl stop`);

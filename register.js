@@ -317,20 +317,42 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             console.log(`\nMengaktifkan koneksi Warp+Socks5...`);
 
             const runCmd = (cmd, timeoutMs = 8000) => new Promise((resolve) => {
-                exec(cmd, { timeout: timeoutMs }, (err, stdout) => {
+                const proc = exec(cmd, { timeout: timeoutMs }, (err, stdout) => {
                     resolve(stdout || '');
                 });
+                if (global.debugProxy) {
+                    proc.stdout.on('data', (data) => {
+                        data.toString().split('\n').forEach(line => {
+                            const trimmed = line.trim();
+                            if (trimmed) global.safeSend({ type: 'vpn_log', message: `[Warp Command: ${cmd}] ${trimmed}` });
+                        });
+                    });
+                    proc.stderr.on('data', (data) => {
+                        data.toString().split('\n').forEach(line => {
+                            const trimmed = line.trim();
+                            if (trimmed) global.safeSend({ type: 'vpn_log', message: `[Warp Command Err: ${cmd}] ${trimmed}` });
+                        });
+                    });
+                }
                 setTimeout(() => resolve(''), timeoutMs + 500);
             });
 
             const checkWarp = (desiredStatus) => new Promise(resolve => {
-                exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
+                const proc = exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
                     if (err) return resolve(false);
                     const out = (stdout || '').toLowerCase();
                     if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
                     else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
                     else resolve(false);
                 });
+                if (global.debugProxy) {
+                    proc.stdout.on('data', (data) => {
+                        data.toString().split('\n').forEach(line => {
+                            const trimmed = line.trim();
+                            if (trimmed) global.safeSend({ type: 'vpn_log', message: `[Warp Status] ${trimmed}` });
+                        });
+                    });
+                }
             });
 
             let portReady = false;
@@ -418,8 +440,33 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 cwd: appDir
             });
 
+            if (global.debugProxy) {
+                global.safeSend({ type: 'vpn_log', message: '[Psiphon] Memulai proses psiphon-tunnel-core-x86_64...' });
+            }
+
+            psiphonProc.stdout.on('data', (data) => {
+                data.toString().split('\n').forEach(line => {
+                    const trimmed = line.trim();
+                    if (trimmed && global.debugProxy) {
+                        global.safeSend({ type: 'vpn_log', message: `[Psiphon stdout] ${trimmed}` });
+                    }
+                });
+            });
+
+            psiphonProc.stderr.on('data', (data) => {
+                data.toString().split('\n').forEach(line => {
+                    const trimmed = line.trim();
+                    if (trimmed && global.debugProxy) {
+                        global.safeSend({ type: 'vpn_log', message: `[Psiphon stderr] ${trimmed}` });
+                    }
+                });
+            });
+
             psiphonProc.on('error', (err) => {
                 console.log(`[Psiphon Error] Gagal menjalankan psiphon binary: ${err.message}`);
+                if (global.debugProxy) {
+                    global.safeSend({ type: 'vpn_log', message: `[Psiphon Error] Gagal menjalankan: ${err.message}` });
+                }
             });
 
             // Wait for port 3080 to be ready (up to 15 seconds)
