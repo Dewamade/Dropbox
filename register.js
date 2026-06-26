@@ -18,7 +18,8 @@ function killAllBrowsers() {
 function killAllBox64() {
     try { require('child_process').execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) {}
     try { require('child_process').execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) {}
-    console.log('[Kill] Semua proses box64/dropboxd dihentikan paksa.');
+    try { require('child_process').execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' }); } catch (_) {}
+    console.log('[Kill] Semua proses box64/dropboxd/docker dihentikan paksa.');
 }
 
 // Expose globally so server.js can call them
@@ -971,12 +972,21 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                     execSync('pkill -9 -f dropbox-lnx.x86_64-256.4.3790', { stdio: 'ignore' });
                     console.log('[dropboxd] ✓ Proses dropbox lama berhasil dihentikan (pkill).');
                 } catch (_) {}
+                try {
+                    execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' });
+                } catch (_) {}
             };
 
             let finalStatus = 'VERIF';
             try {
-                console.log(`[dropboxd] Menjalankan via bash: box64 ./.dropbox-dist/dropboxd (HOME=${homeDir})`);
-                dropboxProc = spawn('bash', ['-c', 'box64 ./.dropbox-dist/dropboxd'], {
+                let runCmd = 'exec box64 ./.dropbox-dist/dropboxd';
+                if (process.arch === 'x64' && process.platform === 'linux' && fs.existsSync('/etc/os-release') && fs.readFileSync('/etc/os-release', 'utf8').toLowerCase().includes('ubuntu')) {
+                    console.log('[dropboxd] Lingkungan Ubuntu x86_64 terdeteksi, menjalankan via Docker...');
+                    runCmd = 'exec docker run -i --rm --init -v ~/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropboxd';
+                } else {
+                    console.log(`[dropboxd] Menjalankan via bash: box64 ./.dropbox-dist/dropboxd (HOME=${homeDir})`);
+                }
+                dropboxProc = spawn('bash', ['-c', runCmd], {
                     cwd: homeDir,
                     env: { ...process.env, HOME: homeDir },
                 });
