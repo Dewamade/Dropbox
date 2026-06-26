@@ -519,6 +519,7 @@ textarea {
 
 .modal-body {
     overflow-y: auto;
+    overflow-x: auto;
     padding: 1rem 1.5rem;
     flex: 1;
 }
@@ -547,20 +548,55 @@ textarea {
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    white-space: nowrap;
 }
 
 .history-table th:first-child { border-radius: 8px 0 0 8px; }
 .history-table th:last-child  { border-radius: 0 8px 8px 0; }
+
+.history-table tbody tr {
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.history-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.history-table tbody tr.highlighted {
+    background: rgba(99, 102, 241, 0.22) !important;
+}
 
 .history-table td {
     padding: 0.55rem 0.75rem;
     border-bottom: 1px solid rgba(255,255,255,0.04);
     color: #d4d4d8;
     font-family: 'Fira Code', monospace;
-    word-break: break-all;
+    white-space: nowrap;
 }
 
 .history-table tr:last-child td { border-bottom: none; }
+
+/* ── Pagination Styling ────────────────────── */
+.pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 0 0.5rem 0;
+    margin-top: 0.5rem;
+    flex-shrink: 0;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.pagination-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.pagination-info {
+    font-size: 0.82rem;
+    color: #71717a;
+}
 
 .badge-success {
     color: #34d399;

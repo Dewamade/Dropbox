@@ -170,7 +170,7 @@ wss.on('connection', (ws) => {
                 const { 
                     action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
-                    useDirect, useWarp, useSocks5, socks5Host, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes 
+                    useDirect, useWarp, useSocks5, usePsiphon, socks5Host, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes 
                 } = data;
                 
                 let emails = [];
@@ -386,11 +386,12 @@ wss.on('connection', (ws) => {
                             }
                         };
 
-                        // ── Build phase list: Direct first, then Warp, then Socks5 ───────────────
+                        // ── Build phase list: Direct first, then Warp, then Psiphon, then Socks5 ───────────────
                         const phases = [];
-                        if (useDirect) phases.push({ type: 'direct', host: null });
-                        if (useWarp)   phases.push({ type: 'warp', host: null });
-                        if (useSocks5) phases.push({ type: 'socks5', host: socks5Host });
+                        if (useDirect)  phases.push({ type: 'direct', host: null });
+                        if (useWarp)    phases.push({ type: 'warp', host: null });
+                        if (usePsiphon) phases.push({ type: 'psiphon', host: null });
+                        if (useSocks5)  phases.push({ type: 'socks5', host: socks5Host });
                         if (phases.length === 0) phases.push({ type: 'direct', host: null }); // safety fallback
 
                         let globalDone = false;
@@ -400,7 +401,7 @@ wss.on('connection', (ws) => {
 
                             const currentPhase = phases[phaseIdx].type;
                             const currentHost = phases[phaseIdx].host;
-                            const phaseLabel = currentPhase === 'warp' ? 'Warp+Socks5' : (currentPhase === 'socks5' ? `Socks5 Only (${currentHost})` : 'Direct Connection');
+                            const phaseLabel = currentPhase === 'warp' ? 'Warp+Socks5' : (currentPhase === 'psiphon' ? 'Psiphon' : (currentPhase === 'socks5' ? `Socks5 Only (${currentHost})` : 'Direct Connection'));
                             console.log(`\n[Phase ${phaseIdx + 1}/${phases.length}] Memulai dengan mode: ${phaseLabel}`);
 
                             if (currentPhase === 'warp') {
@@ -426,6 +427,21 @@ wss.on('connection', (ws) => {
                                         break;
                                     }
                                 }
+                            } else if (currentPhase === 'psiphon') {
+                                const maxPsiphonRestarts = maxAttempts;
+                                let psiphonRestartCount = 0;
+
+                                while (!registrationSuccess && !shouldStop) {
+                                    await runBrowserLoop('psiphon', null, `Psiphon${psiphonRestartCount > 0 ? ` (Restart ${psiphonRestartCount})` : ''}`, psiphonRestartCount > 0);
+
+                                    if (registrationSuccess) break;
+
+                                    psiphonRestartCount++;
+                                    if (psiphonRestartCount > maxPsiphonRestarts) {
+                                        console.log(`\n❌ GAGAL TOTAL [Psiphon]: Semua ${maxAttempts} percobaan browser × ${maxPsiphonRestarts} Psiphon Restart sudah habis untuk ${email}.`);
+                                        break;
+                                    }
+                                }
                             } else if (currentPhase === 'socks5') {
                                 await runBrowserLoop('socks5', currentHost, phaseLabel, phaseIdx > 0);
                             } else {
@@ -441,7 +457,7 @@ wss.on('connection', (ws) => {
 
                         // ── Handle total failure ──────────────────────────────────────────
                         if (!registrationSuccess && !shouldStop) {
-                            const phaseSummary = phases.map(p => p.type === 'warp' ? 'Warp+Socks5' : (p.type === 'socks5' ? 'Socks5 Only' : 'Direct Connection')).join(' → ');
+                            const phaseSummary = phases.map(p => p.type === 'warp' ? 'Warp+Socks5' : (p.type === 'psiphon' ? 'Psiphon' : (p.type === 'socks5' ? 'Socks5 Only' : 'Direct Connection'))).join(' → ');
                             console.log(`\n❌ GAGAL TOTAL [${phaseSummary}]: Semua percobaan untuk ${email} sudah habis.`);
                             console.log(`🛠️ Kill paksa semua proses browser dan box64...`);
                             if (global.killAllBrowsers) global.killAllBrowsers();

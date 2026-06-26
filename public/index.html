@@ -159,6 +159,7 @@
                         <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-direct" checked> Direct Connection</label>
                         <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-warp" checked> Warp+Socks5</label>
                         <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-socks5"> Socks5 Only</label>
+                        <label style="font-weight: normal; font-size: 0.9rem; display:flex; align-items:center; gap:0.3rem;"><input type="checkbox" id="use-psiphon"> Psiphon</label>
                     </div>
                 </div>
                 <div class="form-group" id="socks5-input-group" style="display: none; gap: 0.4rem; grid-column: 1 / -1;">
@@ -321,6 +322,7 @@
         
         const useDirectCheckbox   = document.getElementById('use-direct');
         const useWarpCheckbox     = document.getElementById('use-warp');
+        const usePsiphonCheckbox  = document.getElementById('use-psiphon');
         
         const pwRandomRadio       = document.getElementById('pw-random');
         const pwFixedRadio        = document.getElementById('pw-fixed');
@@ -430,6 +432,7 @@
                 useDirect: useDirectCheckbox.checked,
                 useWarp: useWarpCheckbox.checked,
                 useSocks5: useSocks5Checkbox.checked,
+                usePsiphon: usePsiphonCheckbox.checked,
                 socks5Host: socks5HostInput.value,
                 passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
                 fixedPassword: fixedPasswordInput.value,
@@ -471,6 +474,7 @@
                     if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
                     if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
                     if (settings.useSocks5 !== undefined) useSocks5Checkbox.checked = settings.useSocks5;
+                    if (settings.usePsiphon !== undefined) usePsiphonCheckbox.checked = settings.usePsiphon;
                     if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
                     
                     if (settings.passwordMode === 'fixed') {
@@ -497,7 +501,7 @@
         const inputsToSave = [
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
             globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
-            useSocks5Checkbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio
+            useSocks5Checkbox, usePsiphonCheckbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
         inputsToSave.forEach(el => el.addEventListener('keyup', saveSettings));
@@ -506,6 +510,10 @@
         loadSettings();
 
         // ── History modal ─────────────────────────────────────
+        let historyData = [];
+        let historyCurrentPage = 1;
+        const historyPageSize = 32;
+
         function formatDate(iso) {
             try {
                 const d = new Date(iso);
@@ -517,84 +525,145 @@
             historyContent.innerHTML = '<div class="empty-state">Memuat riwayat...</div>';
             try {
                 const res = await fetch('/api/history');
-                const data = await res.json();
-                if (!data.length) {
-                    historyContent.innerHTML = '<div class="empty-state">Belum ada riwayat pendaftaran.</div>';
-                    return;
-                }
-                const rows = data.map(r => `
-                    <tr>
-                        <td style="font-family: monospace; font-size: 0.85rem; color: #38bdf8;">${r.ip || '-'}</td>
-                        <td>${formatDate(r.timestamp)}</td>
-                        <td>${r.email}</td>
-                        <td>${r.password}</td>
-                        <td><span class="badge-${r.status}">${r.status}</span></td>
-                        <td style="font-size:0.75rem;color:#71717a;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.alias}">${r.alias || '-'}</td>
-                        <td style="color:#fbbf24;">${r.timeouts || 0}</td>
-                        <td style="color:#f87171;">${r.errors || 0}</td>
-                        <td style="font-size:0.72rem;color:#a1a1aa;white-space:nowrap;">${r.ua || '-'}</td>
-                    </tr>`).join('');
-                
-                // Group by Alias for Summary
-                const summaryObj = {};
-                data.forEach(r => {
-                    const al = r.alias || '-';
-                    if (!summaryObj[al]) summaryObj[al] = { success: 0, failed: 0, verif: 0, total: 0 };
-                    summaryObj[al].total++;
-                    if (r.status === 'success') summaryObj[al].success++;
-                    else if (r.status === 'failed') summaryObj[al].failed++;
-                    else if (r.status === 'VERIF') summaryObj[al].verif++;
-                });
-
-                const summaryRows = Object.keys(summaryObj).map(al => {
-                    const s = summaryObj[al];
-                    return `<tr>
-                        <td style="font-weight:600; color:#e4e4e7;">${al}</td>
-                        <td style="color:#34d399;">${s.success}</td>
-                        <td style="color:#fbbf24;">${s.verif}</td>
-                        <td style="color:#f87171;">${s.failed}</td>
-                        <td style="color:#a1a1aa;">${s.total}</td>
-                    </tr>`;
-                }).join('');
-
-                const summaryTable = `
-                    <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #e4e4e7;">Ringkasan Berdasarkan Alias</h3>
-                    <table class="history-table" style="margin-bottom: 1.5rem;">
-                        <thead>
-                            <tr>
-                                <th>Alias</th>
-                                <th>Sukses</th>
-                                <th>Verif</th>
-                                <th>Gagal</th>
-                                <th>Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>${summaryRows}</tbody>
-                    </table>
-                `;
-
-                historyContent.innerHTML = summaryTable + `
-                    <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #e4e4e7;">Detail Riwayat</h3>
-                    <table class="history-table">
-                        <thead>
-                            <tr>
-                                <th>IP Address</th>
-                                <th>Waktu</th>
-                                <th>Email</th>
-                                <th>Password</th>
-                                <th>Status</th>
-                                <th>Alias</th>
-                                <th>Timeouts</th>
-                                <th>Errors</th>
-                                <th>User Agent</th>
-                            </tr>
-                        </thead>
-                        <tbody>${rows}</tbody>
-                    </table>`;
+                historyData = await res.json();
+                historyCurrentPage = 1;
+                renderHistoryPage();
             } catch (e) {
                 historyContent.innerHTML = `<div class="empty-state">Gagal memuat riwayat: ${e.message}</div>`;
             }
         }
+
+        function renderHistoryPage() {
+            if (!historyData || !historyData.length) {
+                historyContent.innerHTML = '<div class="empty-state">Belum ada riwayat pendaftaran.</div>';
+                return;
+            }
+
+            // Group by Alias for Summary
+            const summaryObj = {};
+            historyData.forEach(r => {
+                const al = r.alias || '-';
+                if (!summaryObj[al]) summaryObj[al] = { success: 0, failed: 0, verif: 0, total: 0 };
+                summaryObj[al].total++;
+                if (r.status === 'success') summaryObj[al].success++;
+                else if (r.status === 'failed') summaryObj[al].failed++;
+                else if (r.status === 'VERIF') summaryObj[al].verif++;
+            });
+
+            const summaryRows = Object.keys(summaryObj).map(al => {
+                const s = summaryObj[al];
+                return `<tr>
+                    <td style="font-weight:600; color:#e4e4e7;">${al}</td>
+                    <td style="color:#34d399;">${s.success}</td>
+                    <td style="color:#fbbf24;">${s.verif}</td>
+                    <td style="color:#f87171;">${s.failed}</td>
+                    <td style="color:#a1a1aa;">${s.total}</td>
+                </tr>`;
+            }).join('');
+
+            const summaryTable = `
+                <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #e4e4e7;">Ringkasan Berdasarkan Alias</h3>
+                <table class="history-table" style="margin-bottom: 1.5rem;">
+                    <thead>
+                        <tr>
+                            <th>Alias</th>
+                            <th>Sukses</th>
+                            <th>Verif</th>
+                            <th>Gagal</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>${summaryRows}</tbody>
+                </table>
+            `;
+
+            // Paginate Detail
+            const totalRecords = historyData.length;
+            const totalPages = Math.ceil(totalRecords / historyPageSize) || 1;
+
+            if (historyCurrentPage > totalPages) historyCurrentPage = totalPages;
+            if (historyCurrentPage < 1) historyCurrentPage = 1;
+
+            const startIndex = (historyCurrentPage - 1) * historyPageSize;
+            const endIndex = Math.min(startIndex + historyPageSize, totalRecords);
+            const pageData = historyData.slice(startIndex, endIndex);
+
+            const rows = pageData.map(r => `
+                <tr>
+                    <td style="font-family: monospace; font-size: 0.85rem; color: #38bdf8;">${r.ip || '-'}</td>
+                    <td>${formatDate(r.timestamp)}</td>
+                    <td>${r.email}</td>
+                    <td>${r.password}</td>
+                    <td><span class="badge-${r.status}">${r.status}</span></td>
+                    <td style="font-size:0.75rem;color:#71717a;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.alias}">${r.alias || '-'}</td>
+                    <td style="color:#fbbf24;">${r.timeouts || 0}</td>
+                    <td style="color:#f87171;">${r.errors || 0}</td>
+                    <td style="font-size:0.72rem;color:#a1a1aa;white-space:nowrap;">${r.ua || '-'}</td>
+                </tr>`).join('');
+
+            const detailTable = `
+                <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #e4e4e7;">Detail Riwayat (${totalRecords} record)</h3>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>IP Address</th>
+                            <th>Waktu</th>
+                            <th>Email</th>
+                            <th>Password</th>
+                            <th>Status</th>
+                            <th>Alias</th>
+                            <th>Timeouts</th>
+                            <th>Errors</th>
+                            <th>User Agent</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+
+            let paginationHtml = '';
+            if (totalPages > 1) {
+                paginationHtml = `
+                    <div class="pagination-container">
+                        <div class="pagination-info">
+                            Menampilkan ${startIndex + 1} - ${endIndex} dari ${totalRecords} record (Halaman ${historyCurrentPage} dari ${totalPages})
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="btn-outline btn-sm" id="prev-page-btn" ${historyCurrentPage === 1 ? 'disabled' : ''}>Sebelumnya</button>
+                            <button class="btn-outline btn-sm" id="next-page-btn" ${historyCurrentPage === totalPages ? 'disabled' : ''}>Selanjutnya</button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            historyContent.innerHTML = summaryTable + detailTable + paginationHtml;
+
+            // Bind page switch click handlers
+            if (totalPages > 1) {
+                document.getElementById('prev-page-btn').addEventListener('click', () => {
+                    if (historyCurrentPage > 1) {
+                        historyCurrentPage--;
+                        renderHistoryPage();
+                    }
+                });
+                document.getElementById('next-page-btn').addEventListener('click', () => {
+                    if (historyCurrentPage < totalPages) {
+                        historyCurrentPage++;
+                        renderHistoryPage();
+                    }
+                });
+            }
+        }
+
+        // Highlight selected row in history content tables on click
+        historyContent.addEventListener('click', (e) => {
+            const tr = e.target.closest('.history-table tbody tr');
+            if (tr) {
+                const table = tr.closest('.history-table');
+                table.querySelectorAll('tbody tr').forEach(row => row.classList.remove('highlighted'));
+                tr.classList.add('highlighted');
+            }
+        });
 
         historyBtn.addEventListener('click', () => {
             historyModal.classList.add('open');
@@ -766,6 +835,7 @@
             useDirectCheckbox.disabled = disabled;
             useWarpCheckbox.disabled = disabled;
             useSocks5Checkbox.disabled = disabled;
+            usePsiphonCheckbox.disabled = disabled;
             socks5HostInput.disabled = disabled;
             pwRandomRadio.disabled = disabled;
             pwFixedRadio.disabled = disabled;
@@ -815,9 +885,10 @@
             let useDirect = document.getElementById('use-direct').checked;
             let useWarp = document.getElementById('use-warp').checked;
             let useSocks5 = useSocks5Checkbox.checked;
+            let usePsiphon = usePsiphonCheckbox.checked;
             let socks5Host = socks5HostInput.value.trim();
 
-            if (!useDirect && !useWarp && !useSocks5) {
+            if (!useDirect && !useWarp && !useSocks5 && !usePsiphon) {
                 alert('Pilih setidaknya satu tipe koneksi!');
                 return;
             }
@@ -884,6 +955,7 @@
                     useDirect: useDirect,
                     useWarp: useWarp,
                     useSocks5: useSocks5,
+                    usePsiphon: usePsiphon,
                     socks5Host: socks5Host,
                     useHeadless: true,
                     passwordMode,

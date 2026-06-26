@@ -158,14 +158,46 @@ if [ -f /etc/debian_version ] || [ -f /etc/lsb-release ]; then
     fi
 fi
 
-# 6. Unduh dan Ekstrak Aplikasi Dropbox Resmi
-echo -e "\n${GREEN}[6/6] Mengunduh dan mengekstrak aplikasi Dropbox resmi...${NC}"
+# 6. Unduh dan Ekstrak Aplikasi Dropbox Resmi & Psiphon Binary
+echo -e "\n${GREEN}[6/6] Menyiapkan aplikasi pihak ketiga (Dropbox & Psiphon)...${NC}"
 mkdir -p app
-wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C app -xzf -
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}Aplikasi Dropbox berhasil diunduh dan diekstrak ke folder 'app'.${NC}"
+
+# Download Dropbox jika belum ada
+if [ ! -d "app/.dropbox-dist" ]; then
+    echo -e "Mengunduh dan mengekstrak aplikasi Dropbox resmi..."
+    wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C app -xzf -
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Aplikasi Dropbox berhasil diunduh dan diekstrak ke folder 'app'.${NC}"
+    else
+        echo -e "${RED}Error: Gagal mengunduh atau mengekstrak aplikasi Dropbox.${NC}"
+    fi
 else
-    echo -e "${RED}Error: Gagal mengunduh atau mengekstrak aplikasi Dropbox.${NC}"
+    echo -e "Aplikasi Dropbox sudah terpasang di folder 'app'."
+fi
+
+# Download Psiphon Binary jika belum ada
+if [ ! -f "app/psiphon-tunnel-core-x86_64" ]; then
+    echo -e "Mengunduh Psiphon binary..."
+    wget -O app/psiphon-tunnel-core-x86_64 "https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/raw/master/linux/psiphon-tunnel-core-x86_64"
+    if [ $? -eq 0 ]; then
+        chmod +x app/psiphon-tunnel-core-x86_64
+        echo -e "${GREEN}Psiphon binary berhasil diunduh dan dikonfigurasi executable.${NC}"
+    else
+        echo -e "${RED}Error: Gagal mengunduh Psiphon binary.${NC}"
+    fi
+else
+    echo -e "Psiphon binary sudah ada di folder 'app'."
+fi
+
+# Copy psiphon.config jika ada
+if [ -f "psiphon.config" ]; then
+    cp psiphon.config app/
+    echo -e "File psiphon.config berhasil disalin ke folder 'app'."
+elif [ -f "Dropbox/psiphon.config" ]; then
+    cp Dropbox/psiphon.config app/
+    echo -e "File psiphon.config berhasil disalin ke folder 'app'."
+else
+    echo -e "${YELLOW}Peringatan: File psiphon.config tidak ditemukan. Silakan buat file tersebut secara manual.${NC}"
 fi
 
 echo -e "\n${GREEN}======================================================================${NC}"

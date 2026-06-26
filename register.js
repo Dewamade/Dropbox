@@ -5,8 +5,9 @@ const path = require('path');
 const fs = require('fs');
 const PROFILE_PATH = path.join(__dirname, 'firefox-profile');
 
-// Track whether Warp is already active (avoid unnecessary stop/start between cycles)
+// Track whether Warp/Psiphon is already active (avoid unnecessary stop/start between cycles)
 let warpActive = false;
+let psiphonActive = false;
 
 // ── Kill helpers (accessible from server.js via global) ─────────────────────
 function killAllBrowsers() {
@@ -18,8 +19,9 @@ function killAllBrowsers() {
 function killAllBox64() {
     try { require('child_process').execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) {}
     try { require('child_process').execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) {}
+    try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
     try { require('child_process').execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' }); } catch (_) {}
-    console.log('[Kill] Semua proses box64/dropboxd/docker dihentikan paksa.');
+    console.log('[Kill] Semua proses box64/dropboxd/docker/psiphon dihentikan paksa.');
 }
 
 // Expose globally so server.js can call them
@@ -286,6 +288,13 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
     if (proxyType === 'warp') {
         proxyServer = 'socks5://127.0.0.1:8086';
 
+        // Ensure psiphon is stopped
+        if (psiphonActive) {
+            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+            psiphonActive = false;
+            console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
+        }
+
         // Force restart warp if this is a retry
         if (isRetry && warpActive) {
             console.log(`\n[Warp] Retry terdeteksi, memaksa restart Warp...`);
@@ -369,6 +378,68 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 }
             }
         }
+    } else if (proxyType === 'psiphon') {
+        proxyServer = 'socks5://127.0.0.1:3080';
+
+        // Ensure warp is stopped
+        if (warpActive) {
+            try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) {}
+            warpActive = false;
+            console.log(`[Warp] Koneksi Warp dihentikan.`);
+        }
+
+        // Force restart Psiphon if this is a retry
+        if (isRetry && psiphonActive) {
+            console.log(`\n[Psiphon] Retry terdeteksi, memaksa restart Psiphon...`);
+            psiphonActive = false;
+        }
+
+        if (psiphonActive) {
+            // Verify port is still open
+            const portOk = await checkPort('127.0.0.1', 3080, 2000);
+            if (portOk) {
+                console.log(`\n[Psiphon] Koneksi Psiphon sudah aktif di 127.0.0.1:3080`);
+            } else {
+                console.log(`\n[Psiphon] Port 3080 tidak lagi tersedia, restart Psiphon...`);
+                psiphonActive = false;
+            }
+        }
+
+        if (!psiphonActive) {
+            const { spawn } = require('child_process');
+            console.log(`\nMengaktifkan koneksi Psiphon...`);
+
+            // Stop existing psiphon binary if running
+            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+
+            const appDir = path.join(__dirname, 'app');
+            // Launch psiphon-tunnel-core-x86_64 -config psiphon.config in app directory
+            const psiphonProc = spawn('./psiphon-tunnel-core-x86_64', ['-config', 'psiphon.config'], {
+                cwd: appDir
+            });
+
+            psiphonProc.on('error', (err) => {
+                console.log(`[Psiphon Error] Gagal menjalankan psiphon binary: ${err.message}`);
+            });
+
+            // Wait for port 3080 to be ready (up to 15 seconds)
+            let portReady = false;
+            for (let i = 0; i < 15; i++) {
+                if (abortController && abortController.shouldStop) {
+                    throw new Error("Pendaftaran dihentikan oleh pengguna.");
+                }
+                portReady = await checkPort('127.0.0.1', 3080, 1000);
+                if (portReady) break;
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+            if (portReady) {
+                console.log(`[Psiphon] ✓ Port 3080 tersedia. Koneksi siap.`);
+                psiphonActive = true;
+            } else {
+                throw new Error("Gagal mengaktifkan Psiphon proxy pada port 3080.");
+            }
+        }
     } else if (proxyType === 'socks5') {
         proxyServer = `socks5://${proxyHost}`;
         console.log(`\n[Proxy] Menggunakan custom Socks5 host: ${proxyHost}`);
@@ -379,20 +450,30 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             warpActive = false;
             console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Proxy Socks5).`);
         }
+        if (psiphonActive) {
+            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+            psiphonActive = false;
+            console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
+        }
     } else {
-        // Direct connection — stop warp if it was previously active
+        // Direct connection — stop warp and psiphon if previously active
         if (warpActive) {
             const { exec } = require('child_process');
             exec('warp-ctl stop', { timeout: 5000 }, () => {});
             warpActive = false;
             console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Direct Connection).`);
         }
+        if (psiphonActive) {
+            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) {}
+            psiphonActive = false;
+            console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
+        }
     }
 
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
     if (proxyServer) {
-        console.log(`Menggunakan Proxy   : Warp+Socks5 (${proxyServer})`);
+        console.log(`Menggunakan Proxy   : ${proxyType === 'psiphon' ? 'Psiphon' : (proxyType === 'socks5' ? 'Socks5 Only' : 'Warp+Socks5')} (${proxyServer})`);
     } else {
         console.log(`Menggunakan Proxy   : TIDAK ADA (Direct Connection)`);
     }
