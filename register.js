@@ -1342,6 +1342,13 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 if (connected) {
                     console.log('[Browser] Menunggu konfirmasi berhasil dihubungkan...');
                     const successKeywords = ['successfully', 'berhasil', 'linked', 'connected', 'you can now close'];
+                    const connectSelectors = [
+                        'button:has-text("Connect")',
+                        'button[aria-label="Connect"]',
+                        'button:has-text("Hubungkan")',
+                        'input[type="submit"][value*="Connect"]',
+                        'a:has-text("Connect")',
+                    ];
                     let confirmedSuccess = false;
                     const successDeadline = Date.now() + (gtMs * 2);
                     while (Date.now() < successDeadline && !confirmedSuccess) {
@@ -1351,6 +1358,41 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                             if (confirmedSuccess) break;
                         } catch (e) { }
                         await page.waitForTimeout(1500);
+                    }
+
+                    if (!confirmedSuccess) {
+                        console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi. Mencoba mencari dan mengklik tombol Connect kembali (maksimal 3 kali dengan jeda 5 detik)...`);
+                        for (let attempt = 1; attempt <= 3; attempt++) {
+                            let clickedAgain = false;
+                            for (const sel of connectSelectors) {
+                                try {
+                                    if (await page.isVisible(sel)) {
+                                        await page.click(sel);
+                                        console.log(`[Browser] ✓ (Attempt ${attempt}/3) Tombol Connect berhasil diklik kembali via: ${sel}`);
+                                        clickedAgain = true;
+                                        break;
+                                    }
+                                } catch (e) { }
+                            }
+                            if (!clickedAgain) {
+                                console.log(`[Browser] (Attempt ${attempt}/3) Tombol Connect tidak terlihat di layar.`);
+                            }
+
+                            // Wait 5 seconds while polling for the confirmation keywords
+                            const checkDeadline = Date.now() + 5000;
+                            while (Date.now() < checkDeadline && !confirmedSuccess) {
+                                try {
+                                    const bodyText = (await page.innerText('body')).toLowerCase();
+                                    confirmedSuccess = successKeywords.some(kw => bodyText.includes(kw));
+                                    if (confirmedSuccess) break;
+                                } catch (e) { }
+                                await page.waitForTimeout(500);
+                            }
+
+                            if (confirmedSuccess) {
+                                break;
+                            }
+                        }
                     }
 
                     if (confirmedSuccess) {
