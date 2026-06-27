@@ -53,6 +53,79 @@ let globalState = {
     logs: []
 };
 
+// --- Worker Status Management ---
+let workerStatus = 'BOOT';
+let sessionTimeout = null;
+let warningTimeout = null;
+
+function setWorkerStatus(newStatus) {
+    if (workerStatus === newStatus) return;
+    workerStatus = newStatus;
+    console.log(`[Worker] Status berubah ke: ${workerStatus}`);
+    
+    // Broadcast status update
+    safeSend({ type: 'worker_status', status: workerStatus });
+}
+
+function startIdleTimer() {
+    clearIdleTimer();
+    
+    // Warn 1 minute before (120 seconds of 180 seconds total)
+    warningTimeout = setTimeout(() => {
+        console.log(`[Worker] Sesi idle terdeteksi. Mengirim peringatan ke client.`);
+        safeSend({ type: 'idle_warning', secondsLeft: 60 });
+    }, 120000); // 2 menit
+    
+    // Terminate/set idle at 180 seconds
+    sessionTimeout = setTimeout(() => {
+        console.log(`[Worker] Sesi idle berakhir. Mengubah status ke IDLE.`);
+        setWorkerStatus('IDLE');
+    }, 180000); // 3 menit
+}
+
+function clearIdleTimer() {
+    if (sessionTimeout) {
+        clearTimeout(sessionTimeout);
+        sessionTimeout = null;
+    }
+    if (warningTimeout) {
+        clearTimeout(warningTimeout);
+        warningTimeout = null;
+    }
+}
+
+// REST Endpoints for Worker Status
+app.get('/api/worker-stat', (_req, res) => {
+    res.json({ status: workerStatus });
+});
+
+app.post('/api/worker-stat/boot', (_req, res) => {
+    setWorkerStatus('BOOT');
+    startIdleTimer();
+    res.json({ ok: true });
+});
+
+app.post('/api/worker-stat/extend', (_req, res) => {
+    if (workerStatus === 'BOOT' || workerStatus === 'FINISH') {
+        startIdleTimer();
+        safeSend({ type: 'idle_warning_cancel' });
+        res.json({ ok: true });
+    } else {
+        res.status(400).json({ error: 'Tidak dapat memperpanjang sesi dalam status saat ini' });
+    }
+});
+
+app.post('/api/worker-stat/idle', (_req, res) => {
+    if (workerStatus === 'BOOT' || workerStatus === 'FINISH') {
+        clearIdleTimer();
+        setWorkerStatus('IDLE');
+        safeSend({ type: 'idle_warning_cancel' });
+        res.json({ ok: true });
+    } else {
+        res.status(400).json({ error: 'Tidak dapat mengubah status ke IDLE dalam status saat ini' });
+    }
+});
+
 function safeSend(socketOrPayload, maybePayload) {
     let payload = maybePayload;
     if (arguments.length === 1) {
@@ -122,6 +195,7 @@ wss.on('connection', (ws) => {
     safeSend(ws, {
         type: 'sync_state',
         isRunning,
+        workerStatus,
         state: globalState
     });
 
@@ -156,6 +230,9 @@ wss.on('connection', (ws) => {
                     safeSend(ws, { type: 'log', message: '⚠️ Pendaftaran sedang berjalan!' });
                     return;
                 }
+
+                clearIdleTimer();
+                setWorkerStatus('PROCESSING');
 
                 isRunning = true;
                 shouldStop = false;
@@ -523,6 +600,9 @@ wss.on('connection', (ws) => {
                     if (global.killAllBrowsers) global.killAllBrowsers();
                     if (global.killAllBox64) global.killAllBox64();
                     if (global.killAllVpnProxy) global.killAllVpnProxy();
+                    
+                    setWorkerStatus('FINISH');
+                    startIdleTimer();
                 }
             }
         } catch (err) {
@@ -545,4 +625,8 @@ server.listen(PORT, () => {
     originalLog(`Server berjalan di http://localhost:${PORT}`);
     originalLog(`Buka URL di atas untuk mengakses Dashboard Pendaftaran`);
     originalLog(`===================================================`);
+    
+    // Initialize status to BOOT and start the 3-minute idle timer
+    setWorkerStatus('BOOT');
+    startIdleTimer();
 });

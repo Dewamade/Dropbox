@@ -330,6 +330,34 @@
         </div>
     </div>
 
+    <!-- ── Session Idle Warning Modal ────────────────────── -->
+    <div class="modal-backdrop" id="idle-modal">
+        <div class="modal" style="max-width: 450px; text-align: center;">
+            <div class="modal-header" style="justify-content: center; border-bottom: none; padding-bottom: 0.5rem;">
+                <h2 style="font-size: 1.25rem; display: flex; align-items: center; gap: 0.5rem; color: #fbbf24;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    Peringatan Sesi Idle
+                </h2>
+            </div>
+            <div class="modal-body" style="padding: 1rem 1.5rem; text-align: center; overflow: hidden;">
+                <p style="font-size: 0.95rem; color: #d4d4d8; line-height: 1.5;">
+                    Sesi idle terdeteksi. Worker akan dinonaktifkan dalam <strong style="color: #fbbf24; font-size: 1.15rem; font-family: 'Fira Code', monospace;" id="idle-countdown">60</strong> detik.
+                </p>
+                <p style="font-size: 0.9rem; color: #a1a1aa; margin-top: 0.75rem;">
+                    Apakah Anda ingin menambah durasi sesi pendaftaran?
+                </p>
+            </div>
+            <div class="modal-footer" style="justify-content: center; border-top: none; gap: 1rem; padding-top: 0.5rem; padding-bottom: 1.5rem;">
+                <button class="btn btn-sm" id="idle-yes-btn" style="min-width: 100px; background: linear-gradient(135deg, #6366f1, #4f46e5);">Ya</button>
+                <button class="btn btn-outline btn-sm" id="idle-no-btn" style="min-width: 100px;">Tidak</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // DOM Elements
         const aliasInput          = document.getElementById('alias-input');
@@ -412,6 +440,12 @@
         const historyContent       = document.getElementById('history-content');
         const historyRefreshBtn    = document.getElementById('history-refresh-btn');
         const historyClearBtn      = document.getElementById('history-clear-btn');
+
+        // Idle modal
+        const idleModal            = document.getElementById('idle-modal');
+        const idleCountdown        = document.getElementById('idle-countdown');
+        const idleYesBtn           = document.getElementById('idle-yes-btn');
+        const idleNoBtn            = document.getElementById('idle-no-btn');
 
         // ── UI Toggles ─────────────────────────────────────────
         function updatePasswordModeUI() {
@@ -714,6 +748,7 @@
         historyBtn.addEventListener('click', () => {
             historyModal.classList.add('open');
             loadHistory();
+            fetch('/api/worker-stat/boot', { method: 'POST' }).catch(() => {});
         });
 
         modalCloseBtn.addEventListener('click', () => historyModal.classList.remove('open'));
@@ -766,6 +801,9 @@
                 if (data.type === 'pong') {
                     lastPongReceived = Date.now();
                 } else if (data.type === 'sync_state') {
+                    if (data.workerStatus) {
+                        updateWorkerStatusDisplay(data.workerStatus);
+                    }
                     if (data.state) {
                         if (data.state.logs && data.state.logs.length > 0) {
                             logPanel.innerHTML = '';
@@ -803,6 +841,12 @@
                     updateProgress(data.current, data.total, data.status, data.successCount, data.failedCount, data.verifCount);
                 } else if (data.type === 'status') {
                     updateStatus(data.status);
+                } else if (data.type === 'worker_status') {
+                    updateWorkerStatusDisplay(data.status);
+                } else if (data.type === 'idle_warning') {
+                    showIdleWarning(data.secondsLeft);
+                } else if (data.type === 'idle_warning_cancel') {
+                    hideIdleWarning();
                 } else if (data.type === 'email_success') {
                     removeEmailFromUIList(data.email);
                 }
@@ -945,6 +989,73 @@
                 setFormDisabled(false);
             }
         }
+
+        function updateWorkerStatusDisplay(status) {
+            statusBadge.className = 'status-badge';
+            statusText.innerText = status;
+
+            if (status === 'BOOT') {
+                statusBadge.classList.add('status-running'); // Blue/purple
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                setFormDisabled(false);
+            } else if (status === 'PROCESSING') {
+                statusBadge.classList.add('status-running'); // Blue/purple
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                setFormDisabled(true);
+            } else if (status === 'FINISH') {
+                statusBadge.classList.add('status-success'); // Green
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                setFormDisabled(false);
+            } else if (status === 'IDLE') {
+                statusBadge.classList.add('status-idle'); // Gray
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                setFormDisabled(false);
+            }
+        }
+
+        let idleInterval = null;
+
+        function showIdleWarning(secondsLeft) {
+            if (idleInterval) clearInterval(idleInterval);
+            idleModal.classList.add('open');
+            let timeLeft = secondsLeft || 60;
+            idleCountdown.innerText = timeLeft;
+
+            idleInterval = setInterval(() => {
+                timeLeft--;
+                if (timeLeft <= 0) {
+                    clearInterval(idleInterval);
+                    idleInterval = null;
+                    hideIdleWarning();
+                } else {
+                    idleCountdown.innerText = timeLeft;
+                }
+            }, 1000);
+        }
+
+        function hideIdleWarning() {
+            if (idleInterval) {
+                clearInterval(idleInterval);
+                idleInterval = null;
+            }
+            idleModal.classList.remove('open');
+        }
+
+        idleYesBtn.addEventListener('click', () => {
+            fetch('/api/worker-stat/extend', { method: 'POST' })
+                .then(() => hideIdleWarning())
+                .catch(() => {});
+        });
+
+        idleNoBtn.addEventListener('click', () => {
+            fetch('/api/worker-stat/idle', { method: 'POST' })
+                .then(() => hideIdleWarning())
+                .catch(() => {});
+        });
 
         startBtn.addEventListener('click', () => {
             const alias        = aliasInput.value.trim();
