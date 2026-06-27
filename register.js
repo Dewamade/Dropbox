@@ -1257,148 +1257,44 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 // ── Navigate browser to CLI link (retry loop, no browser kill) ────────
                 let connected = false;
                 let cliAttempt = 0;
-                const maxCliAttempts = maxTabAttempts; // reuse globalRetry
+                const maxCliAttempts = 3;
 
                 while (!connected && cliAttempt < maxCliAttempts) {
                     cliAttempt++;
-                    if (cliAttempt > 1) {
-                        console.log(`\n[CLI Reload] Memuat ulang URL CLI Link (Percobaan ${cliAttempt}/${maxCliAttempts})...`);
-                    }
-
                     try {
-                        console.log(`[Browser] Navigasi ke URL CLI Link (timeout ${globalTimeout} detik)...`);
+                        console.log(`[Browser] Navigasi ke URL CLI Link (Attempt ${cliAttempt}/${maxCliAttempts})...`);
                         await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-                        await page.waitForTimeout(2000);
 
-                        // ── Wait for Connect button and click it ─────────────────────
-                        console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout * 2} detik)...`);
-                        const connectSelectors = [
-                            'button:has-text("Connect")',
-                            'button[aria-label="Connect"]',
-                            'button:has-text("Hubungkan")',
-                            'input[type="submit"][value*="Connect"]',
-                            'a:has-text("Connect")',
-                        ];
+                        const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
+                            .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
 
+                        console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
                         let connectBtnFound = false;
-                        for (const sel of connectSelectors) {
-                            try {
-                                await page.waitForSelector(sel, { state: 'visible', timeout: gtMs / 2 });
-                                connectBtnFound = true;
-                                console.log(`[Browser] ✓ Tombol Connect terdeteksi via waitForSelector: ${sel}`);
-                                break;
-                            } catch (_) { }
-                        }
-
-                        if (!connectBtnFound) {
-                            console.log(`[Browser] waitForSelector habis, scroll dan polling untuk Connect...`);
-                            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) { }
-                            await page.waitForTimeout(2000);
-
-                            const connectDeadline = Date.now() + (gtMs * 2);
-                            while (Date.now() < connectDeadline && !connectBtnFound) {
-                                for (const sel of connectSelectors) {
-                                    try {
-                                        const isVisible = await page.locator(sel).first().isVisible();
-                                        if (isVisible) { connectBtnFound = true; break; }
-                                    } catch (e) { }
-                                }
-                                if (!connectBtnFound) await page.waitForTimeout(1000);
-                            }
-                        }
-
-                        if (!connectBtnFound) {
-                            throw new Error(`[Browser] Timeout ${globalTimeout * 2} detik — tombol Connect tidak ditemukan`);
-                        }
-
-                        // We just verified the button is visible, now click it
-                        for (const sel of connectSelectors) {
-                            try {
-                                if (await page.isVisible(sel)) {
-                                    await page.click(sel);
-                                    console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
-                                    connected = true;
-                                    break;
-                                }
-                            } catch (e) { }
-                        }
-
-                        if (!connected) {
-                            throw new Error(`[Browser] Gagal mengklik tombol Connect meski sudah terlihat.`);
-                        }
-
-                    } catch (cliErr) {
-                        console.log(`\n⚠️ Error saat navigasi CLI Link (Percobaan ${cliAttempt}/${maxCliAttempts}): ${cliErr.message.split('\n')[0]}`);
-                        if (cliAttempt >= maxCliAttempts) {
-                            console.log(`[CLI] Batas ${maxCliAttempts} percobaan habis. Melanjutkan tanpa konfirmasi Connect...`);
-                            break;
-                        }
-                        await page.waitForTimeout(2000);
-                        // Loop will retry by reloading the CLI URL — browser stays open
-                    }
-                }
-
-                // ── Wait for "successfully" confirmation ──────────────────────────────
-                if (connected) {
-                    console.log('[Browser] Menunggu konfirmasi berhasil dihubungkan...');
-                    const successKeywords = ['successfully', 'berhasil', 'linked', 'connected', 'you can now close'];
-                    const connectSelectors = [
-                        'button:has-text("Connect")',
-                        'button[aria-label="Connect"]',
-                        'button:has-text("Hubungkan")',
-                        'input[type="submit"][value*="Connect"]',
-                        'a:has-text("Connect")',
-                    ];
-                    let confirmedSuccess = false;
-                    const successDeadline = Date.now() + (gtMs * 2);
-                    while (Date.now() < successDeadline && !confirmedSuccess) {
                         try {
-                            const bodyText = (await page.innerText('body')).toLowerCase();
-                            confirmedSuccess = successKeywords.some(kw => bodyText.includes(kw));
-                            if (confirmedSuccess) break;
-                        } catch (e) { }
-                        await page.waitForTimeout(1500);
-                    }
+                            await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
+                            connectBtnFound = true;
+                        } catch (_) { }
 
-                    if (!confirmedSuccess) {
-                        console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi. Mencoba mencari dan mengklik tombol Connect kembali (maksimal 3 kali dengan jeda 5 detik)...`);
-                        for (let attempt = 1; attempt <= 3; attempt++) {
-                            let clickedAgain = false;
-                            for (const sel of connectSelectors) {
-                                try {
-                                    if (await page.isVisible(sel)) {
-                                        await page.click(sel);
-                                        console.log(`[Browser] ✓ (Attempt ${attempt}/3) Tombol Connect berhasil diklik kembali via: ${sel}`);
-                                        clickedAgain = true;
-                                        break;
-                                    }
-                                } catch (e) { }
-                            }
-                            if (!clickedAgain) {
-                                console.log(`[Browser] (Attempt ${attempt}/3) Tombol Connect tidak terlihat di layar.`);
-                            }
-
-                            // Wait 5 seconds while polling for the confirmation keywords
-                            const checkDeadline = Date.now() + 5000;
-                            while (Date.now() < checkDeadline && !confirmedSuccess) {
-                                try {
-                                    const bodyText = (await page.innerText('body')).toLowerCase();
-                                    confirmedSuccess = successKeywords.some(kw => bodyText.includes(kw));
-                                    if (confirmedSuccess) break;
-                                } catch (e) { }
-                                await page.waitForTimeout(500);
-                            }
-
-                            if (confirmedSuccess) {
-                                break;
-                            }
+                        if (!connectBtnFound) {
+                            const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
+                            await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => { });
+                            throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
                         }
-                    }
 
-                    if (confirmedSuccess) {
+                        console.log(`[Browser] ✓ Tombol Connect terdeteksi.`);
+                        await connectLocator.first().click();
+                        console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
+                        console.log(`[Browser] Menunggu konfirmasi berhasil dihubungkan...`);
+                        await page.waitForTimeout(3000);
                         console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
-                    } else {
-                        console.log(`⚠️ [dropboxd] Konfirmasi tidak terdeteksi, melanjutkan...`);
+
+                        connected = true;
+                        killDropbox();
+
+                    } catch (err) {
+                        console.log(`[Browser] Error CLI Link (Attempt ${cliAttempt}): ${err.message}`);
+                        if (cliAttempt >= maxCliAttempts) throw new Error("Gagal verifikasi CLI Link.");
+                        await page.waitForTimeout(3000);
                     }
                 }
 
