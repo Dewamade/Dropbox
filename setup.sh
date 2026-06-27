@@ -189,6 +189,20 @@ else
     echo -e "Psiphon binary sudah ada di folder 'app'."
 fi
 
+# Download Cloudflared Binary jika belum ada
+if [ ! -f "app/cloudflared-linux-amd64" ]; then
+    echo -e "Mengunduh Cloudflared binary..."
+    wget -O app/cloudflared-linux-amd64 "https://github.com/cloudflare/cloudflared/releases/download/2026.6.1/cloudflared-linux-amd64"
+    if [ $? -eq 0 ]; then
+        chmod +x app/cloudflared-linux-amd64
+        echo -e "${GREEN}Cloudflared binary berhasil diunduh dan dikonfigurasi executable.${NC}"
+    else
+        echo -e "${RED}Error: Gagal mengunduh Cloudflared binary.${NC}"
+    fi
+else
+    echo -e "Cloudflared binary sudah ada di folder 'app'."
+fi
+
 # Copy psiphon.config jika ada
 if [ -f "psiphon.config" ]; then
     cp psiphon.config app/
