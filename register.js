@@ -1174,7 +1174,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
     try {
         if (isRegistered) {
-            console.log('✅ Pendaftaran berhasil! Browser tetap terbuka — memulai verifikasi email...');
+            console.log('✅ Pendaftaran berhasil! Browser tetap terbuka — memulai menghubungkan perangkat...');
             await page.waitForTimeout(1500);
 
             console.log('\n[dropboxd] Memulai proses Dropbox daemon...');
