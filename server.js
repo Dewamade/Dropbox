@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { registerSingleEmail } = require('./register.js');
+const { registerSingleEmail, getRandomName } = require('./register.js');
 const { saveRegistration, getAllRegistrations, clearRegistrations } = require('./db.js');
 
 const app = express();
@@ -180,9 +180,11 @@ wss.on('connection', (ws) => {
                 
                 let emails = [];
                 if (emailMode === 'auto') {
-                    // Generate random emails
+                    // Generate random emails using dynamically generated first name and last name
                     for (let i = 0; i < count; i++) {
-                        const randomString = Math.random().toString(36).substring(2, 8 + Math.floor(Math.random() * 3)); // 6-8 chars
+                        const { first, last } = getRandomName();
+                        const randomDigits = Math.floor(10 + Math.random() * 90); // 2 random digits
+                        const randomString = `${first.toLowerCase()}.${last.toLowerCase()}${randomDigits}`;
                         emails.push(`${randomString}@${domain}`);
                     }
                 } else {

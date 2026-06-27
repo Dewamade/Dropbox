@@ -133,33 +133,51 @@ async function checkTooManyAttempts(page) {
     }
 }
 
-// Helper function to generate a natural-looking random name
+// Helper function to generate a natural-looking random name on the fly without hardcoded lists
 function getRandomName() {
-    const firstNames = [
-        "James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Thomas", "Charles",
-        "Daniel", "Matthew", "Anthony", "Mark", "Donald", "Steven", "Paul", "Andrew", "Joshua", "Kenneth",
-        "Kevin", "Brian", "George", "Edward", "Ronald", "Timothy", "Jason", "Jeffrey", "Ryan", "Jacob",
-        "Gary", "Nicholas", "Eric", "Jonathan", "Stephen", "Larry", "Justin", "Scott", "Brandon", "Benjamin",
-        "Samuel", "Gregory", "Alexander", "Frank", "Patrick", "Raymond", "Jack", "Dennis", "Jerry", "Tyler",
-        "Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Barbara", "Susan", "Jessica", "Sarah", "Karen",
-        "Lisa", "Nancy", "Betty", "Sandra", "Margaret", "Ashley", "Kimberly", "Emily", "Donna", "Michelle",
-        "Carol", "Amanda", "Dorothy", "Melissa", "Deborah", "Stephanie", "Rebecca", "Sharon", "Laura", "Cynthia",
-        "Kathleen", "Amy", "Shirley", "Angela", "Helen", "Anna", "Brenda", "Pamela", "Nicole", "Emma"
-    ];
+    const startConsonants = ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'R', 'S', 'T', 'W', 'Y', 'Br', 'Cl', 'Dr', 'Fr', 'Gr', 'Pr', 'Sh', 'St', 'Tr'];
+    const midVowels = ['a', 'e', 'i', 'o', 'u', 'ay', 'ee', 'ea', 'ie', 'oa', 'y'];
+    const endConsonants = ['d', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'ck', 'ld', 'nd', 'ng', 'nt', 'th'];
 
-    const lastNames = [
-        "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez",
-        "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin",
-        "Lee", "Perez", "Thompson", "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson",
-        "Walker", "Young", "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores",
-        "Green", "Adams", "Nelson", "Baker", "Hall", "Rivera", "Campbell", "Mitchell", "Carter", "Roberts",
-        "Gomez", "Phillips", "Evans", "Turner", "Diaz", "Parker", "Cruz", "Edwards", "Collins", "Reyes",
-        "Stewart", "Morris", "Morales", "Murphy", "Cook", "Rogers", "Gutierrez", "Ortiz", "Morgan", "Cooper"
-    ];
+    const makeSyllable = () => {
+        const onset = startConsonants[Math.floor(Math.random() * startConsonants.length)];
+        const vowel = midVowels[Math.floor(Math.random() * midVowels.length)];
+        const coda = Math.random() > 0.25 ? endConsonants[Math.floor(Math.random() * endConsonants.length)] : '';
+        return onset + vowel + coda;
+    };
 
-    const first = firstNames[Math.floor(Math.random() * firstNames.length)];
-    const last = lastNames[Math.floor(Math.random() * lastNames.length)];
-    return { first, last };
+    const makeName = () => {
+        let name = makeSyllable();
+        if (Math.random() > 0.5) {
+            const suffix = ['on', 'an', 'en', 'er', 'et', 'ie', 'y', 'al', 'us', 'a', 'is'][Math.floor(Math.random() * 11)];
+            name = name.substring(0, name.length - (name.length > 4 ? 1 : 0)) + suffix;
+        }
+        return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+    };
+
+    return {
+        first: makeName(),
+        last: makeName()
+    };
+}
+
+// Helper to parse first/last name from email, or fallback to random name generator
+function getNameFromEmail(email) {
+    if (!email) return getRandomName();
+    const prefix = email.split('@')[0];
+    if (prefix.includes('.')) {
+        const parts = prefix.split('.');
+        const firstPart = parts[0].replace(/[0-9]/g, '');
+        const lastPart = parts[1].replace(/[0-9]/g, '');
+        if (firstPart && lastPart) {
+            const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+            return {
+                first: capitalize(firstPart),
+                last: capitalize(lastPart)
+            };
+        }
+    }
+    return getRandomName();
 }
 
 // Helper to fetch server public IP (with explicit timeout)
@@ -610,7 +628,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
     }
     console.log(`==========================================`);
 
-    const { first: firstName, last: lastName } = getRandomName();
+    const { first: firstName, last: lastName } = getNameFromEmail(email);
     // Use fixed or random password based on mode
     const password = (passwordMode === 'fixed' && fixedPassword) ? fixedPassword : generatePassword();
 
@@ -1484,8 +1502,11 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                         await page.waitForTimeout(2000);
                     }
                 }
-                const finalStatusVal = emailSent ? 'VERIF' : 'success';
+                const finalStatusVal = emailSent ? 'success' : 'VERIF';
                 finalStatus = finalStatusVal;
+            } catch (verifError) {
+                console.log(`[Info] Terjadi error saat menghubungkan daemon atau verifikasi email: ${verifError.message}`);
+                finalStatus = 'VERIF';
             } finally {
                 // Kill daemon + any lingering dropbox processes
                 killDropbox();
@@ -1643,6 +1664,7 @@ if (require.main === module) {
 } else {
     module.exports = {
         registerSingleEmail,
-        PROFILE_PATH
+        PROFILE_PATH,
+        getRandomName
     };
 }
