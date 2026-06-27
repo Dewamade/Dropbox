@@ -804,6 +804,11 @@
                     if (data.workerStatus) {
                         updateWorkerStatusDisplay(data.workerStatus);
                     }
+                    if ((data.workerStatus === 'BOOT' || data.workerStatus === 'FINISH') && data.secondsLeft !== undefined && data.secondsLeft > 0 && data.secondsLeft <= 60) {
+                        showIdleWarning(data.secondsLeft);
+                    } else {
+                        hideIdleWarning();
+                    }
                     if (data.state) {
                         if (data.state.logs && data.state.logs.length > 0) {
                             logPanel.innerHTML = '';

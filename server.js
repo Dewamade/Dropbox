@@ -57,6 +57,7 @@ let globalState = {
 let workerStatus = 'BOOT';
 let sessionTimeout = null;
 let warningTimeout = null;
+let sessionExpiryTime = 0;
 
 function setWorkerStatus(newStatus) {
     if (workerStatus === newStatus) return;
@@ -69,6 +70,7 @@ function setWorkerStatus(newStatus) {
 
 function startIdleTimer() {
     clearIdleTimer();
+    sessionExpiryTime = Date.now() + 180000; // 3 minutes from now
     
     // Warn 1 minute before (120 seconds of 180 seconds total)
     warningTimeout = setTimeout(() => {
@@ -84,6 +86,7 @@ function startIdleTimer() {
 }
 
 function clearIdleTimer() {
+    sessionExpiryTime = 0;
     if (sessionTimeout) {
         clearTimeout(sessionTimeout);
         sessionTimeout = null;
@@ -96,7 +99,11 @@ function clearIdleTimer() {
 
 // REST Endpoints for Worker Status
 app.get('/api/worker-stat', (_req, res) => {
-    res.json({ status: workerStatus });
+    let secondsLeft = 0;
+    if (sessionExpiryTime > 0) {
+        secondsLeft = Math.max(0, Math.round((sessionExpiryTime - Date.now()) / 1000));
+    }
+    res.json({ status: workerStatus, secondsLeft });
 });
 
 app.post('/api/worker-stat/boot', (_req, res) => {
@@ -190,12 +197,18 @@ let currentAbortController = null;
 wss.on('connection', (ws) => {
     originalLog('Client connected via WebSocket');
 
+    let secondsLeft = 0;
+    if (sessionExpiryTime > 0) {
+        secondsLeft = Math.max(0, Math.round((sessionExpiryTime - Date.now()) / 1000));
+    }
+
     // Send current status and full sync state
     safeSend(ws, { type: 'status', status: isRunning ? 'running' : 'idle' });
     safeSend(ws, {
         type: 'sync_state',
         isRunning,
         workerStatus,
+        secondsLeft,
         state: globalState
     });
 
