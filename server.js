@@ -58,6 +58,7 @@ let workerStatus = 'BOOT';
 let sessionTimeout = null;
 let warningTimeout = null;
 let sessionExpiryTime = 0;
+let idleDurationMs = 180000; // Configurable idle timeout (default: 3 minutes)
 
 function setWorkerStatus(newStatus) {
     if (workerStatus === newStatus) return;
@@ -70,19 +71,24 @@ function setWorkerStatus(newStatus) {
 
 function startIdleTimer() {
     clearIdleTimer();
-    sessionExpiryTime = Date.now() + 180000; // 3 minutes from now
-    
-    // Warn 1 minute before (120 seconds of 180 seconds total)
-    warningTimeout = setTimeout(() => {
-        console.log(`[Worker] Sesi idle terdeteksi. Mengirim peringatan ke client.`);
-        safeSend({ type: 'idle_warning', secondsLeft: 60 });
-    }, 120000); // 2 menit
-    
-    // Terminate/set idle at 180 seconds
+    sessionExpiryTime = Date.now() + idleDurationMs;
+    const warningMs = Math.max(0, idleDurationMs - 60000); // show warning 60s before
+
+    if (warningMs > 0) {
+        warningTimeout = setTimeout(() => {
+            console.log(`[Worker] Sesi idle terdeteksi. Mengirim peringatan ke client.`);
+            safeSend({ type: 'idle_warning', secondsLeft: 60 });
+        }, warningMs);
+    } else {
+        // Timeout <= 60s, send warning immediately
+        safeSend({ type: 'idle_warning', secondsLeft: Math.round(idleDurationMs / 1000) });
+    }
+
+    // Terminate/set idle after idleDurationMs
     sessionTimeout = setTimeout(() => {
         console.log(`[Worker] Sesi idle berakhir. Mengubah status ke IDLE.`);
         setWorkerStatus('IDLE');
-    }, 180000); // 3 menit
+    }, idleDurationMs);
 }
 
 function clearIdleTimer() {
@@ -131,6 +137,22 @@ app.post('/api/worker-stat/idle', (_req, res) => {
     } else {
         res.status(400).json({ error: 'Tidak dapat mengubah status ke IDLE dalam status saat ini' });
     }
+});
+
+app.post('/api/settings/apply', (req, res) => {
+    const { idleTimeout } = req.body || {};
+    if (idleTimeout !== undefined) {
+        const secs = parseInt(idleTimeout);
+        if (!isNaN(secs) && secs >= 30) {
+            idleDurationMs = secs * 1000;
+            console.log(`[Settings] Idle timeout diperbarui ke ${secs} detik.`);
+            // If an idle timer is currently running, restart it with new duration
+            if (sessionTimeout && (workerStatus === 'BOOT' || workerStatus === 'FINISH')) {
+                startIdleTimer();
+            }
+        }
+    }
+    res.json({ ok: true, idleDurationMs });
 });
 
 function safeSend(socketOrPayload, maybePayload) {
