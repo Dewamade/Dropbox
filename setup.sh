@@ -104,10 +104,18 @@ if [ "$IN_REPO" = true ]; then
         echo -e "Sudah berada di branch ${BRANCH}."
     fi
 else
-    if [ -d "Dropbox" ]; then
+    if [ -d "Dropbox" ] && [ -f "Dropbox/server.js" ]; then
         echo -e "${YELLOW}Folder 'Dropbox' sudah ada. Masuk ke folder tersebut...${NC}"
         cd Dropbox || exit 1
         # Cek branch
+        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+        if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
+            echo -e "Berpindah ke branch ${BRANCH}..."
+            git checkout "$BRANCH" || git checkout -b "$BRANCH" "origin/$BRANCH"
+        fi
+    elif [ -f "server.js" ] && [ -f "package.json" ]; then
+        # Kita sudah berada di dalam folder proyek (misalnya user menjalankan dari ~/Dropbox/)
+        echo -e "${YELLOW}Terdeteksi sudah berada di dalam folder proyek Dropbox.${NC}"
         CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
         if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
             echo -e "Berpindah ke branch ${BRANCH}..."
