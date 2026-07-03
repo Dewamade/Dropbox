@@ -41,24 +41,24 @@
             <section class="panel">
                 <!-- Tab Bar -->
                 <div class="tab-bar">
-                    <button class="tab-btn active" id="tab-pengaturan-btn">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-                            <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                        Pengaturan
-                    </button>
-                    <button class="tab-btn" id="tab-progress-btn">
+                    <button class="tab-btn active" id="tab-progress-btn">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
                             <path d="M22 12A10 10 0 0 0 12 2v10z"/>
                         </svg>
                         Progress Peninjauan
                     </button>
+                    <button class="tab-btn" id="tab-pengaturan-btn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                        Pengaturan
+                    </button>
                 </div>
 
                 <!-- Tab Pane: Pengaturan -->
-                <div class="tab-pane active" id="tab-pengaturan">
+                <div class="tab-pane" id="tab-pengaturan">
                     <div class="form-group">
                         <label for="alias-input">Alias</label>
                         <input type="text" id="alias-input" value="Alias1" placeholder="Masukkan Alias...">
@@ -207,7 +207,7 @@
                 </div>
 
                 <!-- Tab Pane: Progress Peninjauan -->
-                <div class="tab-pane" id="tab-progress">
+                <div class="tab-pane active" id="tab-progress">
                     <div class="progress-box">
                         <div class="progress-ring">
                             <svg width="120" height="120">
@@ -246,22 +246,22 @@
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Action Buttons (always visible) -->
-                <div class="btn-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.25rem; margin-top: 0.25rem;">
-                    <button class="btn" id="start-btn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <polygon points="6 3 20 12 6 21 6 3"/>
-                        </svg>
-                        Mulai Pendaftaran
-                    </button>
-                    <button class="btn btn-danger" id="stop-btn" disabled>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-                        </svg>
-                        Hentikan
-                    </button>
+                    <!-- Action Buttons (inside Progress tab only) -->
+                    <div class="btn-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.25rem; margin-top: 0.5rem;">
+                        <button class="btn" id="start-btn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="6 3 20 12 6 21 6 3"/>
+                            </svg>
+                            Mulai Pendaftaran
+                        </button>
+                        <button class="btn btn-danger" id="stop-btn" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                            </svg>
+                            Hentikan
+                        </button>
+                    </div>
                 </div>
             </section>
 
@@ -1203,7 +1203,6 @@
             }
 
             if (socket && socket.readyState === WebSocket.OPEN) {
-                switchTab('progress');
                 logPanel.innerHTML = '';
                 successCountEl.innerText = '0';
                 failedCountEl.innerText = '0';
