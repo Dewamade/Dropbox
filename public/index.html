@@ -11,7 +11,7 @@
 </head>
 <body>
     <div class="container">
-        <!-- â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+        <!-- ── Header ──────────────────────────────── -->
         <header>
             <div class="header-left">
                 <div class="header-logo">
@@ -39,11 +39,11 @@
                     </svg>
                     Riwayat
                 </button>
-                <div class="version">v1.3.0 Â· Firefox</div>
+                <div class="version">v1.3.0 · Firefox</div>
             </div>
         </header>
 
-        <!-- â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+        <!-- ── Main ─────────────────────────────────── -->
         <main style="display:flex; flex-direction:column; gap:1.5rem;">
 
             <!-- Panel Tabs -->
@@ -66,7 +66,7 @@
                     </button>
                 </div>
 
-                <!-- â”€â”€ TAB: Progress Peninjauan â”€â”€â”€â”€â”€â”€â”€ -->
+                <!-- ── TAB: Progress Peninjauan ─────── -->
                 <div class="tab-pane active" id="tab-progress">
                     <div class="progress-layout">
 
@@ -181,7 +181,7 @@
                     </div>
                 </div>
 
-                <!-- â”€â”€ TAB: Pengaturan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+                <!-- ── TAB: Pengaturan ──────────────── -->
                 <div class="tab-pane" id="tab-pengaturan">
                     <div class="settings-body">
 
@@ -217,11 +217,11 @@
                                     <div class="radio-group">
                                         <label class="radio-option">
                                             <input type="radio" name="email-mode" value="manual" id="em-manual" checked>
-                                            ðŸ“ Manual Input
+                                            📝 Manual Input
                                         </label>
                                         <label class="radio-option">
                                             <input type="radio" name="email-mode" value="auto" id="em-auto">
-                                            âš¡ Auto Generate
+                                            ⚡ Auto Generate
                                         </label>
                                     </div>
                                 </div>
@@ -256,11 +256,11 @@
                                     <div class="radio-group">
                                         <label class="radio-option">
                                             <input type="radio" name="password-mode" value="random" id="pw-random" checked>
-                                            ðŸŽ² Acak (Random)
+                                            🎲 Acak (Random)
                                         </label>
                                         <label class="radio-option">
                                             <input type="radio" name="password-mode" value="fixed" id="pw-fixed">
-                                            ðŸ”’ Tetap (Fixed)
+                                            🔒 Tetap (Fixed)
                                         </label>
                                     </div>
                                     <div class="fixed-password-wrap" id="fixed-password-wrap">
@@ -320,19 +320,19 @@
                                 <div class="form-group" id="device-type-group">
                                     <label>Perangkat</label>
                                     <div class="check-group">
-                                        <label class="check-option"><input type="checkbox" id="dt-desktop" checked> ðŸ–¥ Desktop</label>
-                                        <label class="check-option"><input type="checkbox" id="dt-mobile"  checked> ðŸ“± Mobile</label>
-                                        <label class="check-option"><input type="checkbox" id="dt-tablet"  checked> ðŸ“Ÿ Tablet</label>
+                                        <label class="check-option"><input type="checkbox" id="dt-desktop" checked> 🖥 Desktop</label>
+                                        <label class="check-option"><input type="checkbox" id="dt-mobile"  checked> 📱 Mobile</label>
+                                        <label class="check-option"><input type="checkbox" id="dt-tablet"  checked> 📟 Tablet</label>
                                     </div>
                                 </div>
 
                                 <div class="form-group" id="connection-type-group">
                                     <label>Tipe Koneksi</label>
                                     <div class="check-group">
-                                        <label class="check-option"><input type="checkbox" id="use-direct" checked> ðŸŒ Direct</label>
-                                        <label class="check-option"><input type="checkbox" id="use-warp"   checked> ðŸ”’ Warp+Socks5</label>
-                                        <label class="check-option"><input type="checkbox" id="use-socks5"> ðŸ§¦ Socks5 Only</label>
-                                        <label class="check-option"><input type="checkbox" id="use-psiphon"> ðŸ›¡ Psiphon</label>
+                                        <label class="check-option"><input type="checkbox" id="use-direct" checked> 🌐 Direct</label>
+                                        <label class="check-option"><input type="checkbox" id="use-warp"   checked> 🔒 Warp+Socks5</label>
+                                        <label class="check-option"><input type="checkbox" id="use-socks5"> 🧦 Socks5 Only</label>
+                                        <label class="check-option"><input type="checkbox" id="use-psiphon"> 🛡 Psiphon</label>
                                     </div>
                                 </div>
 
@@ -358,7 +358,7 @@
                                     <div class="form-group" style="justify-content:flex-end;">
                                         <label>&nbsp;</label>
                                         <div class="check-group">
-                                            <label class="check-option"><input type="checkbox" id="debug-proxy"> ðŸ” Debug VPN/Proxy</label>
+                                            <label class="check-option"><input type="checkbox" id="debug-proxy"> 🔍 Debug VPN/Proxy</label>
                                         </div>
                                     </div>
                                 </div>
@@ -369,7 +369,7 @@
 
                     <!-- Settings Footer -->
                     <div class="settings-footer">
-                        <span style="font-size:0.75rem;color:var(--text-dim);">Perubahan disimpan otomatis Â· Tekan Apply untuk menerapkan ke server</span>
+                        <span style="font-size:0.75rem;color:var(--text-dim);">Perubahan disimpan otomatis · Tekan Apply untuk menerapkan ke server</span>
                         <button class="apply-btn" id="apply-settings-btn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
                             Apply
@@ -379,7 +379,7 @@
             </section>
         </main>
     </div>
-    <!-- â”€â”€ View UA Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── View UA Modal ─────────────────────────────────── -->
     <div class="modal-backdrop" id="ua-modal">
         <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
@@ -399,11 +399,11 @@
         </div>
     </div>
 
-    <!-- â”€â”€ History Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── History Modal ─────────────────────────────────── -->
     <div class="modal-backdrop" id="history-modal">
         <div class="modal">
             <div class="modal-header">
-                <h2>ðŸ“‹ Riwayat Pendaftaran</h2>
+                <h2>📋 Riwayat Pendaftaran</h2>
                 <button class="modal-close" id="modal-close-btn">&times;</button>
             </div>
             <div class="modal-body">
@@ -412,13 +412,13 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-outline btn-sm" id="history-clear-btn">ðŸ—‘ Hapus Semua Riwayat</button>
-                <button class="btn btn-sm" id="history-refresh-btn">â†» Perbarui</button>
+                <button class="btn-outline btn-sm" id="history-clear-btn">🗑 Hapus Semua Riwayat</button>
+                <button class="btn btn-sm" id="history-refresh-btn">↻ Perbarui</button>
             </div>
         </div>
     </div>
 
-    <!-- â”€â”€ Session Idle Warning Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── Session Idle Warning Modal ────────────────────── -->
     <div class="modal-backdrop" id="idle-modal">
         <div class="modal" style="max-width: 450px; text-align: center;">
             <div class="modal-header" style="justify-content: center; border-bottom: none; padding-bottom: 0.5rem;">
@@ -538,7 +538,7 @@
         // Idle timeout input
         const idleTimeoutInput     = document.getElementById('idle-timeout-input');
 
-        // â”€â”€ Tab Switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Tab Switching ──────────────────────────────────────
         const tabPengaturanBtn = document.getElementById('tab-pengaturan-btn');
         const tabProgressBtn   = document.getElementById('tab-progress-btn');
         const tabPengaturan    = document.getElementById('tab-pengaturan');
@@ -564,7 +564,7 @@
         // Auto-switch to Progress tab when processing starts
         // (will be called from startBtn click handler below)
 
-        // â”€â”€ Apply Settings Button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Apply Settings Button ──────────────────────────────
         const applySettingsBtn = document.getElementById('apply-settings-btn');
 
         async function applySettings() {
@@ -578,7 +578,7 @@
                     body: JSON.stringify({ idleTimeout })
                 });
                 if (res.ok) {
-                    applySettingsBtn.textContent = 'âœ“ Diterapkan';
+                    applySettingsBtn.textContent = '✓ Diterapkan';
                     applySettingsBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
                     setTimeout(() => {
                         applySettingsBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Apply';
@@ -588,7 +588,7 @@
                     throw new Error('Gagal');
                 }
             } catch (_) {
-                applySettingsBtn.textContent = 'âœ— Gagal';
+                applySettingsBtn.textContent = '✗ Gagal';
                 applySettingsBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
                 setTimeout(() => {
                     applySettingsBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Apply';
@@ -601,7 +601,7 @@
 
         applySettingsBtn.addEventListener('click', applySettings);
 
-        // â”€â”€ UI Toggles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── UI Toggles ─────────────────────────────────────────
 
         function updatePasswordModeUI() {
             const isFixed = pwFixedRadio.checked;
@@ -633,7 +633,7 @@
         uaExtensionRadio.addEventListener('change', updateUaModeUI);
         updateUaModeUI();
 
-        // â”€â”€ UA Fetching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── UA Fetching ────────────────────────────────────────
         viewUaBtn.addEventListener('click', async () => {
             try {
                 const res = await fetch('/api/uas');
@@ -649,7 +649,7 @@
         closeUaModal.addEventListener('click', () => uaModal.classList.remove('open'));
         uaModal.addEventListener('click', (e) => { if (e.target === uaModal) uaModal.classList.remove('open'); });
 
-        // â”€â”€ LocalStorage Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── LocalStorage Settings ──────────────────────────────
         function saveSettings() {
             const settings = {
                 alias: aliasInput.value,
@@ -746,7 +746,7 @@
         // Load settings on boot
         loadSettings();
 
-        // â”€â”€ History modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── History modal ─────────────────────────────────────
         let historyData = [];
         let historyCurrentPage = 1;
         const historyPageSize = 32;
@@ -919,7 +919,7 @@
             loadHistory();
         });
 
-        // â”€â”€ WebSocket Connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── WebSocket Connection ──────────────────────────────
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}`;
         let socket;
@@ -1055,9 +1055,9 @@
             let className = 'log-info';
             const lower = msg.toLowerCase();
 
-            if (lower.includes('error') || lower.includes('gagal') || lower.includes('âš ï¸')) {
+            if (lower.includes('error') || lower.includes('gagal') || lower.includes('⚠️')) {
                 className = 'log-err';
-            } else if (lower.includes('berhasil') || lower.includes('âœ“') || lower.includes('selesai')) {
+            } else if (lower.includes('berhasil') || lower.includes('✓') || lower.includes('selesai')) {
                 className = 'log-success';
             } else if (lower.includes('peringatan') || lower.includes('warning')) {
                 className = 'log-warn';
@@ -1072,9 +1072,9 @@
             let className = 'log-info';
             const lower = msg.toLowerCase();
 
-            if (lower.includes('error') || lower.includes('failed') || lower.includes('fail') || lower.includes('âš ï¸') || lower.includes('critical')) {
+            if (lower.includes('error') || lower.includes('failed') || lower.includes('fail') || lower.includes('⚠️') || lower.includes('critical')) {
                 className = 'log-err';
-            } else if (lower.includes('success') || lower.includes('connected') || lower.includes('âœ“') || lower.includes('active')) {
+            } else if (lower.includes('success') || lower.includes('connected') || lower.includes('✓') || lower.includes('active')) {
                 className = 'log-success';
             } else if (lower.includes('warning') || lower.includes('warn') || lower.includes('peringatan')) {
                 className = 'log-warn';
