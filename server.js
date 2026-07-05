@@ -389,7 +389,8 @@ wss.on('connection', (ws) => {
                             status: `Memproses email ke-${i+1} dari ${emails.length} (${email})`,
                             successCount,
                             failedCount,
-                            verifCount
+                            verifCount,
+                            success: false
                         });
 
                         let registrationSuccess = false;
