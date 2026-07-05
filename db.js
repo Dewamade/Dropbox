@@ -70,7 +70,30 @@ function getAllRegistrations() {
  * Clear all registration records
  */
 function clearRegistrations() {
-    saveDB({ registrations: [] });
+    saveDB({ registrations: [], settings: { idleTimeout: 180 } });
 }
 
-module.exports = { saveRegistration, getAllRegistrations, clearRegistrations };
+/**
+ * Get application settings
+ */
+function getSettings() {
+    const db = loadDB();
+    return db.settings || { idleTimeout: 180 };
+}
+
+/**
+ * Save application settings
+ */
+function saveSettings(settings) {
+    const db = loadDB();
+    db.settings = { ...db.settings, ...settings };
+    saveDB(db);
+}
+
+module.exports = {
+    saveRegistration,
+    getAllRegistrations,
+    clearRegistrations,
+    getSettings,
+    saveSettings
+};
