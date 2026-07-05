@@ -329,10 +329,10 @@
                                 <div class="form-group" id="connection-type-group">
                                     <label>Tipe Koneksi</label>
                                     <div class="check-group">
-                                        <label class="check-option"><input type="checkbox" id="use-direct" checked> 🌐 Direct</label>
-                                        <label class="check-option"><input type="checkbox" id="use-warp"   checked> 🔒 Warp+Socks5</label>
+                                        <label class="check-option"><input type="checkbox" id="use-direct"> 🌐 Direct</label>
+                                        <label class="check-option"><input type="checkbox" id="use-warp"> 🔒 Warp+Socks5</label>
                                         <label class="check-option"><input type="checkbox" id="use-socks5"> 🧦 Socks5 Only</label>
-                                        <label class="check-option"><input type="checkbox" id="use-psiphon"> 🛡 Psiphon</label>
+                                        <label class="check-option"><input type="checkbox" id="use-psiphon" checked> 🛡 Psiphon</label>
                                     </div>
                                 </div>
 
@@ -353,7 +353,7 @@
                                 <div class="settings-row">
                                     <div class="form-group">
                                         <label for="idle-timeout-input">Idle Timeout (detik)</label>
-                                        <input type="number" id="idle-timeout-input" value="180" min="30" max="3600">
+                                        <input type="number" id="idle-timeout-input" value="600" min="30" max="3600">
                                     </div>
                                     <div class="form-group" style="justify-content:flex-end;">
                                         <label>&nbsp;</label>
@@ -568,7 +568,7 @@
         const applySettingsBtn = document.getElementById('apply-settings-btn');
 
         async function applySettings() {
-            const idleTimeout = parseInt(idleTimeoutInput.value) || 180;
+            const idleTimeout = parseInt(idleTimeoutInput.value) || 600;
             try {
                 applySettingsBtn.disabled = true;
                 applySettingsBtn.textContent = 'Menerapkan...';
