@@ -11,7 +11,7 @@ function loadDB() {
     const defaults = {
         registrations: [],
         settings: {
-            idleTimeout: 180
+            idleTimeout: 600
         }
     };
     if (!fs.existsSync(DB_PATH)) {
@@ -70,7 +70,7 @@ function getAllRegistrations() {
  * Clear all registration records
  */
 function clearRegistrations() {
-    saveDB({ registrations: [], settings: { idleTimeout: 180 } });
+    saveDB({ registrations: [], settings: { idleTimeout: 600 } });
 }
 
 /**
@@ -78,7 +78,7 @@ function clearRegistrations() {
  */
 function getSettings() {
     const db = loadDB();
-    return db.settings || { idleTimeout: 180 };
+    return db.settings || { idleTimeout: 600 };
 }
 
 /**

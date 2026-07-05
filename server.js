@@ -60,7 +60,7 @@ let sessionExpiryTime = 0;
 
 // Load persisted settings
 const savedSettings = getSettings();
-let idleDurationMs = (savedSettings.idleTimeout || 180) * 1000; // Configurable idle timeout (default: 3 minutes)
+let idleDurationMs = (savedSettings.idleTimeout || 600) * 1000; // Configurable idle timeout (default: 10 minutes)
 
 function setWorkerStatus(newStatus) {
     if (workerStatus === newStatus) return;

@@ -216,7 +216,7 @@
                                     <label>Sumber Email</label>
                                     <div class="radio-group">
                                         <label class="radio-option">
-                                            <input type="radio" name="email-mode" value="manual" id="em-manual" checked>
+                                            <input type="radio" name="email-mode" value="auto" id="em-auto" checked>
                                             📝 Manual Input
                                         </label>
                                         <label class="radio-option">
@@ -233,7 +233,7 @@
                                     <div class="settings-row">
                                         <div class="form-group">
                                             <label for="auto-domain">Nama Domain</label>
-                                            <input type="text" id="auto-domain" placeholder="kywa.uk" value="kywa.uk">
+                                            <input type="text" id="auto-domain" placeholder="gudangpemaron.my.id" value="gudangpemaron.my.id">
                                         </div>
                                         <div class="form-group">
                                             <label for="auto-count">Jumlah Email</label>
@@ -255,12 +255,12 @@
                                     <label>Mode Password</label>
                                     <div class="radio-group">
                                         <label class="radio-option">
-                                            <input type="radio" name="password-mode" value="random" id="pw-random" checked>
-                                            🎲 Acak (Random)
+                                            <input type="radio" name="password-mode" value="fixed" id="pw-fixed" checked>
+                                            🔒 Tetap (Fixed)
                                         </label>
                                         <label class="radio-option">
-                                            <input type="radio" name="password-mode" value="fixed" id="pw-fixed">
-                                            🔒 Tetap (Fixed)
+                                            <input type="radio" name="password-mode" value="random" id="pw-random">
+                                            🎲 Acak (Random)
                                         </label>
                                     </div>
                                     <div class="fixed-password-wrap" id="fixed-password-wrap">
@@ -285,11 +285,11 @@
                                     </div>
                                     <div class="form-group">
                                         <label for="global-retry">Global Retry</label>
-                                        <input type="number" id="global-retry" value="3" min="0" max="10">
+                                        <input type="number" id="global-retry" value="2" min="0" max="10">
                                     </div>
                                     <div class="form-group">
                                         <label for="daemon-timeout">Daemon Timeout (dtk)</label>
-                                        <input type="number" id="daemon-timeout" value="120" min="30" max="600">
+                                        <input type="number" id="daemon-timeout" value="30" min="30" max="600">
                                     </div>
                                 </div>
                             </div>
