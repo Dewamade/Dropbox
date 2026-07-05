@@ -1,0 +1,261 @@
+# Dropbox Bulk Signup Automation — Project Overview
+
+## 📌 One-Liner
+A Node.js web dashboard that automates mass registration of Dropbox accounts using Playwright (Firefox), with multi-tier IP rotation (Direct → Cloudflare Warp → Psiphon → Socks5), browser fingerprint anti-detection, and automatic Dropbox daemon linking.
+
+---
+
+## 🏗️ Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    Browser UI                        │
+│              public/index.html + index.css           │
+│                  (React-free vanilla JS)             │
+├──────────────────────┬───────────────────────────────┤
+│   WebSocket Client   │   REST API Endpoints          │
+│   (real-time sync)   │   /api/history,               │
+│                      │   /api/uas,                   │
+│                      │   /api/worker-stat,           │
+│                      │   /api/settings/apply          │
+├──────────────────────┴───────────────────────────────┤
+│                  server.js                            │
+│  Express HTTP + WebSocket (ws) server                │
+│  - Orchestrates batch registration                   │
+│  - Broadcasts progress/logs to all connected clients │
+│  - Manages worker idle/processing lifecycle          │
+│  - Delegates per-email work to register.js           │
+├──────────────────────┬───────────────────────────────┤
+│   register.js        │   db.js                       │
+│  Playwright Firefox  │  JSON-file "database"         │
+│  automation engine   │  (history.json)               │
+│  - Proxy/VPN mgmt    │  - Registration records       │
+│  - Browser fingerprint│ - Application settings        │
+│    anti-detection     │                               │
+│  - Dropbox daemon    │                               │
+│    linking           │                               │
+├──────────────────────┴───────────────────────────────┤
+│   fingerprint-check.js                                │
+│  Diagnostic tool for inspecting browser fingerprints  │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📁 File Inventory
+
+| File | Purpose | Key Responsibilities |
+|------|---------|---------------------|
+| `server.js` | Backend server | Express + WebSocket orchestration, REST API, worker status management, batch loop controller, console log redirection to UI |
+| `register.js` | Automation engine | Per-email Playwright Firefox automation, proxy/VPN lifecycle (Warp/Psiphon/Socks5/Direct), fingerprint evasion, form filling, Dropbox daemon spawning & CLI linking |
+| `db.js` | Data layer | JSON-file persistence for registration records and app settings (`history.json`) |
+| `fingerprint-check.js` | Diagnostic tool | Opens a browser, extracts 20+ fingerprint fields (navigator.webdriver, canvas, WebGL, plugins, etc.), reports risks against bot detectors |
+| `public/index.html` | Frontend UI | Tabbed dashboard: Progress view (ring chart, stats, console log) + Settings view (target, email, password, timeout/retry, proxy/VPN config) |
+| `public/index.css` | Styling | Glassmorphism dark theme with CSS custom properties, responsive layout |
+| `psiphon.config` | Psiphon VPN config | JSON config for psiphon-tunnel-core binary (region selection, etc.) |
+| `setup.sh` | One-command installer | Auto-installs npm deps, Playwright Firefox, downloads Dropbox daemon & Psiphon binary |
+
+---
+
+## 🔄 Registration Flow (Step-by-Step)
+
+```
+User clicks "Mulai Pendaftaran" in UI
+       │
+       ▼
+server.js receives WebSocket message with config
+       │
+       ├── Generate or parse email list
+       ├── Pre-fetch user-agent rotation pool
+       │
+       ▼  ── For each email (batch loop) ───────────────
+       │
+       │   Phase 1: Direct Connection (no proxy)
+       │     └── registerSingleEmail('direct', ...)
+       │         └── runBrowserLoop() with maxAttempts retries
+       │
+       │   Phase 2: Cloudflare Warp + Socks5
+       │     ├── warp-ctl stop/start (with retry loop)
+       │     └── registerSingleEmail('warp', ...)
+       │
+       │   Phase 3: Psiphon VPN (random region each attempt)
+       │     ├── Launch psiphon-tunnel-core binary
+       │     ├── Wait for port 3080 + ConnectedServerRegion
+       │     └── registerSingleEmail('psiphon', ...)
+       │
+       │   Phase 4: Custom Socks5 Proxy
+       │     └── registerSingleEmail('socks5', proxyHost)
+       │
+       ▼  ── After all phases ──────────────────────────
+       │
+       ├── If success → saveRegistration() to db.js
+       ├── If failed → mark as 'failed' in db.js
+       ├── Progress/stats broadcast via WebSocket
+       │
+       ▼
+   All emails processed → Worker status = FINISH
+   Idle timer starts (default 180s)
+```
+
+---
+
+## 🌐 Proxy / IP Rotation Strategy
+
+The system uses a **phased approach** — each phase tries to register the current email with a different network identity:
+
+| Phase | Type | Local Port | How It Works |
+|-------|------|-----------|--------------|
+| 1 | Direct | N/A | No proxy — uses server's native IP |
+| 2 | Warp | `127.0.0.1:8086` | Cloudflare Warp via `warp-ctl` CLI; rotates to a new IP on each restart |
+| 3 | Psiphon | `127.0.0.1:3080` | psiphon-tunnel-core binary with random EgressRegion (AT, BE, CA, CH, CZ, DE, DK, ES, FI, FR, GB, IE, IN, IT, JP, LT, NL, NO, PL, RO, RS, SE, SG, US) |
+| 4 | Socks5 | User-provided | Custom SOCKS5 proxy host provided by user |
+
+Each phase is independent — if one IP gets rate-limited ("Too many attempts"), the system automatically moves to the next phase with a fresh IP.
+
+---
+
+## 🎭 Anti-Detection / Fingerprint Evasion
+
+| Technique | Implementation |
+|-----------|---------------|
+| **Firefox browser** | Playwright Firefox (harder to detect than Chromium headless) |
+| **navigator.webdriver** | `Object.defineProperty(navigator, 'webdriver', { get: () => undefined })` via `addInitScript` |
+| **Plugin spoofing** | Mock 4 PDF viewer plugins + mimeTypes array |
+| **Permissions API override** | Intercept `navigator.permissions.query` for notifications |
+| **User-Agent rotation** | Rotates across desktop/mobile/tablet UAs from `top-user-agents` package; device type selection configurable |
+| **Fresh browser context per email** | Each registration gets a new Firefox context with clean cookies/cache |
+| **Profile data cleaning** | Deletes cookies.sqlite, cache2, sessionstore, webappsstore.sqlite etc. between runs while preserving extension settings |
+| **Timezone spoofing** | Context launched with `timezoneId: 'America/New_York'` |
+| **Locale setting** | `locale: 'en-US'` on context options |
+
+---
+
+## 💾 Data Model (history.json)
+
+```jsonc
+{
+  "registrations": [
+    {
+      "id": 1720185600000,       // timestamp-based ID
+      "email": "john.doe42@kywa.uk",
+      "password": "Aa12345678*",
+      "status": "success",        // "success" | "failed" | "VERIF"
+      "alias": "Worker-01",       // worker label
+      "ip": "203.0.113.42",       // public IP used
+      "ua": "Mozilla/5.0 ...",    // user agent string
+      "timeouts": 0,              // timeout count for this email
+      "errors": 0,                // error count for this email
+      "timestamp": "2026-07-05T12:30:00.000Z"
+    }
+  ],
+  "settings": {
+    "idleTimeout": 180            // seconds before worker goes IDLE
+  }
+}
+```
+
+---
+
+## ⚙️ Configuration Options (UI Settings)
+
+| Category | Setting | Default | Description |
+|----------|---------|---------|-------------|
+| **Target** | Alias Worker | `Alias1` | Label for this batch run |
+| **Target** | Dropbox URL | `https://www.dropbox.com/register` | Registration page URL (supports referral links) |
+| **Email** | Source Mode | `manual` | `manual` = semicolon-separated list; `auto` = generated from domain |
+| **Email** | Domain | `kywa.uk` | Domain for auto-generated emails |
+| **Email** | Count | `10` | Number of emails to generate (auto mode) |
+| **Password** | Mode | `random` | `random` = 12-char complex; `fixed` = user-provided |
+| **Timeout** | Global Timeout | `30s` | Max seconds per registration step |
+| **Timeout** | Global Retry | `3` | Max browser retry attempts per phase |
+| **Timeout** | Daemon Timeout | `120s` | Max seconds to wait for Dropbox CLI link URL |
+| **Worker** | Idle Timeout | `180s` | Seconds of inactivity before worker goes IDLE |
+
+---
+
+## 🔧 Dependencies (package.json)
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `express` | ^5.2.1 | HTTP server + static file serving |
+| `playwright` | ^1.61.0 | Browser automation (Firefox only) |
+| `@playwright/test` | ^1.61.0 | Playwright test framework (dev dependency) |
+| `ws` | ^8.21.0 | WebSocket server for real-time UI updates |
+| `top-user-agents` | ^2.1.118 | Large database of realistic user-agent strings |
+| `proxifly` | ^3.0.1 | Proxy management utility |
+| `socks-proxy-agent` | ^10.1.0 | SOCKS5 proxy support for HTTP requests |
+
+---
+
+## 🖥️ External Dependencies (Not in npm)
+
+These are downloaded/installed via `setup.sh` or manually:
+
+| Binary / Tool | Purpose | Platform |
+|---------------|---------|----------|
+| **Firefox** (via Playwright) | Browser automation target | Cross-platform |
+| **Dropbox Daemon** (`dropbox-lnx.x86_64`) | Device linking after registration | Linux x86_64 / Android (box64) |
+| **Psiphon Tunnel Core** (`psiphon-tunnel-core-x86_64`) | VPN proxy with region rotation | Linux x86_64 |
+| **warp-ctl** | Cloudflare Warp CLI for IP rotation | Linux |
+| **Docker** (optional) | Runs Dropbox daemon in isolated container on Ubuntu x86_64 | Linux |
+| **box64** (Android/Termux) | x86_64 emulation layer for running Dropbox daemon on ARM Android | Android |
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# One-command setup (Linux/Android)
+curl -sSL https://raw.githubusercontent.com/jacksatriadi-jpg/Dropbox/webui/setup.sh | bash
+cd Dropbox
+
+# Or manual setup
+npm install
+npx playwright install firefox
+
+# Run the server
+node server.js
+
+# Open in browser
+# http://localhost:3000
+```
+
+---
+
+## 🧪 Fingerprint Diagnostic Tool
+
+```bash
+node fingerprint-check.js
+```
+
+Opens a non-headless Firefox and navigates to `bot.sannysoft.com` for visual bot-detection testing. Prints 20+ fingerprint fields to console with risk analysis (critical issues vs warnings).
+
+---
+
+## 🔑 Key Design Patterns & Notes
+
+1. **Phased proxy rotation** — Each email is attempted through Direct → Warp → Psiphon → Socks5 sequentially, maximizing chance of success before moving to the next email.
+2. **Browser kill-and-restart on failure** — On any hard error (`BROWSER_KILL_REQUIRED`), all Firefox processes are killed via `pkill` and a fresh context is launched for the retry. This ensures clean state.
+3. **WebSocket-driven real-time UI** — All progress, logs, stats, and worker status updates flow through WebSocket broadcasts from server.js to connected clients.
+4. **Console.log hijacking** — `console.log/error/warn` are overridden in `server.js` to also broadcast messages via WebSocket (`safeSend({ type: 'log', ... })`). This means even code in `register.js` that uses plain `console.log` appears in the UI console.
+5. **Idle timer lifecycle** — Worker transitions between BOOT → PROCESSING → FINISH → IDLE states with configurable timeout. Clients receive status updates and can extend sessions.
+6. **Dropbox daemon linking** — After successful registration, the system spawns `.dropbox-dist/dropboxd`, scans its output for a `cli_link` URL, opens it in the browser to complete device linking, then waits for "This computer is now linked to Dropbox" confirmation.
+7. **Auto email generation** — Generates names procedurally using syllable-based name generation (consonant-vowel-consonad patterns), producing realistic first.last + random digits emails like `jakesmith42@kywa.uk`.
+
+---
+
+## 🐧 Supported Platforms
+
+| Platform | Dropbox Daemon Execution | Notes |
+|----------|------------------------|-------|
+| **Linux x86_64 (native)** | Direct via bash/box64 | Standard execution |
+| **Ubuntu x86_64** | Docker container (`ubuntu:24.04`) | Isolated, safer daemon execution |
+| **Android (Termux)** | box64 emulation | Requires `setup.sh` headless config |
+
+---
+
+## 📝 Language Notes
+
+- All user-facing strings and console messages are in **Indonesian** (Bahasa Indonesia).
+- Variable names and code comments mix English and Indonesian.
+- The project is designed for bulk Dropbox account registration with anti-detection measures.
