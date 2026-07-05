@@ -8,13 +8,21 @@ const fs = require('fs');
 const DB_PATH = path.join(__dirname, 'history.json');
 
 function loadDB() {
+    const defaults = {
+        registrations: [],
+        settings: {
+            idleTimeout: 180
+        }
+    };
     if (!fs.existsSync(DB_PATH)) {
-        fs.writeFileSync(DB_PATH, JSON.stringify({ registrations: [] }, null, 2));
+        fs.writeFileSync(DB_PATH, JSON.stringify(defaults, null, 2));
+        return defaults;
     }
     try {
-        return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+        const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+        return { ...defaults, ...data };
     } catch (e) {
-        return { registrations: [] };
+        return defaults;
     }
 }
 

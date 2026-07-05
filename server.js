@@ -2,8 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { registerSingleEmail, getRandomName } = require('./register.js');
-const { saveRegistration, getAllRegistrations, clearRegistrations } = require('./db.js');
+const { saveRegistration, getAllRegistrations, clearRegistrations, getSettings, saveSettings } = require('./db.js');
 
 const app = express();
 const server = http.createServer(app);
@@ -58,7 +57,10 @@ let workerStatus = 'BOOT';
 let sessionTimeout = null;
 let warningTimeout = null;
 let sessionExpiryTime = 0;
-let idleDurationMs = 180000; // Configurable idle timeout (default: 3 minutes)
+
+// Load persisted settings
+const savedSettings = getSettings();
+let idleDurationMs = (savedSettings.idleTimeout || 180) * 1000; // Configurable idle timeout (default: 3 minutes)
 
 function setWorkerStatus(newStatus) {
     if (workerStatus === newStatus) return;
@@ -145,7 +147,9 @@ app.post('/api/settings/apply', (req, res) => {
         const secs = parseInt(idleTimeout);
         if (!isNaN(secs) && secs >= 30) {
             idleDurationMs = secs * 1000;
-            console.log(`[Settings] Idle timeout diperbarui ke ${secs} detik.`);
+            console.log(`[Settings] Idle timeout diperbarui ke ${secs} detik.`);            
+            // Persist settings to file
+            saveSettings({ idleTimeout: secs });
             // If an idle timer is currently running, restart it with new duration
             if (sessionTimeout && (workerStatus === 'BOOT' || workerStatus === 'FINISH')) {
                 startIdleTimer();
