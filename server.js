@@ -509,6 +509,18 @@ wss.on('connection', (ws) => {
                                         }
                                         console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
                                         safeSend(ws, { type: 'email_success', email: email });
+                                        // Update progress ring for this successful email
+                                        const pct = Math.round((successCount / emails.length) * 100);
+                                        safeSend(ws, {
+                                            type: 'progress',
+                                            current: successCount + 1,
+                                            total: emails.length,
+                                            status: `Berhasil: ${email}`,
+                                            successCount,
+                                            failedCount,
+                                            verifCount,
+                                            success: true
+                                        });
                                         try {
                                             saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua, emailTimeouts, emailErrors);
                                         } catch (dbErr) {
@@ -521,6 +533,18 @@ wss.on('connection', (ws) => {
                                         const usedPwd = passwordMode === 'fixed' ? fixedPassword : '(random)';
                                         console.log(`✓ Pendaftaran sukses untuk ${email}`);
                                         safeSend(ws, { type: 'email_success', email: email });
+                                        // Update progress ring for this successful email (backward compat)
+                                        const pct = Math.round((successCount / emails.length) * 100);
+                                        safeSend(ws, {
+                                            type: 'progress',
+                                            current: successCount + 1,
+                                            total: emails.length,
+                                            status: `Berhasil: ${email}`,
+                                            successCount,
+                                            failedCount,
+                                            verifCount,
+                                            success: true
+                                        });
                                         try { saveRegistration(email, usedPwd, 'success', alias, '', '', emailTimeouts, emailErrors); } catch (_) {}
                                     } else {
                                         console.log(`⚠️ Pendaftaran ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
