@@ -3,6 +3,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const { saveRegistration, getAllRegistrations, clearRegistrations, getSettings, saveSettings } = require('./db.js');
+const { registerSingleEmail: _registerSingleEmail } = require('./register.js');
 
 // ── Random name generator (syllable-based) ──────────────────────────────────
 function getRandomName() {
@@ -28,6 +29,9 @@ function getRandomName() {
 
     return { first: makeName(), last: makeName() };
 }
+
+// Re-export getRandomName for register.js if needed
+global.getRandomName = getRandomName;
 
 const app = express();
 const server = http.createServer(app);
@@ -488,7 +492,7 @@ wss.on('connection', (ws) => {
 
                                 try {
                                     currentAbortController = { shouldStop: false, abort: null };
-                                    const result = await registerSingleEmail(
+                                    const result = await _registerSingleEmail(
                                         url, email, proxyType, proxyHost, false,
                                         currentAbortController, useHeadless,
                                         passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry, uaMode, selectedUaString, selectedDeviceType
