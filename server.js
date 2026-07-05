@@ -4,6 +4,31 @@ const WebSocket = require('ws');
 const path = require('path');
 const { saveRegistration, getAllRegistrations, clearRegistrations, getSettings, saveSettings } = require('./db.js');
 
+// ── Random name generator (syllable-based) ──────────────────────────────────
+function getRandomName() {
+    const startConsonants = ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'R', 'S', 'T', 'W', 'Y', 'Br', 'Cl', 'Dr', 'Fr', 'Gr', 'Pr', 'Sh', 'St', 'Tr'];
+    const midVowels = ['a', 'e', 'i', 'o', 'u', 'ay', 'ee', 'ea', 'ie', 'oa', 'y'];
+    const endConsonants = ['d', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'ck', 'ld', 'nd', 'ng', 'nt', 'th'];
+
+    const makeSyllable = () => {
+        const onset = startConsonants[Math.floor(Math.random() * startConsonants.length)];
+        const vowel = midVowels[Math.floor(Math.random() * midVowels.length)];
+        const coda = Math.random() > 0.25 ? endConsonants[Math.floor(Math.random() * endConsonants.length)] : '';
+        return onset + vowel + coda;
+    };
+
+    const makeName = () => {
+        let name = makeSyllable();
+        if (Math.random() > 0.5) {
+            const suffix = ['on', 'an', 'en', 'er', 'et', 'ie', 'y', 'al', 'us', 'a', 'is'][Math.floor(Math.random() * 11)];
+            name = name.substring(0, name.length - (name.length > 4 ? 1 : 0)) + suffix;
+        }
+        return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+    };
+
+    return { first: makeName(), last: makeName() };
+}
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
