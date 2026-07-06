@@ -94,6 +94,8 @@ module.exports = {
     saveRegistration,
     getAllRegistrations,
     clearRegistrations,
-    getSettings: getSettingsFull,
-    saveSettings: saveSettingsFull
+    getSettingsFull,
+    saveSettingsFull,
+    getSettings: getSettingsFull,   // backward compat alias
+    saveSettings: saveSettingsFull  // backward compat alias
 };
