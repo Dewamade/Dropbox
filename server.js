@@ -182,27 +182,38 @@ app.post('/api/worker-stat/idle', (_req, res) => {
 app.post('/api/settings/apply', (req, res) => {
     const body = req.body || {};
     
-    // Save all settings to file
-    const newSettings = {
-        idleTimeout: parseInt(body.idleTimeout) || 600,
-        globalTimeout: parseInt(body.globalTimeout) || 30000,
-        daemonTimeout: parseInt(body.daemonTimeout) || 240000,
-        useHeadless: body.useHeadless !== false,
-        socks5Host: body.socks5Host || '',
-        uaMode: body.uaMode || 'extension',
-        deviceTypes: JSON.stringify(body.deviceTypes || []),
-        debugProxy: !!body.debugProxy
+    // 1. Get current settings to use as base (preventing data loss)
+    const currentSettings = getSettingsFull();
+    
+    // 2. Create the merged settings object
+    const mergedSettings = {
+        ...currentSettings,
+        idleTimeout: typeof body.idleTimeout === 'number' ? body.idleTimeout : (parseInt(body.idleTimeout) || currentSettings.idleTimeout || 600),
+        globalTimeout: typeof body.globalTimeout === 'number' ? body.globalTimeout : (parseInt(body.globalTimeout) || currentSettings.globalTimeout || 30000),
+        daemonTimeout: typeof body.daemonTimeout === 'number' ? body.daemonTimeout : (parseInt(body.daemonTimeout) || currentSettings.daemonTimeout || 240000),
+        useHeadless: typeof body.useHeadless === 'boolean' ? body.useHeadless : (body.useHeadless !== undefined ? !!body.useHeadless : currentSettings.useHeadless),
+        socks5Host: body.socks5Host !== undefined ? body.socks5Host : currentSettings.socks5Host,
+        uaMode: body.uaMode || currentSettings.uaMode,
+        deviceTypes: body.deviceTypes ? (typeof body.deviceTypes === 'string' ? body.deviceTypes : JSON.stringify(body.deviceTypes)) : currentSettings.deviceTypes,
+        debugProxy: typeof body.debugProxy === 'boolean' ? body.debugProxy : (body.debugProxy !== undefined ? !!body.debugProxy : currentSettings.debugProxy)
     };
-    saveSettingsFull(newSettings);
 
-    // Update in-memory application state
-    globalTimeout = newSettings.globalTimeout;
-    daemonTimeout = newSettings.daemonTimeout;
-    useHeadless = newSettings.useHeadless;
-    socks5Host = newSettings.socks5Host;
-    uaMode = newSettings.uaMode;
-    deviceTypes = JSON.parse(newSettings.deviceTypes);
-    debugProxy = newSettings.debugProxy;
+    // Ensure deviceTypes is stored as a string in the JSON file
+    if (typeof mergedSettings.deviceTypes !== 'string') {
+        mergedSettings.deviceTypes = JSON.stringify(mergedSettings.deviceTypes);
+    }
+
+    // 3. Save the merged settings to file
+    saveSettingsFull(mergedSettings);
+
+    // 4. Update in-memory application state (crucial for running processes)
+    globalTimeout = mergedSettings.globalTimeout;
+    daemonTimeout = mergedSettings.daemonTimeout;
+    useHeadless = mergedSettings.useHeadless;
+    socks5Host = mergedSettings.socks5Host;
+    uaMode = mergedSettings.uaMode;
+    deviceTypes = JSON.parse(mergedSettings.deviceTypes);
+    debugProxy = mergedSettings.debugProxy;
     
     // Apply idle timeout (restart timer if needed)
     if (body.idleTimeout !== undefined) {
@@ -210,7 +221,7 @@ app.post('/api/settings/apply', (req, res) => {
         if (!isNaN(secs) && secs >= 30) {
             idleDurationMs = secs * 1000;
             console.log(`[Settings] Idle timeout diperbarui ke ${secs} detik.`);            
-            // If an idle timer is currently running, restart it with new duration
+            // Restart idle timer if it's currently active
             if (sessionTimeout && (workerStatus === 'BOOT' || workerStatus === 'FINISH')) {
                 startIdleTimer();
             }
