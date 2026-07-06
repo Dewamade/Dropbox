@@ -87,9 +87,18 @@ let sessionTimeout = null;
 let warningTimeout = null;
 let sessionExpiryTime = 0;
 
-// Load persisted settings
-const savedSettings = getSettings();
+// Load persisted settings (full)
+const savedSettings = getSettingsFull();
 let idleDurationMs = (savedSettings.idleTimeout || 600) * 1000; // Configurable idle timeout (default: 10 minutes)
+
+// Other persisted settings
+let globalTimeout = savedSettings.globalTimeout || 30000;
+let daemonTimeout = savedSettings.daemonTimeout || 240000;
+let useHeadless = savedSettings.useHeadless !== false;
+let socks5Host = savedSettings.socks5Host || '';
+let uaMode = savedSettings.uaMode || 'extension';
+let deviceTypes = savedSettings.deviceTypes ? JSON.parse(savedSettings.deviceTypes) : [];
+let debugProxy = savedSettings.debugProxy || false;
 
 function setWorkerStatus(newStatus) {
     if (workerStatus === newStatus) return;
@@ -171,21 +180,34 @@ app.post('/api/worker-stat/idle', (_req, res) => {
 });
 
 app.post('/api/settings/apply', (req, res) => {
-    const { idleTimeout } = req.body || {};
-    if (idleTimeout !== undefined) {
-        const secs = parseInt(idleTimeout);
+    const body = req.body || {};
+    
+    // Save all settings to file
+    saveSettingsFull({
+        idleTimeout: parseInt(body.idleTimeout),
+        globalTimeout: parseInt(body.globalTimeout),
+        daemonTimeout: parseInt(body.daemonTimeout),
+        useHeadless: body.useHeadless !== false,
+        socks5Host: body.socks5Host || '',
+        uaMode: body.uaMode || 'extension',
+        deviceTypes: JSON.stringify(body.deviceTypes || []),
+        debugProxy: !!body.debugProxy
+    });
+
+    // Apply idle timeout (restart timer if needed)
+    if (body.idleTimeout !== undefined) {
+        const secs = parseInt(body.idleTimeout);
         if (!isNaN(secs) && secs >= 30) {
             idleDurationMs = secs * 1000;
             console.log(`[Settings] Idle timeout diperbarui ke ${secs} detik.`);            
-            // Persist settings to file
-            saveSettings({ idleTimeout: secs });
             // If an idle timer is currently running, restart it with new duration
             if (sessionTimeout && (workerStatus === 'BOOT' || workerStatus === 'FINISH')) {
                 startIdleTimer();
             }
         }
     }
-    res.json({ ok: true, idleDurationMs });
+
+    res.json({ ok: true });
 });
 
 function safeSend(socketOrPayload, maybePayload) {
