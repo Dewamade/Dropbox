@@ -1145,7 +1145,8 @@
                 setFormDisabled(false);
             } else if (status === 'stopped') {
                 statusBadge.className = 'status-badge status-idle';
-                statusText.innerText = 'Dihentikan';
+                statusText.innerText = 'Terhenti';
+                progressDetail.innerText = 'Terhenti';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
                 setFormDisabled(false);
@@ -1165,6 +1166,7 @@
                 if (status === 'BOOT')       pill.className = 'pill-boot';
                 else if (status === 'PROCESSING') pill.className = 'pill-processing';
                 else if (status === 'FINISH')     pill.className = 'pill-finish';
+                else if (status === 'STOPPED')    pill.className = 'pill-stopped';
                 else                              pill.className = 'pill-idle';
             }
 
@@ -1185,6 +1187,12 @@
                 setFormDisabled(false);
             } else if (status === 'IDLE') {
                 statusBadge.classList.add('status-idle'); // Gray
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                setFormDisabled(false);
+            } else if (status === 'STOPPED') {
+                statusBadge.className = 'status-badge status-idle';
+                progressDetail.innerText = 'Terhenti';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
                 setFormDisabled(false);
