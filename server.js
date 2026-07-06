@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { saveRegistration, getAllRegistrations, clearRegistrations, getSettings, saveSettings } = require('./db.js');
+const { saveRegistration, getAllRegistrations, clearRegistrations, getSettingsFull, saveSettingsFull } = require('./db.js');
 const { registerSingleEmail: _registerSingleEmail } = require('./register.js');
 
 // ── Random name generator (syllable-based) ──────────────────────────────────
