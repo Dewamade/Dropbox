@@ -575,7 +575,32 @@
                 const res = await fetch('/api/settings/apply', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ idleTimeout })
+                    body: JSON.stringify({ 
+                        idleTimeout,
+                        globalTimeout: parseInt(globalTimeoutInput.value) || 30,
+                        daemonTimeout: parseInt(daemonTimeoutInput.value) || 30,
+                        useHeadless: false,
+                        socks5Host: socks5HostInput.value,
+                        uaMode: uaGenerateRadio.checked ? 'generate' : 'extension',
+                        deviceTypes: {
+                            desktop: document.getElementById('dt-desktop').checked,
+                            mobile: document.getElementById('dt-mobile').checked,
+                            tablet: document.getElementById('dt-tablet').checked
+                        },
+                        debugProxy: debugProxyCheckbox.checked,
+                        aliasWorker: aliasInput.value,
+                        urlDropbox: dropboxUrlInput.value,
+                        emailSource: emAutoRadio.checked ? 'auto' : 'manual',
+                        domainEmail: autoDomainInput.value,
+                        count: parseInt(autoCountInput.value) || 10,
+                        passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
+                        fixedPassword: fixedPasswordInput.value,
+                        globalRetry: parseInt(globalRetryInput.value) || 2,
+                        useDirect: useDirectCheckbox.checked,
+                        useWarp: useWarpCheckbox.checked,
+                        useSocks5: useSocks5Checkbox.checked,
+                        usePsiphon: usePsiphonCheckbox.checked
+                    })
                 });
                 if (res.ok) {
                     applySettingsBtn.textContent = '✓ Diterapkan';
@@ -678,59 +703,68 @@
             localStorage.setItem('dropbox_signup_settings', JSON.stringify(settings));
         }
 
-        function loadSettings() {
+        async function loadSettings() {
+            let settings = null;
             try {
-                const raw = localStorage.getItem('dropbox_signup_settings');
-                if (raw) {
-                    const settings = JSON.parse(raw);
-                    if (settings.alias) aliasInput.value = settings.alias;
-                    if (settings.url) dropboxUrlInput.value = settings.url;
-                    if (settings.emails) emailsListInput.value = settings.emails;
-                    if (settings.domain) autoDomainInput.value = settings.domain;
-                    if (settings.count) autoCountInput.value = settings.count;
-                    if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
-                    if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
-                    if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
-                    if (settings.uaMode) {
-                        if (settings.uaMode === 'generate') uaGenerateRadio.checked = true;
-                        else uaExtensionRadio.checked = true;
-                    }
-                    if (settings.dtDesktop !== undefined) document.getElementById('dt-desktop').checked = settings.dtDesktop;
-                    if (settings.dtMobile !== undefined) document.getElementById('dt-mobile').checked = settings.dtMobile;
-                    if (settings.dtTablet !== undefined) document.getElementById('dt-tablet').checked = settings.dtTablet;
-                    
-                    updateUaModeUI();
-                    
-                    if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
-                    if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
-                    if (settings.useSocks5 !== undefined) useSocks5Checkbox.checked = settings.useSocks5;
-                    if (settings.usePsiphon !== undefined) usePsiphonCheckbox.checked = settings.usePsiphon;
-                    if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
-                    
-                    if (settings.debugProxy !== undefined) {
-                        debugProxyCheckbox.checked = settings.debugProxy;
-                    }
-                    vpnLogContainer.style.display = debugProxyCheckbox.checked ? 'flex' : 'none';
-                    
-                    if (settings.passwordMode === 'fixed') {
-                        pwFixedRadio.checked = true;
-                    } else {
-                        pwRandomRadio.checked = true;
-                    }
-                    if (settings.fixedPassword) fixedPasswordInput.value = settings.fixedPassword;
-
-                    if (settings.emailMode === 'auto') {
-                        emAutoRadio.checked = true;
-                    } else {
-                        emManualRadio.checked = true;
-                    }
-
-                    if (settings.idleTimeout) idleTimeoutInput.value = settings.idleTimeout;
-                    updatePasswordModeUI();
-                    updateEmailModeUI();
-                    socks5InputGroup.style.display = useSocks5Checkbox.checked ? 'flex' : 'none';
+                const res = await fetch('/api/settings');
+                if (res.ok) settings = await res.json();
+            } catch(e) {}
+            
+            if (!settings) {
+                try {
+                    const raw = localStorage.getItem('dropbox_signup_settings');
+                    if (raw) settings = JSON.parse(raw);
+                } catch(e) {}
+            }
+            
+            if (settings) {
+                if (settings.aliasWorker) aliasInput.value = settings.aliasWorker;
+                if (settings.urlDropbox) dropboxUrlInput.value = settings.urlDropbox;
+                if (settings.emailSource === 'manual' && settings.domainEmail) emailsListInput.value = settings.domainEmail;
+                if (settings.domainEmail && settings.emailSource !== 'manual') autoDomainInput.value = settings.domainEmail;
+                if (settings.count) autoCountInput.value = settings.count;
+                if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
+                if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
+                if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
+                if (settings.uaMode) {
+                    if (settings.uaMode === 'generate') uaGenerateRadio.checked = true;
+                    else uaExtensionRadio.checked = true;
                 }
-            } catch (e) {}
+                if (settings.dtDesktop !== undefined) document.getElementById('dt-desktop').checked = settings.dtDesktop;
+                if (settings.dtMobile !== undefined) document.getElementById('dt-mobile').checked = settings.dtMobile;
+                if (settings.dtTablet !== undefined) document.getElementById('dt-tablet').checked = settings.dtTablet;
+                
+                updateUaModeUI();
+                
+                if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
+                if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
+                if (settings.useSocks5 !== undefined) useSocks5Checkbox.checked = settings.useSocks5;
+                if (settings.usePsiphon !== undefined) usePsiphonCheckbox.checked = settings.usePsiphon;
+                if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
+                
+                if (settings.debugProxy !== undefined) {
+                    debugProxyCheckbox.checked = settings.debugProxy;
+                }
+                vpnLogContainer.style.display = debugProxyCheckbox.checked ? 'flex' : 'none';
+                
+                if (settings.passwordMode === 'fixed') {
+                    pwFixedRadio.checked = true;
+                } else {
+                    pwRandomRadio.checked = true;
+                }
+                if (settings.fixedPassword) fixedPasswordInput.value = settings.fixedPassword;
+
+                if (settings.emailSource === 'auto') {
+                    emAutoRadio.checked = true;
+                } else {
+                    emManualRadio.checked = true;
+                }
+
+                if (settings.idleTimeout) idleTimeoutInput.value = settings.idleTimeout;
+                updatePasswordModeUI();
+                updateEmailModeUI();
+                socks5InputGroup.style.display = useSocks5Checkbox.checked ? 'flex' : 'none';
+            }
         }
         
         // Save settings on any change
