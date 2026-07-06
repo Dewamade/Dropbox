@@ -183,17 +183,27 @@ app.post('/api/settings/apply', (req, res) => {
     const body = req.body || {};
     
     // Save all settings to file
-    saveSettingsFull({
-        idleTimeout: parseInt(body.idleTimeout),
-        globalTimeout: parseInt(body.globalTimeout),
-        daemonTimeout: parseInt(body.daemonTimeout),
+    const newSettings = {
+        idleTimeout: parseInt(body.idleTimeout) || 600,
+        globalTimeout: parseInt(body.globalTimeout) || 30000,
+        daemonTimeout: parseInt(body.daemonTimeout) || 240000,
         useHeadless: body.useHeadless !== false,
         socks5Host: body.socks5Host || '',
         uaMode: body.uaMode || 'extension',
         deviceTypes: JSON.stringify(body.deviceTypes || []),
         debugProxy: !!body.debugProxy
-    });
+    };
+    saveSettingsFull(newSettings);
 
+    // Update in-memory application state
+    globalTimeout = newSettings.globalTimeout;
+    daemonTimeout = newSettings.daemonTimeout;
+    useHeadless = newSettings.useHeadless;
+    socks5Host = newSettings.socks5Host;
+    uaMode = newSettings.uaMode;
+    deviceTypes = JSON.parse(newSettings.deviceTypes);
+    debugProxy = newSettings.debugProxy;
+    
     // Apply idle timeout (restart timer if needed)
     if (body.idleTimeout !== undefined) {
         const secs = parseInt(body.idleTimeout);
