@@ -893,7 +893,7 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout} detik)...`);
             let emailSelectors = getSelectors('email_field');
             if (emailSelectors.length === 0) {
-                emailSelectors = ['input[name="email"]', 'input[type="email"]', 'input[placeholder*="Email"]', 'input[placeholder*="email"]', 'input[id*="email"]'];
+                emailSelectors = ['input[name="email2"]', 'input[type="email2"]', 'input[placeholder*="Email2"]', 'input[placeholder*="email2"]', 'input[id*="email2"]'];
             }
 
             // First try a direct waitForSelector — more efficient than polling
