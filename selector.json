@@ -14,16 +14,16 @@
     ],
     "email_field": [
       "input[id^=\"susi_email\"]",
-      "input[name=\"email\"]",
       "input[type=\"email\"]",
+      "input[name=\"email\"]",
       "input[placeholder*=\"Email\"]",
       "input[placeholder*=\"email\"]"
     ],
     "continue_button": [
       "button.email-submit-button",
-      "button[type=\"submit\"].email-submit-button",
-      "button[data-testid*=\"continue\"]",
-      "input[type=\"submit\"]"
+      "button:has-text(\"Continue\")",
+      "button:has-text(\"Lanjutkan\")",
+      "button[type=\"submit\"]"
     ],
     "first_name": [
       "input[id^=\"fname\"]",
@@ -53,25 +53,31 @@
     ],
     "submit_button": [
       "button._register-button_1k6no_4",
-      "button[type=\"submit\"]._register-button_1k6no_4",
-      "button[data-testid*=\"submit\"]",
-      "input[type=\"submit\"]"
+      "button:has-text(\"Agree and sign up\")",
+      "button:has-text(\"Setuju dan daftar\")",
+      "button[type=\"submit\"]",
+      "button:has-text(\"Sign up\")"
     ],
     "verify_email": [
       "button[aria-label=\"Verify email\"]",
-      "button.account-key-value-block__link",
-      "button[data-testid*=\"verify-email\"]",
-      "a[data-testid*=\"verify-email\"]"
+      "button.account-key-value-block__link:has-text(\"Verify email\")",
+      "button:has-text(\"Verify email\")",
+      "button:has-text(\"Verifikasi email\")"
     ],
     "send_email": [
       "button.js-email-modal-button.dig-Button--primary",
-      "button[data-testid*=\"send-email\"]",
-      "button[type=\"submit\"].js-email-modal-button"
+      "button:has-text(\"Send email\")",
+      "button:has-text(\"Kirim email\")"
     ],
     "resend_email": [
-      "button[data-testid*=\"resend\"]",
-      "button.js-email-modal-button",
-      "button[type=\"submit\"].js-email-modal-button"
+      "button:has-text(\"Resend\")",
+      "button:has-text(\"Kirim ulang\")",
+      "button:has-text(\"Resend email\")",
+      "button:has-text(\"Resend verification\")",
+      "button.js-email-modal-button:has-text(\"Resend\")",
+      "button.js-email-modal-button:has-text(\"Kirim ulang\")",
+      "//button[contains(text(),\"Resend\")]",
+      "//button[contains(text(),\"Kirim ulang\")]"
     ],
     "register": {
       "username": "#username",
@@ -90,16 +96,16 @@
     "settings": {
       "verifyEmail": [
         "button[aria-label=\"Verify email\"]",
-        "button.account-key-value-block__link",
-        "button[data-testid*=\"verify-email\"]",
-        "a[data-testid*=\"verify-email\"]"
+        "button.account-key-value-block__link:has-text(\"Verify email\")",
+        "button:has-text(\"Verify email\")",
+        "button:has-text(\"Verifikasi email\")"
       ]
     },
     "verifyEmail": {
       "sendButton": [
-        "button[data-testid*=\"send\"]",
-        "button[type='submit']",
-        "input[type='submit']"
+        "button.js-email-modal-button.dig-Button--primary",
+        "button:has-text(\"Send email\")",
+        "button:has-text(\"Kirim email\")"
       ]
     },
     "accountSetup": {
