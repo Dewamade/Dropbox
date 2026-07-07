@@ -311,6 +311,42 @@ app.post('/api/settings/apply', (req, res) => {
     res.json({ ok: true });
 });
 
+// ── Selector Management API ─────────────────────────────────────────────────
+let selectors = {};
+try {
+    selectors = require('./selector.json');
+    console.log('[Server] Selectors loaded from selector.json');
+} catch (e) {
+    console.error('[Server] Failed to load selector.json:', e.message);
+    selectors = {};
+}
+
+app.get('/api/selectors', (_req, res) => {
+    res.json(selectors);
+});
+
+app.post('/api/selectors', (req, res) => {
+    const body = req.body || {};
+    
+    // Merge incoming fields into the persisted selectors object
+    for (const key of Object.keys(body)) {
+        if (key === 'captchaSelectors') continue; // exclude auto-detect selectors
+        selectors[key] = body[key];
+    }
+
+    // Write back to file
+    const fs = require('fs');
+    const pathToSelector = path.join(__dirname, 'selector.json');
+    try {
+        fs.writeFileSync(pathToSelector, JSON.stringify(selectors, null, 2), 'utf8');
+        console.log('[Server] Selectors saved to selector.json');
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('[Server] Failed to save selectors:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 function safeSend(socketOrPayload, maybePayload) {
     let payload = maybePayload;
     if (arguments.length === 1) {
