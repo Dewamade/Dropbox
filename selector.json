@@ -13,7 +13,7 @@
       "iframe[src*=\"arkose\"]"
     ],
     "email_field": [
-      "input[id^="susi_email"]",
+      "input[id^=\"susi_email\"]",
       "input[name=\"email\"]",
       "input[type=\"email\"]",
       "input[placeholder*=\"Email\"]",
