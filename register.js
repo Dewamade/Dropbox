@@ -23,7 +23,10 @@ function loadSelectors() {
 // Helper: get selectors array for a given key (returns [] if not found)
 function getSelectors(key) {
     const sel = loadSelectors();
-    return Array.isArray(sel[key]) ? sel[key] : [];
+    // Check top-level key first, then check nested under "selectors"
+    if (Array.isArray(sel[key])) return sel[key];
+    if (sel.selectors && Array.isArray(sel.selectors[key])) return sel.selectors[key];
+    return [];
 }
 
 // Helper: filter selectors for waitForSelector compatibility (removes :has-text() and XPath)

@@ -119,7 +119,7 @@
       "skipButton": [
         "button[data-testid*=\"skip\"]",
         "a[data-testid*=\"skip\"]",
-        "button:has-text('Skip')"
+        "button:has(> span:text('Skip'))"
       ]
     }
   },
