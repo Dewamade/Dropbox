@@ -13,11 +13,11 @@
       "iframe[src*=\"arkose\"]"
     ],
     "email_field": [
+      "input[id^="susi_email"]",
       "input[name=\"email\"]",
       "input[type=\"email\"]",
       "input[placeholder*=\"Email\"]",
-      "input[placeholder*=\"email\"]",
-      "input[id*=\"email\"]"
+      "input[placeholder*=\"email\"]"
     ],
     "continue_button": [
       "button.email-submit-button",
