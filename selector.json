@@ -21,9 +21,9 @@
     ],
     "continue_button": [
       "button.email-submit-button",
-      "button:has-text(\"Continue\")",
-      "button:has-text(\"Lanjutkan\")",
-      "button[type=\"submit\"]"
+      "button[type=\"submit\"].email-submit-button",
+      "button[data-testid*=\"continue\"]",
+      "input[type=\"submit\"]"
     ],
     "first_name": [
       "input[id^=\"fname\"]",
@@ -53,31 +53,25 @@
     ],
     "submit_button": [
       "button._register-button_1k6no_4",
-      "button:has-text(\"Agree and sign up\")",
-      "button:has-text(\"Setuju dan daftar\")",
-      "button[type=\"submit\"]",
-      "button:has-text(\"Sign up\")"
+      "button[type=\"submit\"]._register-button_1k6no_4",
+      "button[data-testid*=\"submit\"]",
+      "input[type=\"submit\"]"
     ],
     "verify_email": [
       "button[aria-label=\"Verify email\"]",
-      "button.account-key-value-block__link:has-text(\"Verify email\")",
-      "button:has-text(\"Verify email\")",
-      "button:has-text(\"Verifikasi email\")"
+      "button.account-key-value-block__link",
+      "button[data-testid*=\"verify-email\"]",
+      "a[data-testid*=\"verify-email\"]"
     ],
     "send_email": [
       "button.js-email-modal-button.dig-Button--primary",
-      "button:has-text(\"Send email\")",
-      "button:has-text(\"Kirim email\")"
+      "button[data-testid*=\"send-email\"]",
+      "button[type=\"submit\"].js-email-modal-button"
     ],
     "resend_email": [
-      "button:has-text(\"Resend\")",
-      "button:has-text(\"Kirim ulang\")",
-      "button:has-text(\"Resend email\")",
-      "button:has-text(\"Resend verification\")",
-      "button.js-email-modal-button:has-text(\"Resend\")",
-      "button.js-email-modal-button:has-text(\"Kirim ulang\")",
-      "//button[contains(text(),\"Resend\")]",
-      "//button[contains(text(),\"Kirim ulang\")]"
+      "button[data-testid*=\"resend\"]",
+      "button.js-email-modal-button",
+      "button[type=\"submit\"].js-email-modal-button"
     ],
     "register": {
       "username": "#username",
@@ -86,8 +80,8 @@
       "passwordConfirm": "#confirm_password",
       "submit": [
         "button[type='submit']",
-        "button:has-text('Agree and sign up')",
-        "button:has-text('Daftar')"
+        "button[data-testid*=\"submit\"]",
+        "input[type='submit']"
       ]
     },
     "cliLink": {
@@ -96,36 +90,36 @@
     "settings": {
       "verifyEmail": [
         "button[aria-label=\"Verify email\"]",
-        "button.account-key-value-block__link:has-text(\"Verify email\")",
-        "button:has-text(\"Verify email\")",
-        "button:has-text(\"Verifikasi email\")"
+        "button.account-key-value-block__link",
+        "button[data-testid*=\"verify-email\"]",
+        "a[data-testid*=\"verify-email\"]"
       ]
     },
     "verifyEmail": {
       "sendButton": [
-        "button:has-text('Send')",
-        "button:has-text('Kirim')",
-        "button[type='submit']"
+        "button[data-testid*=\"send\"]",
+        "button[type='submit']",
+        "input[type='submit']"
       ]
     },
     "accountSetup": {
       "storageOption": ".account-setup-flow__option, .setup-flow-option, [data-testid='storage-option']",
       "continueButton": [
-        "button:has-text('Continue')",
-        "button:has-text('Lanjutkan')",
-        "button[type='submit']"
+        "button[data-testid*=\"continue\"]",
+        "button[type='submit']",
+        "input[type='submit']"
       ]
     },
     "finalPage": {
       "finishButton": [
-        "button:has-text('Finish')",
-        "button:has-text('Selesai')",
-        "button[type='submit']"
+        "button[data-testid*=\"finish\"]",
+        "button[type='submit']",
+        "input[type='submit']"
       ],
       "skipButton": [
-        "button:has-text('Skip this')",
-        "button:has-text('Lewati ini')",
-        "a:has-text('Skip')"
+        "button[data-testid*=\"skip\"]",
+        "a[data-testid*=\"skip\"]",
+        "button:has-text('Skip')"
       ]
     }
   },
