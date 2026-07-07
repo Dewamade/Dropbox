@@ -603,7 +603,11 @@
             try {
                 const res = await fetch('/api/selectors');
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const selectors = await res.json();
+                const data = await res.json();
+                
+                // Handle nested structure: { "selectors": {...}, "defaults": {...} }
+                const selectors = data.selectors || data;
+                
                 renderSelectorEditor(selectors);
             } catch (err) {
                 console.error('Failed to load selectors:', err);
@@ -680,14 +684,25 @@
                 selectors[key] = value;
             }
 
+            // Load existing data to preserve "defaults" and other keys
             try {
-                const res = await fetch('/api/selectors', {
+                const res = await fetch('/api/selectors');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const existingData = await res.json();
+                
+                // Merge: keep existing structure, update selectors
+                const newData = {
+                    ...existingData,
+                    selectors: selectors
+                };
+
+                const saveRes = await fetch('/api/selectors', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(selectors)
+                    body: JSON.stringify(newData)
                 });
                 
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!saveRes.ok) throw new Error(`HTTP ${saveRes.status}`);
                 
                 alert('Selector berhasil disimpan!');
             } catch (err) {
