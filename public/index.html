@@ -630,7 +630,13 @@
                 submit_button: 'Submit Button Selectors',
                 verify_email: 'Verify Email Selectors',
                 send_email: 'Send Email Selectors',
-                resend_email: 'Resend Email Selectors'
+                resend_email: 'Resend Email Selectors',
+                register: 'Register Selectors',
+                cliLink: 'CLI Link Selectors',
+                settings: 'Settings Selectors',
+                verifyEmail: 'Verify Email Selectors',
+                accountSetup: 'Account Setup Selectors',
+                finalPage: 'Final Page Selectors'
             };
 
             for (const [key, value] of Object.entries(selectors)) {
@@ -645,7 +651,7 @@
                 const textarea = document.createElement('textarea');
                 textarea.style.cssText = `
                     width: 100%;
-                    min-height: 80px;
+                    min-height: ${Array.isArray(value) ? '80px' : '120px'};
                     padding: 0.75rem;
                     background: #27272a;
                     border: 1px solid #3f3f46;
@@ -656,7 +662,17 @@
                     resize: vertical;
                     transition: border-color 0.15s ease;
                 `;
-                textarea.value = Array.isArray(value) ? value.join('\n') : (value || '');
+                
+                // Store original type to preserve structure when saving
+                textarea.dataset.type = Array.isArray(value) ? 'array' : 'object';
+                
+                if (Array.isArray(value)) {
+                    textarea.value = value.join('\n');
+                } else {
+                    // For objects, display as JSON for readability
+                    textarea.value = JSON.stringify(value, null, 2);
+                }
+                
                 textarea.dataset.key = key;
                 textarea.addEventListener('focus', () => {
                     textarea.style.borderColor = '#6366f1';
@@ -667,7 +683,11 @@
 
                 const hint = document.createElement('p');
                 hint.style.cssText = 'font-size:0.75rem; color:#71717a; margin:0;';
-                hint.textContent = 'Satu selector per baris';
+                if (Array.isArray(value)) {
+                    hint.textContent = 'Satu selector per baris';
+                } else {
+                    hint.textContent = 'Format JSON';
+                }
                 wrapper.appendChild(textarea);
                 wrapper.appendChild(hint);
                 editor.appendChild(wrapper);
@@ -680,8 +700,21 @@
             
             for (const textarea of textareas) {
                 const key = textarea.dataset.key;
-                const value = textarea.value.split('\n').filter(line => line.trim()).map(line => line.trim());
-                selectors[key] = value;
+                const type = textarea.dataset.type || 'array';
+                
+                if (type === 'object') {
+                    // For objects, parse JSON
+                    try {
+                        selectors[key] = JSON.parse(textarea.value);
+                    } catch (e) {
+                        alert(`Error parsing JSON for ${key}: ${e.message}`);
+                        return;
+                    }
+                } else {
+                    // For arrays, split by newlines
+                    const value = textarea.value.split('\n').filter(line => line.trim()).map(line => line.trim());
+                    selectors[key] = value;
+                }
             }
 
             // Load existing data to preserve "defaults" and other keys
