@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { saveRegistration, getAllRegistrations, clearRegistrations, getSettingsFull, saveSettingsFull } = require('./db.js');
+const { saveRegistration, getAllRegistrations, clearRegistrations, getSettingsFull, saveSettingsFull, getSelectors, saveSelectors, resetSelectors } = require('./db.js');
 const { registerSingleEmail: _registerSingleEmail } = require('./register.js');
 
 // ── Random name generator (syllable-based) ──────────────────────────────────
@@ -310,6 +310,55 @@ app.post('/api/settings/apply', (req, res) => {
 
     res.json({ ok: true });
 });
+
+// ── Selector Management Endpoints ────────────────────────────────────────────
+app.get('/api/selectors', (_req, res) => {
+    const selectors = getSelectors();
+    // If no stored selectors, return defaults from selector.json
+    if (Object.keys(selectors).length === 0) {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const selectorPath = path.join(__dirname, 'selector.json');
+            if (fs.existsSync(selectorPath)) {
+                const defaults = JSON.parse(fs.readFileSync(selectorPath, 'utf8'));
+                return res.json(defaults);
+            }
+        } catch (_) {}
+    }
+    res.json(selectors);
+});
+
+app.put('/api/selectors', (req, res) => {
+    const selectors = req.body || {};
+    saveSelectors(selectors);
+    // Also write to selector.json for persistence alongside history.json
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const selectorPath = path.join(__dirname, 'selector.json');
+        fs.writeFileSync(selectorPath, JSON.stringify(selectors, null, 2));
+    } catch (e) {
+        console.warn('[Selectors] Failed to write selector.json:', e.message);
+    }
+    res.json({ ok: true });
+});
+
+app.post('/api/selectors/reset', (_req, res) => {
+    resetSelectors();
+    // Also reload defaults from selector.json
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const selectorPath = path.join(__dirname, 'selector.json');
+        if (fs.existsSync(selectorPath)) {
+            const defaults = JSON.parse(fs.readFileSync(selectorPath, 'utf8'));
+            saveSelectors(defaults);
+        }
+    } catch (_) {}
+    res.json({ ok: true });
+});
+// ────────────────────────────────────────────────────────────────────────────
 
 function safeSend(socketOrPayload, maybePayload) {
     let payload = maybePayload;

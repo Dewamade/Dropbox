@@ -5,6 +5,27 @@ const path = require('path');
 const fs = require('fs');
 const PROFILE_PATH = path.join(__dirname, 'firefox-profile');
 
+// ── Selector Loader (loads selectors from selector.json) ─────────────────────
+let cachedSelectors = null;
+function loadSelectors() {
+    if (cachedSelectors) return cachedSelectors;
+    const selectorPath = path.join(__dirname, 'selector.json');
+    try {
+        cachedSelectors = JSON.parse(fs.readFileSync(selectorPath, 'utf8'));
+        console.log('[Selector] Dimuat dari selector.json');
+    } catch (_) {
+        console.log('[Selector] selector.json tidak ditemukan, menggunakan default.');
+        cachedSelectors = {};
+    }
+    return cachedSelectors;
+}
+
+// Helper: get selectors array for a given key (returns [] if not found)
+function getSelectors(key) {
+    const sel = loadSelectors();
+    return Array.isArray(sel[key]) ? sel[key] : [];
+}
+
 // Track whether Warp/Psiphon is already active (avoid unnecessary stop/start between cycles)
 let warpActive = false;
 let psiphonActive = false;
@@ -85,18 +106,10 @@ function generatePassword() {
 
 // Helper function to detect if any CAPTCHA elements are visible on the page
 async function hasCaptcha(page) {
-    const captchaSelectors = [
-        'iframe[src*="arkoselabs"]',
-        'iframe[src*="funcaptcha"]',
-        'iframe[src*="recaptcha"]',
-        'iframe[title*="CAPTCHA"]',
-        'iframe[title*="Verification"]',
-        'div[id*="captcha"]',
-        'div[class*="captcha"]',
-        '.g-recaptcha',
-        '#arkose-iframe',
-        'iframe[src*="arkose"]'
-    ];
+    const captchaSelectors = getSelectors('captcha');
+    if (captchaSelectors.length === 0) {
+        return ['iframe[src*="arkoselabs"]', 'iframe[src*="funcaptcha"]', 'iframe[src*="recaptcha"]', 'iframe[title*="CAPTCHA"]', 'iframe[title*="Verification"]', 'div[id*="captcha"]', 'div[class*="captcha"]', '.g-recaptcha', '#arkose-iframe', 'iframe[src*="arkose"]'];
+    }
 
     for (const selector of captchaSelectors) {
         try {
@@ -878,13 +891,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
             // --- STEP 1: Fill Email & Click Continue ---
             console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout} detik)...`);
-            const emailSelectors = [
-                'input[id^="susi_email"]',
-                'input[type="email"]',
-                'input[name="email"]',
-                'input[placeholder*="Email"]',
-                'input[placeholder*="email"]'
-            ];
+            const emailSelectors = getSelectors('email_field');
+            if (emailSelectors.length === 0) {
+                emailSelectors = ['input[name="email"]', 'input[type="email"]', 'input[placeholder*="Email"]', 'input[placeholder*="email"]', 'input[id*="email"]'];
+            }
 
             // First try a direct waitForSelector — more efficient than polling
             let activeEmailSelector = null;
@@ -927,12 +937,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
             // Click "Continue" with humanized mouse movement
             console.log("Mengklik tombol 'Continue'...");
-            const continueSelectors = [
-                'button.email-submit-button',
-                'button:has-text("Continue")',
-                'button:has-text("Lanjutkan")',
-                'button[type="submit"]'
-            ];
+            const continueSelectors = getSelectors('continue_button');
+            if (continueSelectors.length === 0) {
+                continueSelectors = ['button.email-submit-button', 'button:has-text("Continue")', 'button:has-text("Lanjutkan")', 'button[type="submit"]'];
+            }
             let clickedContinue = false;
             for (const selector of continueSelectors) {
                 try {
@@ -968,13 +976,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             const step2Timeout = Math.round(globalTimeout / 2);
             console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout ${step2Timeout} detik)...`);
 
-            const firstNameSelectors = [
-                'input[id^="fname"]',
-                'input[name="fname"]',
-                'input[autocomplete="given-name"]',
-                'input[placeholder*="First name"]',
-                'input[placeholder*="Nama depan"]'
-            ];
+            const firstNameSelectors = getSelectors('first_name');
+            if (firstNameSelectors.length === 0) {
+                firstNameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[autocomplete="given-name"]', 'input[placeholder*="First name"]', 'input[placeholder*="Nama depan"]'];
+            }
 
             let step2Visible = false;
             // First try a direct waitForSelector
@@ -1025,13 +1030,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             await page.waitForTimeout(400 + Math.random() * 600);
 
             // Fill Last Name
-            const lastNameSelectors = [
-                'input[id^="lname"]',
-                'input[name="lname"]',
-                'input[autocomplete="family-name"]',
-                'input[placeholder*="Last name"]',
-                'input[placeholder*="Nama belakang"]'
-            ];
+            const lastNameSelectors = getSelectors('last_name');
+            if (lastNameSelectors.length === 0) {
+                lastNameSelectors = ['input[id^="lname"]', 'input[name="lname"]', 'input[autocomplete="family-name"]', 'input[placeholder*="Last name"]', 'input[placeholder*="Nama belakang"]'];
+            }
             let lastNameFilled = false;
             for (const selector of lastNameSelectors) {
                 try {
@@ -1047,13 +1049,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             await page.waitForTimeout(400 + Math.random() * 600);
 
             // Fill Password
-            const passwordSelectors = [
-                'input[id^="password"]',
-                'input[name="password"]',
-                'input[type="password"]',
-                'input[placeholder*="Password"]',
-                'input[placeholder*="Kata sandi"]'
-            ];
+            const passwordSelectors = getSelectors('password');
+            if (passwordSelectors.length === 0) {
+                passwordSelectors = ['input[id^="password"]', 'input[name="password"]', 'input[type="password"]', 'input[placeholder*="Password"]', 'input[placeholder*="Kata sandi"]'];
+            }
             let passwordFilled = false;
             for (const selector of passwordSelectors) {
                 try {
@@ -1069,11 +1068,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             await page.waitForTimeout(600 + Math.random() * 800);
 
             // Click Agree to Terms Checkbox (if present)
-            const checkboxSelectors = [
-                'input[type="checkbox"][name="tos_agree"]',
-                'input[type="checkbox"]',
-                '.agree-checkbox'
-            ];
+            const checkboxSelectors = getSelectors('tos_checkbox');
+            if (checkboxSelectors.length === 0) {
+                checkboxSelectors = ['input[type="checkbox"][name="tos_agree"]', 'input[type="checkbox"]', '.agree-checkbox'];
+            }
             for (const selector of checkboxSelectors) {
                 try {
                     if (await page.isVisible(selector)) {
@@ -1090,13 +1088,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             await page.waitForTimeout(1000);
 
             // Highlight/Focus Agree and Sign Up button
-            const submitSelectors = [
-                'button._register-button_1k6no_4',
-                'button:has-text("Agree and sign up")',
-                'button:has-text("Setuju dan daftar")',
-                'button[type="submit"]',
-                'button:has-text("Sign up")'
-            ];
+            const submitSelectors = getSelectors('submit_button');
+            if (submitSelectors.length === 0) {
+                submitSelectors = ['button._register-button_1k6no_4', 'button:has-text("Agree and sign up")', 'button:has-text("Setuju dan daftar")', 'button[type="submit"]', 'button:has-text("Sign up")'];
+            }
 
             console.log("\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...");
 
@@ -1369,12 +1364,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                         await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
 
                         // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
-                        const verifySelectors = [
-                            'button[aria-label="Verify email"]',
-                            'button.account-key-value-block__link:has-text("Verify email")',
-                            'button:has-text("Verify email")',
-                            'button:has-text("Verifikasi email")',
-                        ];
+                        const verifySelectors = getSelectors('verify_email');
+                        if (verifySelectors.length === 0) {
+                            verifySelectors = ['button[aria-label="Verify email"]', 'button.account-key-value-block__link:has-text("Verify email")', 'button:has-text("Verify email")', 'button:has-text("Verifikasi email")'];
+                        }
 
                         let verifyBtnFound = false;
                         for (const sel of verifySelectors) {
@@ -1424,11 +1417,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                         }
 
                         // Click Send email button inside the modal
-                        const sendEmailSelectors = [
-                            'button.js-email-modal-button.dig-Button--primary',
-                            'button:has-text("Send email")',
-                            'button:has-text("Kirim email")',
-                        ];
+                        const sendEmailSelectors = getSelectors('send_email');
+                        if (sendEmailSelectors.length === 0) {
+                            sendEmailSelectors = ['button.js-email-modal-button.dig-Button--primary', 'button:has-text("Send email")', 'button:has-text("Kirim email")'];
+                        }
 
                         let sendBtnFound = false;
                         for (const sel of sendEmailSelectors) {
@@ -1461,16 +1453,10 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
                         // Wait for modal to change and check for resend button to verify success
                         console.log(`[Browser] Menunggu konfirmasi pengiriman (tombol Resend/Kirim ulang)...`);
-                        const resendSelectors = [
-                            'button:has-text("Resend")',
-                            'button:has-text("Kirim ulang")',
-                            'button:has-text("Resend email")',
-                            'button:has-text("Resend verification")',
-                            'button.js-email-modal-button:has-text("Resend")',
-                            'button.js-email-modal-button:has-text("Kirim ulang")',
-                            '//button[contains(text(),"Resend")]',
-                            '//button[contains(text(),"Kirim ulang")]'
-                        ];
+                        const resendSelectors = getSelectors('resend_email');
+                        if (resendSelectors.length === 0) {
+                            resendSelectors = ['button:has-text("Resend")', 'button:has-text("Kirim ulang")', 'button:has-text("Resend email")', 'button:has-text("Resend verification")', 'button.js-email-modal-button:has-text("Resend")', 'button.js-email-modal-button:has-text("Kirim ulang")', '//button[contains(text(),"Resend")]', '//button[contains(text(),"Kirim ulang")]'];
+                        }
 
                         let resendBtnFound = false;
                         const resendDeadline = Date.now() + 15000; // wait up to 15 seconds

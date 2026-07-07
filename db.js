@@ -6,6 +6,7 @@ const fs = require('fs');
 // Falls back gracefully
 
 const DB_PATH = path.join(__dirname, 'history.json');
+const SELECTOR_PATH = path.join(__dirname, 'selector.json');
 
 function loadDB() {
     const defaults = {
@@ -37,7 +38,8 @@ function loadDB() {
             // LAIN-LAIN
             idleTimeout: 600,
             debugProxy: false
-        }
+        },
+        selectors: {}
     };
     if (!fs.existsSync(DB_PATH)) {
         fs.writeFileSync(DB_PATH, JSON.stringify(defaults, null, 2));
@@ -92,10 +94,45 @@ function getAllRegistrations() {
 }
 
 /**
- * Clear all registration records
+ * Clear all registration records (preserves settings and selectors)
  */
 function clearRegistrations() {
-    saveDB({ registrations: [], settings: { idleTimeout: 600 } });
+    const db = loadDB();
+    db.registrations = [];
+    saveDB(db);
+}
+
+/**
+ * Get selectors config from history.json
+ */
+function getSelectors() {
+    const db = loadDB();
+    return db.selectors || {};
+}
+
+/**
+ * Save selectors config to history.json
+ */
+function saveSelectors(selectors) {
+    const db = loadDB();
+    db.selectors = selectors;
+    saveDB(db);
+}
+
+/**
+ * Reset selectors to defaults (sync from selector.json)
+ */
+function resetSelectors() {
+    try {
+        if (fs.existsSync(SELECTOR_PATH)) {
+            const defaults = JSON.parse(fs.readFileSync(SELECTOR_PATH, 'utf8'));
+            saveSelectors(defaults);
+        } else {
+            saveSelectors({});
+        }
+    } catch (e) {
+        saveSelectors({});
+    }
 }
 
 /**
@@ -122,5 +159,8 @@ module.exports = {
     getSettingsFull,
     saveSettingsFull,
     getSettings: getSettingsFull,   // backward compat alias
-    saveSettings: saveSettingsFull  // backward compat alias
+    saveSettings: saveSettingsFull,  // backward compat alias
+    getSelectors,
+    saveSelectors,
+    resetSelectors
 };

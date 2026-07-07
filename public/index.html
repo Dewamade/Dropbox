@@ -57,6 +57,12 @@
                         </svg>
                         Progress Peninjauan
                     </button>
+                    <button class="tab-btn" id="tab-selector-btn">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M2 8h4l3 8 4-16 3 16h4"/>
+                        </svg>
+                        Selector
+                    </button>
                     <button class="tab-btn" id="tab-pengaturan-btn">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
@@ -376,6 +382,28 @@
                         </button>
                     </div>
                 </div><!-- /#tab-pengaturan -->
+
+                <!-- ── TAB: Selector ──────────────────── -->
+                <div class="tab-pane" id="tab-selector">
+                    <div style="padding: 1.5rem;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem;">
+                            <div>
+                                <h2 style="font-size:1.15rem; color:#e4e4e7; margin-bottom:0.25rem;">Pengaturan Selector</h2>
+                                <p style="font-size:0.8rem; color:#71717a; margin:0;">Edit selector yang digunakan script pendaftaran Dropbox</p>
+                            </div>
+                            <div style="display:flex; gap:0.5rem;">
+                                <button class="btn-outline btn-sm" id="selector-reset-btn">↺ Reset Default</button>
+                                <button class="btn btn-sm" id="selector-save-btn" style="background:linear-gradient(135deg,#6366f1,#4f46e5);min-width:90px;">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                                    Simpan
+                                </button>
+                            </div>
+                        </div>
+                        <div id="selector-editor" style="display:flex; flex-direction:column; gap:0.75rem;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div><!-- /#tab-selector -->
             </section>
         </main>
     </div>
@@ -541,25 +569,165 @@
         // ── Tab Switching ──────────────────────────────────────
         const tabPengaturanBtn = document.getElementById('tab-pengaturan-btn');
         const tabProgressBtn   = document.getElementById('tab-progress-btn');
+        const tabSelectorBtn   = document.getElementById('tab-selector-btn');
         const tabPengaturan    = document.getElementById('tab-pengaturan');
         const tabProgress      = document.getElementById('tab-progress');
+        const tabSelector      = document.getElementById('tab-selector');
 
         function switchTab(tab) {
+            tabPengaturanBtn.classList.remove('active');
+            tabProgressBtn.classList.remove('active');
+            tabSelectorBtn.classList.remove('active');
+            tabPengaturan.classList.remove('active');
+            tabProgress.classList.remove('active');
+            tabSelector.classList.remove('active');
+
             if (tab === 'pengaturan') {
                 tabPengaturanBtn.classList.add('active');
-                tabProgressBtn.classList.remove('active');
                 tabPengaturan.classList.add('active');
-                tabProgress.classList.remove('active');
+            } else if (tab === 'selector') {
+                tabSelectorBtn.classList.add('active');
+                tabSelector.classList.add('active');
             } else {
                 tabProgressBtn.classList.add('active');
-                tabPengaturanBtn.classList.remove('active');
                 tabProgress.classList.add('active');
-                tabPengaturan.classList.remove('active');
             }
         }
 
         tabPengaturanBtn.addEventListener('click', () => switchTab('pengaturan'));
         tabProgressBtn.addEventListener('click', () => switchTab('progress'));
+        tabSelectorBtn.addEventListener('click', () => switchTab('selector'));
+
+        // ── Selector Tab Functions ─────────────────────────────
+        async function loadSelectorsFromServer() {
+            try {
+                const res = await fetch('/api/selectors');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const selectors = await res.json();
+                renderSelectorEditor(selectors);
+            } catch (err) {
+                console.error('Failed to load selectors:', err);
+                alert('Gagal memuat selector. Silakan coba lagi.');
+            }
+        }
+
+        function renderSelectorEditor(selectors) {
+            const editor = document.getElementById('selector-editor');
+            editor.innerHTML = '';
+
+            const labels = {
+                captcha: 'Captcha Selectors',
+                email_field: 'Email Field Selectors',
+                continue_button: 'Continue Button Selectors',
+                first_name: 'First Name Selectors',
+                last_name: 'Last Name Selectors',
+                password: 'Password Selectors',
+                tos_checkbox: 'ToS Checkbox Selectors',
+                submit_button: 'Submit Button Selectors',
+                verify_email: 'Verify Email Selectors',
+                send_email: 'Send Email Selectors',
+                resend_email: 'Resend Email Selectors'
+            };
+
+            for (const [key, value] of Object.entries(selectors)) {
+                const wrapper = document.createElement('div');
+                wrapper.style.cssText = 'display:flex; flex-direction:column; gap:0.25rem;';
+
+                const label = document.createElement('label');
+                label.style.cssText = 'font-size:0.85rem; color:#a1a1aa; font-weight:500;';
+                label.textContent = labels[key] || key;
+                wrapper.appendChild(label);
+
+                const textarea = document.createElement('textarea');
+                textarea.style.cssText = `
+                    width: 100%;
+                    min-height: 80px;
+                    padding: 0.75rem;
+                    background: #27272a;
+                    border: 1px solid #3f3f46;
+                    border-radius: 8px;
+                    color: #fafafa;
+                    font-family: 'Fira Code', monospace;
+                    font-size: 0.8rem;
+                    resize: vertical;
+                    transition: border-color 0.15s ease;
+                `;
+                textarea.value = Array.isArray(value) ? value.join('\n') : (value || '');
+                textarea.dataset.key = key;
+                textarea.addEventListener('focus', () => {
+                    textarea.style.borderColor = '#6366f1';
+                });
+                textarea.addEventListener('blur', () => {
+                    textarea.style.borderColor = '#3f3f46';
+                });
+
+                const hint = document.createElement('p');
+                hint.style.cssText = 'font-size:0.75rem; color:#71717a; margin:0;';
+                hint.textContent = 'Satu selector per baris';
+                wrapper.appendChild(textarea);
+                wrapper.appendChild(hint);
+                editor.appendChild(wrapper);
+            }
+        }
+
+        async function saveSelectors() {
+            const textareas = document.querySelectorAll('#selector-editor textarea');
+            const selectors = {};
+            
+            for (const textarea of textareas) {
+                const key = textarea.dataset.key;
+                const value = textarea.value.split('\n').filter(line => line.trim()).map(line => line.trim());
+                selectors[key] = value;
+            }
+
+            try {
+                const res = await fetch('/api/selectors', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(selectors)
+                });
+                
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                
+                alert('Selector berhasil disimpan!');
+            } catch (err) {
+                console.error('Failed to save selectors:', err);
+                alert('Gagal menyimpan selector. Silakan coba lagi.');
+            }
+        }
+
+        async function resetSelectors() {
+            if (!confirm('Reset semua selector ke default? Perubahan yang belum disimpan akan hilang.')) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/selectors/reset', {
+                    method: 'POST'
+                });
+                
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                
+                await loadSelectorsFromServer();
+                alert('Selector berhasil direset ke default!');
+            } catch (err) {
+                console.error('Failed to reset selectors:', err);
+                alert('Gagal mereset selector. Silakan coba lagi.');
+            }
+        }
+
+        // Wire up save and reset buttons
+        document.getElementById('selector-save-btn').addEventListener('click', saveSelectors);
+        document.getElementById('selector-reset-btn').addEventListener('click', resetSelectors);
+
+        // Load selectors when tab is clicked (if not already loaded)
+        let selectorsLoaded = false;
+        tabSelectorBtn.addEventListener('click', () => {
+            if (!selectorsLoaded) {
+                loadSelectorsFromServer();
+                selectorsLoaded = true;
+            }
+        });
 
         // Auto-switch to Progress tab when processing starts
         // (will be called from startBtn click handler below)

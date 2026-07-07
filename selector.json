@@ -1,0 +1,141 @@
+{
+  "selectors": {
+    "captcha": [
+      "iframe[src*=\"arkoselabs\"]",
+      "iframe[src*=\"funcaptcha\"]",
+      "iframe[src*=\"recaptcha\"]",
+      "iframe[title*=\"CAPTCHA\"]",
+      "iframe[title*=\"Verification\"]",
+      "div[id*=\"captcha\"]",
+      "div[class*=\"captcha\"]",
+      ".g-recaptcha",
+      "#arkose-iframe",
+      "iframe[src*=\"arkose\"]"
+    ],
+    "email_field": [
+      "input[name=\"email\"]",
+      "input[type=\"email\"]",
+      "input[placeholder*=\"Email\"]",
+      "input[placeholder*=\"email\"]",
+      "input[id*=\"email\"]"
+    ],
+    "continue_button": [
+      "button.email-submit-button",
+      "button:has-text(\"Continue\")",
+      "button:has-text(\"Lanjutkan\")",
+      "button[type=\"submit\"]"
+    ],
+    "first_name": [
+      "input[id^=\"fname\"]",
+      "input[name=\"fname\"]",
+      "input[autocomplete=\"given-name\"]",
+      "input[placeholder*=\"First name\"]",
+      "input[placeholder*=\"Nama depan\"]"
+    ],
+    "last_name": [
+      "input[id^=\"lname\"]",
+      "input[name=\"lname\"]",
+      "input[autocomplete=\"family-name\"]",
+      "input[placeholder*=\"Last name\"]",
+      "input[placeholder*=\"Nama belakang\"]"
+    ],
+    "password": [
+      "input[id^=\"password\"]",
+      "input[name=\"password\"]",
+      "input[type=\"password\"]",
+      "input[placeholder*=\"Password\"]",
+      "input[placeholder*=\"Kata sandi\"]"
+    ],
+    "tos_checkbox": [
+      "input[type=\"checkbox\"][name=\"tos_agree\"]",
+      "input[type=\"checkbox\"]",
+      ".agree-checkbox"
+    ],
+    "submit_button": [
+      "button._register-button_1k6no_4",
+      "button:has-text(\"Agree and sign up\")",
+      "button:has-text(\"Setuju dan daftar\")",
+      "button[type=\"submit\"]",
+      "button:has-text(\"Sign up\")"
+    ],
+    "verify_email": [
+      "button[aria-label=\"Verify email\"]",
+      "button.account-key-value-block__link:has-text(\"Verify email\")",
+      "button:has-text(\"Verify email\")",
+      "button:has-text(\"Verifikasi email\")"
+    ],
+    "send_email": [
+      "button.js-email-modal-button.dig-Button--primary",
+      "button:has-text(\"Send email\")",
+      "button:has-text(\"Kirim email\")"
+    ],
+    "resend_email": [
+      "button:has-text(\"Resend\")",
+      "button:has-text(\"Kirim ulang\")",
+      "button:has-text(\"Resend email\")",
+      "button:has-text(\"Resend verification\")",
+      "button.js-email-modal-button:has-text(\"Resend\")",
+      "button.js-email-modal-button:has-text(\"Kirim ulang\")",
+      "//button[contains(text(),\"Resend\")]",
+      "//button[contains(text(),\"Kirim ulang\")]"
+    ],
+    "register": {
+      "username": "#username",
+      "email": "#email",
+      "password": "#password",
+      "passwordConfirm": "#confirm_password",
+      "submit": [
+        "button[type='submit']",
+        "button:has-text('Agree and sign up')",
+        "button:has-text('Daftar')"
+      ]
+    },
+    "cliLink": {
+      "connectButton": "button, input[type=\"submit\"], a, [role=\"button\"]"
+    },
+    "settings": {
+      "verifyEmail": [
+        "button[aria-label=\"Verify email\"]",
+        "button.account-key-value-block__link:has-text(\"Verify email\")",
+        "button:has-text(\"Verify email\")",
+        "button:has-text(\"Verifikasi email\")"
+      ]
+    },
+    "verifyEmail": {
+      "sendButton": [
+        "button:has-text('Send')",
+        "button:has-text('Kirim')",
+        "button[type='submit']"
+      ]
+    },
+    "accountSetup": {
+      "storageOption": ".account-setup-flow__option, .setup-flow-option, [data-testid='storage-option']",
+      "continueButton": [
+        "button:has-text('Continue')",
+        "button:has-text('Lanjutkan')",
+        "button[type='submit']"
+      ]
+    },
+    "finalPage": {
+      "finishButton": [
+        "button:has-text('Finish')",
+        "button:has-text('Selesai')",
+        "button[type='submit']"
+      ],
+      "skipButton": [
+        "button:has-text('Skip this')",
+        "button:has-text('Lewati ini')",
+        "a:has-text('Skip')"
+      ]
+    }
+  },
+  "defaults": {
+    "globalTimeout": 60,
+    "daemonTimeout": 120,
+    "maxTabAttempts": 3,
+    "maxCliAttempts": 3,
+    "maxVerifAttempts": 3,
+    "maxSetupAttempts": 3,
+    "maxFinalAttempts": 3
+  }
+}
