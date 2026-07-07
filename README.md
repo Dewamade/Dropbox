@@ -14,12 +14,12 @@ Kami telah menyediakan script setup otomatis yang dapat diunduh dan dijalankan s
 
 **Menggunakan `curl`:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/Dewamade/Dropbox/webui/setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/Dewamade/Dropbox/webui2/setup.sh | bash
 ```
 
 **Menggunakan `wget`:**
 ```bash
-wget -qO- https://raw.githubusercontent.com/Dewamade/Dropbox/webui/setup.sh | bash
+wget -qO- https://raw.githubusercontent.com/Dewamade/Dropbox/webui2/setup.sh | bash
 ```
 
 > [!NOTE]
