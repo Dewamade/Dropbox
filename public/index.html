@@ -64,6 +64,16 @@
                         </svg>
                         Pengaturan
                     </button>
+                    <button class="tab-btn" id="tab-selector-btn">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 7V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/>
+                            <path d="M12 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3"/>
+                            <circle cx="18" cy="14" r="2"/>
+                            <path d="M18 10v2"/>
+                            <path d="M16 12h4"/>
+                        </svg>
+                        Selector
+                    </button>
                 </div>
 
                 <!-- ── TAB: Progress Peninjauan ─────── -->
@@ -376,6 +386,50 @@
                         </button>
                     </div>
                 </div><!-- /#tab-pengaturan -->
+
+                <!-- ── TAB: Selector ──────────────── -->
+                <div class="tab-pane" id="tab-selector">
+                    <div class="settings-body">
+                        <div class="settings-section">
+                            <div class="settings-section-header">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4 7V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/>
+                                    <path d="M12 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3"/>
+                                    <circle cx="18" cy="14" r="2"/>
+                                    <path d="M18 10v2"/>
+                                    <path d="M16 12h4"/>
+                                </svg>
+                                Selector JSON — Edit Selector Secara Dinamis
+                            </div>
+                            <div class="settings-section-body">
+                                <p style="font-size:0.85rem;color:#a1a1aa;margin-bottom:1rem;line-height:1.5;">
+                                    Kelola semua selector halaman pendaftaran di sini. Perubahan langsung diterapkan saat menekan tombol <strong>Apply</strong>.
+                                </p>
+                                <!-- Selector Table -->
+                                <div style="overflow-x:auto;max-width:100%;">
+                                    <table id="selector-table" class="settings-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="text-align:left;width:40%;">Group</th>
+                                                <th style="text-align:left;">Selector(s)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="selector-tbody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Selector Footer -->
+                        <div class="settings-footer">
+                            <span style="font-size:0.75rem;color:var(--text-dim);">Perubahan disimpan otomatis · Tekan Apply untuk menerapkan ke server</span>
+                            <button class="apply-btn" id="apply-selector-btn">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div><!-- /#tab-selector -->
             </section>
         </main>
     </div>
@@ -541,25 +595,35 @@
         // ── Tab Switching ──────────────────────────────────────
         const tabPengaturanBtn = document.getElementById('tab-pengaturan-btn');
         const tabProgressBtn   = document.getElementById('tab-progress-btn');
+        const tabSelectorBtn   = document.getElementById('tab-selector-btn');
         const tabPengaturan    = document.getElementById('tab-pengaturan');
         const tabProgress      = document.getElementById('tab-progress');
+        const tabSelector      = document.getElementById('tab-selector');
 
         function switchTab(tab) {
+            tabPengaturanBtn.classList.remove('active');
+            tabProgressBtn.classList.remove('active');
+            tabSelectorBtn.classList.remove('active');
+            tabPengaturan.classList.remove('active');
+            tabProgress.classList.remove('active');
+            tabSelector.classList.remove('active');
+
             if (tab === 'pengaturan') {
                 tabPengaturanBtn.classList.add('active');
-                tabProgressBtn.classList.remove('active');
                 tabPengaturan.classList.add('active');
-                tabProgress.classList.remove('active');
+            } else if (tab === 'selector') {
+                tabSelectorBtn.classList.add('active');
+                tabSelector.classList.add('active');
+                loadSelectors();
             } else {
                 tabProgressBtn.classList.add('active');
-                tabPengaturanBtn.classList.remove('active');
                 tabProgress.classList.add('active');
-                tabPengaturan.classList.remove('active');
             }
         }
 
         tabPengaturanBtn.addEventListener('click', () => switchTab('pengaturan'));
         tabProgressBtn.addEventListener('click', () => switchTab('progress'));
+        tabSelectorBtn.addEventListener('click', () => switchTab('selector'));
 
         // Auto-switch to Progress tab when processing starts
         // (will be called from startBtn click handler below)
@@ -575,7 +639,32 @@
                 const res = await fetch('/api/settings/apply', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ idleTimeout })
+                    body: JSON.stringify({ 
+                        idleTimeout,
+                        globalTimeout: parseInt(globalTimeoutInput.value) || 30,
+                        daemonTimeout: parseInt(daemonTimeoutInput.value) || 30,
+                        useHeadless: false,
+                        socks5Host: socks5HostInput.value,
+                        uaMode: uaGenerateRadio.checked ? 'generate' : 'extension',
+                        deviceTypes: {
+                            desktop: document.getElementById('dt-desktop').checked,
+                            mobile: document.getElementById('dt-mobile').checked,
+                            tablet: document.getElementById('dt-tablet').checked
+                        },
+                        debugProxy: debugProxyCheckbox.checked,
+                        aliasWorker: aliasInput.value,
+                        urlDropbox: dropboxUrlInput.value,
+                        emailSource: emAutoRadio.checked ? 'auto' : 'manual',
+                        domainEmail: autoDomainInput.value,
+                        count: parseInt(autoCountInput.value) || 10,
+                        passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
+                        fixedPassword: fixedPasswordInput.value,
+                        globalRetry: parseInt(globalRetryInput.value) || 2,
+                        useDirect: useDirectCheckbox.checked,
+                        useWarp: useWarpCheckbox.checked,
+                        useSocks5: useSocks5Checkbox.checked,
+                        usePsiphon: usePsiphonCheckbox.checked
+                    })
                 });
                 if (res.ok) {
                     applySettingsBtn.textContent = '✓ Diterapkan';
@@ -600,6 +689,92 @@
         }
 
         applySettingsBtn.addEventListener('click', applySettings);
+
+        // ── Selector Management ────────────────────────────────
+        const selectorTableBody = document.getElementById('selector-table-body');
+        const saveSelectorBtn   = document.getElementById('save-selector-btn');
+        let currentSelectors    = {};
+
+        async function loadSelectors() {
+            try {
+                const res = await fetch('/api/selectors');
+                if (res.ok) {
+                    currentSelectors = await res.json();
+                    renderSelectorTable(currentSelectors);
+                }
+            } catch (e) {
+                console.error('Failed to load selectors:', e);
+            }
+        }
+
+        function renderSelectorTable(selectors) {
+            const groupLabels = {
+                email: 'Email',
+                continue: 'Continue',
+                firstName: 'First Name',
+                lastName: 'Last Name',
+                password: 'Password',
+                checkbox: 'Checkbox',
+                submit: 'Submit',
+                verify: 'Verify',
+                sendEmail: 'Send Email',
+                resend: 'Resend'
+            };
+
+            let html = '';
+            for (const [group, items] of Object.entries(selectors)) {
+                if (!Array.isArray(items) || group === 'captchaSelectors') continue;
+                const label = groupLabels[group] || group;
+                html += `<tr><td colspan="2" style="font-weight:600;color:#c4b5fd;padding-top:0.75rem;">${label}</td></tr>`;
+                for (const item of items) {
+                    const id = `sel-${group}-${item.selector.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    html += `<tr>
+                        <td style="color:var(--text-muted);font-size:0.78rem;">${item.label || item.selector}</td>
+                        <td><input type="text" id="${id}" value="${item.selector}" placeholder="CSS selector..." /></td>
+                    </tr>`;
+                }
+            }
+            selectorTableBody.innerHTML = html;
+        }
+
+        async function saveSelectors() {
+            try {
+                const groupLabels = {
+                    email: 'email', continue: 'continue', firstName: 'firstName',
+                    lastName: 'lastName', password: 'password', checkbox: 'checkbox',
+                    submit: 'submit', verify: 'verify', sendEmail: 'sendEmail', resend: 'resend'
+                };
+
+                const updated = {};
+                for (const [group, items] of Object.entries(currentSelectors)) {
+                    if (!Array.isArray(items) || group === 'captchaSelectors') continue;
+                    updated[group] = items.map(item => ({
+                        ...item,
+                        selector: document.getElementById(`sel-${group}-${item.selector.replace(/[^a-zA-Z0-9]/g, '_')}`).value
+                    }));
+                }
+
+                const res = await fetch('/api/selectors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updated)
+                });
+
+                if (res.ok) {
+                    saveSelectorBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Tersimpan';
+                    saveSelectorBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
+                    setTimeout(() => {
+                        saveSelectorBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Terapkan';
+                        saveSelectorBtn.style.background = '';
+                    }, 1500);
+                }
+            } catch (e) {
+                console.error('Failed to save selectors:', e);
+                alert('Gagal menyimpan selector');
+            }
+        }
+
+        saveSelectorBtn.addEventListener('click', saveSelectors);
 
         // ── UI Toggles ─────────────────────────────────────────
 
@@ -678,59 +853,68 @@
             localStorage.setItem('dropbox_signup_settings', JSON.stringify(settings));
         }
 
-        function loadSettings() {
+        async function loadSettings() {
+            let settings = null;
             try {
-                const raw = localStorage.getItem('dropbox_signup_settings');
-                if (raw) {
-                    const settings = JSON.parse(raw);
-                    if (settings.alias) aliasInput.value = settings.alias;
-                    if (settings.url) dropboxUrlInput.value = settings.url;
-                    if (settings.emails) emailsListInput.value = settings.emails;
-                    if (settings.domain) autoDomainInput.value = settings.domain;
-                    if (settings.count) autoCountInput.value = settings.count;
-                    if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
-                    if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
-                    if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
-                    if (settings.uaMode) {
-                        if (settings.uaMode === 'generate') uaGenerateRadio.checked = true;
-                        else uaExtensionRadio.checked = true;
-                    }
-                    if (settings.dtDesktop !== undefined) document.getElementById('dt-desktop').checked = settings.dtDesktop;
-                    if (settings.dtMobile !== undefined) document.getElementById('dt-mobile').checked = settings.dtMobile;
-                    if (settings.dtTablet !== undefined) document.getElementById('dt-tablet').checked = settings.dtTablet;
-                    
-                    updateUaModeUI();
-                    
-                    if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
-                    if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
-                    if (settings.useSocks5 !== undefined) useSocks5Checkbox.checked = settings.useSocks5;
-                    if (settings.usePsiphon !== undefined) usePsiphonCheckbox.checked = settings.usePsiphon;
-                    if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
-                    
-                    if (settings.debugProxy !== undefined) {
-                        debugProxyCheckbox.checked = settings.debugProxy;
-                    }
-                    vpnLogContainer.style.display = debugProxyCheckbox.checked ? 'flex' : 'none';
-                    
-                    if (settings.passwordMode === 'fixed') {
-                        pwFixedRadio.checked = true;
-                    } else {
-                        pwRandomRadio.checked = true;
-                    }
-                    if (settings.fixedPassword) fixedPasswordInput.value = settings.fixedPassword;
-
-                    if (settings.emailMode === 'auto') {
-                        emAutoRadio.checked = true;
-                    } else {
-                        emManualRadio.checked = true;
-                    }
-
-                    if (settings.idleTimeout) idleTimeoutInput.value = settings.idleTimeout;
-                    updatePasswordModeUI();
-                    updateEmailModeUI();
-                    socks5InputGroup.style.display = useSocks5Checkbox.checked ? 'flex' : 'none';
+                const res = await fetch('/api/settings');
+                if (res.ok) settings = await res.json();
+            } catch(e) {}
+            
+            if (!settings) {
+                try {
+                    const raw = localStorage.getItem('dropbox_signup_settings');
+                    if (raw) settings = JSON.parse(raw);
+                } catch(e) {}
+            }
+            
+            if (settings) {
+                if (settings.aliasWorker) aliasInput.value = settings.aliasWorker;
+                if (settings.urlDropbox) dropboxUrlInput.value = settings.urlDropbox;
+                if (settings.emailSource === 'manual' && settings.domainEmail) emailsListInput.value = settings.domainEmail;
+                if (settings.domainEmail && settings.emailSource !== 'manual') autoDomainInput.value = settings.domainEmail;
+                if (settings.count) autoCountInput.value = settings.count;
+                if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
+                if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
+                if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
+                if (settings.uaMode) {
+                    if (settings.uaMode === 'generate') uaGenerateRadio.checked = true;
+                    else uaExtensionRadio.checked = true;
                 }
-            } catch (e) {}
+                if (settings.dtDesktop !== undefined) document.getElementById('dt-desktop').checked = settings.dtDesktop;
+                if (settings.dtMobile !== undefined) document.getElementById('dt-mobile').checked = settings.dtMobile;
+                if (settings.dtTablet !== undefined) document.getElementById('dt-tablet').checked = settings.dtTablet;
+                
+                updateUaModeUI();
+                
+                if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
+                if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
+                if (settings.useSocks5 !== undefined) useSocks5Checkbox.checked = settings.useSocks5;
+                if (settings.usePsiphon !== undefined) usePsiphonCheckbox.checked = settings.usePsiphon;
+                if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
+                
+                if (settings.debugProxy !== undefined) {
+                    debugProxyCheckbox.checked = settings.debugProxy;
+                }
+                vpnLogContainer.style.display = debugProxyCheckbox.checked ? 'flex' : 'none';
+                
+                if (settings.passwordMode === 'fixed') {
+                    pwFixedRadio.checked = true;
+                } else {
+                    pwRandomRadio.checked = true;
+                }
+                if (settings.fixedPassword) fixedPasswordInput.value = settings.fixedPassword;
+
+                if (settings.emailSource === 'auto') {
+                    emAutoRadio.checked = true;
+                } else {
+                    emManualRadio.checked = true;
+                }
+
+                if (settings.idleTimeout) idleTimeoutInput.value = settings.idleTimeout;
+                updatePasswordModeUI();
+                updateEmailModeUI();
+                socks5InputGroup.style.display = useSocks5Checkbox.checked ? 'flex' : 'none';
+            }
         }
         
         // Save settings on any change

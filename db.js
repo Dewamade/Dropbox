@@ -11,7 +11,32 @@ function loadDB() {
     const defaults = {
         registrations: [],
         settings: {
-            idleTimeout: 600
+            // TARGET
+            aliasWorker: '',
+            urlDropbox: '',
+            // EMAIL
+            emailSource: 'auto',
+            domainEmail: '',
+            count: 8,
+            // PASSWORD
+            passwordMode: 'fixed',
+            fixedPassword: '',
+            // TIMEOUT & RETRY
+            globalTimeout: 30000,
+            globalRetry: 2,
+            daemonTimeout: 240000,
+            // BROWSER & KONEKSI
+            useHeadless: true,
+            socks5Host: '',
+            uaMode: 'extension',
+            deviceTypes: '[]',
+            useDirect: true,
+            useWarp: false,
+            useSocks5: false,
+            usePsiphon: false,
+            // LAIN-LAIN
+            idleTimeout: 600,
+            debugProxy: false
         }
     };
     if (!fs.existsSync(DB_PATH)) {
@@ -74,19 +99,19 @@ function clearRegistrations() {
 }
 
 /**
- * Get application settings
+ * Get application settings (full)
  */
-function getSettings() {
+function getSettingsFull() {
     const db = loadDB();
-    return db.settings || { idleTimeout: 600 };
+    return db.settings || {};
 }
 
 /**
- * Save application settings
+ * Save application settings (full)
  */
-function saveSettings(settings) {
+function saveSettingsFull(settings) {
     const db = loadDB();
-    db.settings = { ...db.settings, ...settings };
+    db.settings = settings;
     saveDB(db);
 }
 
@@ -94,6 +119,8 @@ module.exports = {
     saveRegistration,
     getAllRegistrations,
     clearRegistrations,
-    getSettings,
-    saveSettings
+    getSettingsFull,
+    saveSettingsFull,
+    getSettings: getSettingsFull,   // backward compat alias
+    saveSettings: saveSettingsFull  // backward compat alias
 };

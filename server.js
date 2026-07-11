@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { saveRegistration, getAllRegistrations, clearRegistrations, getSettings, saveSettings } = require('./db.js');
+const { saveRegistration, getAllRegistrations, clearRegistrations, getSettingsFull, saveSettingsFull } = require('./db.js');
 const { registerSingleEmail: _registerSingleEmail } = require('./register.js');
 
 // ── Random name generator (syllable-based) ──────────────────────────────────
@@ -87,9 +87,32 @@ let sessionTimeout = null;
 let warningTimeout = null;
 let sessionExpiryTime = 0;
 
-// Load persisted settings
-const savedSettings = getSettings();
+// Load persisted settings (full)
+const savedSettings = getSettingsFull();
 let idleDurationMs = (savedSettings.idleTimeout || 600) * 1000; // Configurable idle timeout (default: 10 minutes)
+
+// Other persisted settings
+let globalTimeout = savedSettings.globalTimeout || 30000;
+let daemonTimeout = savedSettings.daemonTimeout || 240000;
+let useHeadless = savedSettings.useHeadless !== false;
+let socks5Host = savedSettings.socks5Host || '';
+let uaMode = savedSettings.uaMode || 'extension';
+let deviceTypes = savedSettings.deviceTypes ? JSON.parse(savedSettings.deviceTypes) : [];
+let debugProxy = savedSettings.debugProxy || false;
+
+// New settings fields (persisted but not used as in-memory globals yet)
+let aliasWorker = savedSettings.aliasWorker || '';
+let urlDropbox = savedSettings.urlDropbox || '';
+let emailSource = savedSettings.emailSource || 'auto';
+let domainEmail = savedSettings.domainEmail || '';
+let count = savedSettings.count || 8;
+let passwordMode = savedSettings.passwordMode || 'fixed';
+let fixedPassword = savedSettings.fixedPassword || '';
+let globalRetry = savedSettings.globalRetry || 2;
+let useDirect = savedSettings.useDirect !== false;
+let useWarp = savedSettings.useWarp || false;
+let useSocks5 = savedSettings.useSocks5 || false;
+let usePsiphon = savedSettings.usePsiphon || false;
 
 function setWorkerStatus(newStatus) {
     if (workerStatus === newStatus) return;
@@ -170,22 +193,158 @@ app.post('/api/worker-stat/idle', (_req, res) => {
     }
 });
 
+app.get('/api/settings', (_req, res) => {
+    const allSettings = getSettingsFull();
+    // Also include in-memory globals that may not be persisted yet
+    res.json({
+        ...allSettings,
+        idleTimeout: parseInt(idleDurationMs / 1000),
+        globalTimeout,
+        daemonTimeout,
+        useHeadless,
+        socks5Host,
+        uaMode,
+        deviceTypes,
+        debugProxy,
+        aliasWorker,
+        urlDropbox,
+        emailSource,
+        domainEmail,
+        count,
+        passwordMode,
+        fixedPassword,
+        globalRetry,
+        useDirect,
+        useWarp,
+        useSocks5,
+        usePsiphon
+    });
+});
+
 app.post('/api/settings/apply', (req, res) => {
-    const { idleTimeout } = req.body || {};
-    if (idleTimeout !== undefined) {
-        const secs = parseInt(idleTimeout);
+    const body = req.body || {};
+    
+    // 1. Get current settings to use as base (preventing data loss)
+    const currentSettings = getSettingsFull();
+    
+    // 2. Create the merged settings object — capture EVERY field from the UI form
+    const mergedSettings = {
+        // ── TARGET ──────────────────────────────
+        aliasWorker: body.aliasWorker !== undefined ? body.aliasWorker : currentSettings.aliasWorker,
+        urlDropbox: body.urlDropbox !== undefined ? body.urlDropbox : currentSettings.urlDropbox,
+
+        // ── EMAIL ───────────────────────────────
+        emailSource: body.emailSource || currentSettings.emailSource,       // 'manual' | 'auto'
+        domainEmail: body.domainEmail !== undefined ? body.domainEmail : currentSettings.domainEmail,
+        count: typeof body.count === 'number' ? body.count : (parseInt(body.count) || currentSettings.count || 8),
+
+        // ── PASSWORD ────────────────────────────
+        passwordMode: body.passwordMode || currentSettings.passwordMode,    // 'fixed' | 'random'
+        fixedPassword: body.fixedPassword !== undefined ? body.fixedPassword : currentSettings.fixedPassword,
+
+        // ── TIMEOUT & RETRY ─────────────────────
+        globalTimeout: typeof body.globalTimeout === 'number' ? body.globalTimeout : (parseInt(body.globalTimeout) || currentSettings.globalTimeout || 30000),
+        globalRetry: typeof body.globalRetry === 'number' ? body.globalRetry : (parseInt(body.globalRetry) || currentSettings.globalRetry || 2),
+        daemonTimeout: typeof body.daemonTimeout === 'number' ? body.daemonTimeout : (parseInt(body.daemonTimeout) || currentSettings.daemonTimeout || 240000),
+
+        // ── BROWSER & KONEKSI ───────────────────
+        useHeadless: typeof body.useHeadless === 'boolean' ? body.useHeadless : (body.useHeadless !== undefined ? !!body.useHeadless : currentSettings.useHeadless),
+        socks5Host: body.socks5Host !== undefined ? body.socks5Host : currentSettings.socks5Host,
+        uaMode: body.uaMode || currentSettings.uaMode,                     // 'generate' | 'extension'
+        deviceTypes: body.deviceTypes ? (typeof body.deviceTypes === 'string' ? body.deviceTypes : JSON.stringify(body.deviceTypes)) : currentSettings.deviceTypes,
+
+        // Proxy type booleans
+        useDirect:  body.useDirect  !== undefined ? !!body.useDirect  : (currentSettings.useDirect  !== false),
+        useWarp:    body.useWarp    !== undefined ? !!body.useWarp    : (currentSettings.useWarp    || false),
+        useSocks5:  body.useSocks5  !== undefined ? !!body.useSocks5  : (currentSettings.useSocks5  || false),
+        usePsiphon: body.usePsiphon !== undefined ? !!body.usePsiphon : (currentSettings.usePsiphon || false),
+
+        // ── LAIN-LAIN ───────────────────────────
+        idleTimeout: typeof body.idleTimeout === 'number' ? body.idleTimeout : (parseInt(body.idleTimeout) || currentSettings.idleTimeout || 600),
+        debugProxy: typeof body.debugProxy === 'boolean' ? body.debugProxy : (body.debugProxy !== undefined ? !!body.debugProxy : currentSettings.debugProxy)
+    };
+
+    // Ensure deviceTypes is stored as a string in the JSON file
+    if (typeof mergedSettings.deviceTypes !== 'string') {
+        mergedSettings.deviceTypes = JSON.stringify(mergedSettings.deviceTypes);
+    }
+
+    // 3. Save the merged settings to file
+    saveSettingsFull(mergedSettings);
+
+    // 4. Update in-memory application state (crucial for running processes)
+    globalTimeout = mergedSettings.globalTimeout;
+    daemonTimeout = mergedSettings.daemonTimeout;
+    useHeadless = mergedSettings.useHeadless;
+    socks5Host = mergedSettings.socks5Host;
+    uaMode = mergedSettings.uaMode;
+    deviceTypes = JSON.parse(mergedSettings.deviceTypes);
+    debugProxy = mergedSettings.debugProxy;
+
+    // New settings fields — update in-memory globals too
+    aliasWorker = mergedSettings.aliasWorker;
+    urlDropbox = mergedSettings.urlDropbox;
+    emailSource = mergedSettings.emailSource;
+    domainEmail = mergedSettings.domainEmail;
+    count = mergedSettings.count;
+    passwordMode = mergedSettings.passwordMode;
+    fixedPassword = mergedSettings.fixedPassword;
+    globalRetry = mergedSettings.globalRetry;
+    useDirect = mergedSettings.useDirect;
+    useWarp = mergedSettings.useWarp;
+    useSocks5 = mergedSettings.useSocks5;
+    usePsiphon = mergedSettings.usePsiphon;
+    
+    // Apply idle timeout (restart timer if needed)
+    if (body.idleTimeout !== undefined) {
+        const secs = parseInt(body.idleTimeout);
         if (!isNaN(secs) && secs >= 30) {
             idleDurationMs = secs * 1000;
             console.log(`[Settings] Idle timeout diperbarui ke ${secs} detik.`);            
-            // Persist settings to file
-            saveSettings({ idleTimeout: secs });
-            // If an idle timer is currently running, restart it with new duration
+            // Restart idle timer if it's currently active
             if (sessionTimeout && (workerStatus === 'BOOT' || workerStatus === 'FINISH')) {
                 startIdleTimer();
             }
         }
     }
-    res.json({ ok: true, idleDurationMs });
+
+    res.json({ ok: true });
+});
+
+// ── Selector Management API ─────────────────────────────────────────────────
+let selectors = {};
+try {
+    selectors = require('./selector.json');
+    console.log('[Server] Selectors loaded from selector.json');
+} catch (e) {
+    console.error('[Server] Failed to load selector.json:', e.message);
+    selectors = {};
+}
+
+app.get('/api/selectors', (_req, res) => {
+    res.json(selectors);
+});
+
+app.post('/api/selectors', (req, res) => {
+    const body = req.body || {};
+    
+    // Merge incoming fields into the persisted selectors object
+    for (const key of Object.keys(body)) {
+        if (key === 'captchaSelectors') continue; // exclude auto-detect selectors
+        selectors[key] = body[key];
+    }
+
+    // Write back to file
+    const fs = require('fs');
+    const pathToSelector = path.join(__dirname, 'selector.json');
+    try {
+        fs.writeFileSync(pathToSelector, JSON.stringify(selectors, null, 2), 'utf8');
+        console.log('[Server] Selectors saved to selector.json');
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('[Server] Failed to save selectors:', e.message);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 function safeSend(socketOrPayload, maybePayload) {

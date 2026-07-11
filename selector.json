@@ -1,0 +1,70 @@
+{
+  "cookieBannerButton": "button:has-text(\"Accept\"), button:has-text(\"Setuju\"), #consent-accept-button",
+  "emailSelectors": [
+    "input[id^=\"susi_email\"]",
+    "input[type=\"email\"]",
+    "input[name=\"email\"]",
+    "input[placeholder*=\"Email\"]",
+    "input[placeholder*=\"email\"]"
+  ],
+  "continueSelectors": [
+    "button.email-submit-button",
+    "button:has-text(\"Continue\")",
+    "button:has-text(\"Lanjutkan\")",
+    "button[type=\"submit\"]"
+  ],
+  "firstNameSelectors": [
+    "input[id^=\"fname\"]",
+    "input[name=\"fname\"]",
+    "input[autocomplete=\"given-name\"]",
+    "input[placeholder*=\"First name\"]",
+    "input[placeholder*=\"Nama depan\"]"
+  ],
+  "lastNameSelectors": [
+    "input[id^=\"lname\"]",
+    "input[name=\"lname\"]",
+    "input[autocomplete=\"family-name\"]",
+    "input[placeholder*=\"Last name\"]",
+    "input[placeholder*=\"Nama belakang\"]"
+  ],
+  "passwordSelectors": [
+    "input[id^=\"password\"]",
+    "input[name=\"password\"]",
+    "input[type=\"password\"]",
+    "input[placeholder*=\"Password\"]",
+    "input[placeholder*=\"Kata sandi\"]"
+  ],
+  "checkboxSelectors": [
+    "input[type=\"checkbox\"][name=\"tos_agree\"]",
+    "input[type=\"checkbox\"]",
+    ".agree-checkbox"
+  ],
+  "submitSelectors": [
+    "button._register-button_1k6no_4",
+    "button:has-text(\"Agree and sign up\")",
+    "button:has-text(\"Setuju dan daftar\")",
+    "button[type=\"submit\"]",
+    "button:has-text(\"Sign up\")"
+  ],
+  "verifySelectors": [
+    "button[aria-label=\"Verify email\"]",
+    "button.account-key-value-block__link:has-text(\"Verify email\")",
+    "button:has-text(\"Verify email\")",
+    "button:has-text(\"Verifikasi email\")"
+  ],
+  "sendEmailSelectors": [
+    "button.js-email-modal-button.dig-Button--primary",
+    "button:has-text(\"Send email\")",
+    "button:has-text(\"Kirim email\")"
+  ],
+  "resendSelectors": [
+    "button:has-text(\"Resend\")",
+    "button:has-text(\"Kirim ulang\")",
+    "button:has-text(\"Resend email\")",
+    "button:has-text(\"Resend verification\")",
+    "button.js-email-modal-button:has-text(\"Resend\")",
+    "button.js-email-modal-button:has-text(\"Kirim ulang\")",
+    "//button[contains(text(),\"Resend\")]",
+    "//button[contains(text(),\"Kirim ulang\")]"
+  ]
+}
