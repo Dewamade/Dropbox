@@ -672,7 +672,7 @@ wss.on('connection', (ws) => {
                                         const pct = Math.round((successCount / emails.length) * 100);
                                         safeSend(ws, {
                                             type: 'progress',
-                                            current: successCount + 1,
+                                            current: processedCount,
                                             total: emails.length,
                                             status: `Berhasil: ${email}`,
                                             successCount,
@@ -696,7 +696,7 @@ wss.on('connection', (ws) => {
                                         const pct = Math.round((successCount / emails.length) * 100);
                                         safeSend(ws, {
                                             type: 'progress',
-                                            current: successCount + 1,
+                                            current: processedCount,
                                             total: emails.length,
                                             status: `Berhasil: ${email}`,
                                             successCount,
@@ -840,7 +840,8 @@ wss.on('connection', (ws) => {
                         total: emails.length,
                         status: shouldStop ? 'Proses dihentikan oleh pengguna.' : 'Semua email selesai diproses.',
                         successCount,
-                        failedCount
+                        failedCount,
+                        success: true
                     });
                 } catch (err) {
                     console.error('Error saat menjalankan proses pendaftaran:', err);
