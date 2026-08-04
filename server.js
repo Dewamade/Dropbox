@@ -466,6 +466,10 @@ wss.on('connection', (ws) => {
                 if (global.killAllBrowsers) global.killAllBrowsers();
                 if (global.killAllBox64) global.killAllBox64();
                 if (global.killAllVpnProxy) global.killAllVpnProxy();
+                // Reset progress state so refresh doesn't show stale data
+                globalState.progress = { current: 0, total: 0, status: 'Dihentikan', successCount: 0, failedCount: 0, verifCount: 0 };
+                globalState.stats = { timeouts: 0, errors: 0 };
+                globalState.info = { alias: '-', mode: '-', email: '-', ip: '-', ua: '-' };
                 safeSend(ws, { type: 'status', status: 'stopped' });
                 return;
             }
@@ -871,7 +875,11 @@ wss.on('connection', (ws) => {
                     if (global.killAllBrowsers) global.killAllBrowsers();
                     if (global.killAllBox64) global.killAllBox64();
                     if (global.killAllVpnProxy) global.killAllVpnProxy();
-                    
+                    // Reset progress so refresh shows 0% after finish
+                    globalState.progress = { current: 0, total: 0, status: 'Selesai', successCount: 0, failedCount: 0, verifCount: 0 };
+                    globalState.stats = { timeouts: 0, errors: 0 };
+                    globalState.info = { alias: '-', mode: '-', email: '-', ip: '-', ua: '-' };
+
                     setWorkerStatus('FINISH');
                     startIdleTimer();
                 }
