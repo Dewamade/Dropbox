@@ -487,7 +487,6 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
         }
 
         if (!psiphonActive) {
-            global.psiphonRegion = null;
             const { spawn } = require('child_process');
             console.log(`\nMengaktifkan koneksi Psiphon...`);
 
@@ -499,32 +498,31 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
             // Choose EgressRegion for Psiphon (from user setting or random fallback)
             const allRegions = ["AT", "BE", "CA", "CH", "CZ", "DE", "DK", "ES", "FI", "FR", "GB", "IE", "IN", "IT", "JP", "LT", "NL", "NO", "PL", "RO", "RS", "SE", "SG", "US"];
             let selectedRegion = global.psiphonRegion;
+            console.log(`[Psiphon] global.psiphonRegion diterima: "${selectedRegion}"`);
             if (!selectedRegion || !allRegions.includes(selectedRegion)) {
                 selectedRegion = allRegions[Math.floor(Math.random() * allRegions.length)];
+                console.log(`[Psiphon] Nilai kosong/invalid, fallback ke random: ${selectedRegion}`);
             }
             const selectedLabel = selectedRegion;
             console.log(`[Psiphon] Mengatur EgressRegion ke: ${selectedLabel}`);
 
-            const configPath = path.join(appDir, 'psiphon.config');
+            // Always read from the original config at project root, never from app/
+            const sourceConfigPath = path.join(__dirname, 'psiphon.config');
+            const targetConfigPath = path.join(appDir, 'psiphon.config');
             try {
-                let configSourcePath = configPath;
-                if (!fs.existsSync(configSourcePath)) {
-                    configSourcePath = path.join(__dirname, 'psiphon.config');
+                if (!fs.existsSync(appDir)) {
+                    fs.mkdirSync(appDir, { recursive: true });
                 }
 
-                if (fs.existsSync(configSourcePath)) {
-                    const rawConfig = fs.readFileSync(configSourcePath, 'utf8');
+                if (fs.existsSync(sourceConfigPath)) {
+                    const rawConfig = fs.readFileSync(sourceConfigPath, 'utf8');
                     const config = JSON.parse(rawConfig);
                     config.EgressRegion = selectedRegion;
 
-                    if (!fs.existsSync(appDir)) {
-                        fs.mkdirSync(appDir, { recursive: true });
-                    }
-
-                    fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf8');
-                    console.log(`[Psiphon] ✓ Config EgressRegion berhasil di-update ke ${selectedLabel}`);
+                    fs.writeFileSync(targetConfigPath, JSON.stringify(config, null, 4), 'utf8');
+                    console.log(`[Psiphon] ✓ Config EgressRegion berhasil di-update ke ${selectedLabel} (${sourceConfigPath} → ${targetConfigPath})`);
                 } else {
-                    console.log(`[Psiphon Warning] File config asal tidak ditemukan di: ${configSourcePath}`);
+                    console.log(`[Psiphon Warning] File config asal tidak ditemukan: ${sourceConfigPath}`);
                 }
             } catch (configErr) {
                 console.log(`[Psiphon Error] Gagal memodifikasi config EgressRegion: ${configErr.message}`);
