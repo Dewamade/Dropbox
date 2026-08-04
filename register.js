@@ -1528,26 +1528,18 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                         }
 
                         let resendBtnFound = false;
-                        let sendBtnGone = false;
                         const resendDeadline = Date.now() + 20000; // wait up to 20 seconds
                         while (Date.now() < resendDeadline) {
                             // Check for resend button
                             if (await waitForSelectorVisible(page, resendSelectors, 500)) {
                                 resendBtnFound = true;
-                            }
-                            // Also verify original send button is gone
-                            if (resendBtnFound && !(await waitForSelectorVisible(page, sendEmailSelectors, 500))) {
-                                sendBtnGone = true;
-                                break; // Both conditions met — confirmed success
+                                break;
                             }
                             await page.waitForTimeout(1000);
                         }
 
                         if (!resendBtnFound) {
                             throw new Error("Tombol Resend tidak muncul di modal (verifikasi gagal/tidak terkirim).");
-                        }
-                        if (!sendBtnGone) {
-                            console.log(`⚠️ Tombol Resend ditemukan TAPI tombol Send masih ada — kemungkinan belum berhasil terkirim.`);
                         }
 
                         console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email} (tombol Resend terdeteksi)!`);
