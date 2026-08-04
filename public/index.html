@@ -1327,7 +1327,7 @@
                     if (data.timeouts !== undefined) infoTimeout.innerText = data.timeouts;
                     if (data.errors !== undefined) infoError.innerText = data.errors;
                 } else if (data.type === 'progress') {
-                    if (data.success) updateProgress(data.current, data.total, data.status, data.successCount, data.failedCount, data.verifCount);
+                    updateProgress(data.current, data.total, data.status, data.successCount, data.failedCount, data.verifCount);
                 } else if (data.type === 'status') {
                     updateStatus(data.status);
                     // Hide preview when not running
