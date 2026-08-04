@@ -497,7 +497,7 @@ wss.on('connection', (ws) => {
                 safeSend(ws, { type: 'status', status: 'running' });
 
                 // ── Live Preview: screenshot interval ─────────────
-                global.livePreview = global.livePreview && data.enablePreview ? true : false;
+                global.livePreview = !!data.enablePreview;
                 let screenshotInterval = null;
                 if (global.livePreview) {
                     screenshotInterval = setInterval(async () => {

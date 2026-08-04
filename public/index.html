@@ -980,7 +980,8 @@
                 dtMobile: document.getElementById('dt-mobile').checked,
                 dtTablet: document.getElementById('dt-tablet').checked,
                 debugProxy: debugProxyCheckbox.checked,
-                idleTimeout: idleTimeoutInput.value
+                idleTimeout: idleTimeoutInput.value,
+                enablePreview: document.getElementById('enable-preview').checked
             };
             localStorage.setItem('dropbox_signup_settings', JSON.stringify(settings));
         }
@@ -1044,6 +1045,7 @@
                 }
 
                 if (settings.idleTimeout) idleTimeoutInput.value = settings.idleTimeout;
+                if (settings.enablePreview !== undefined) document.getElementById('enable-preview').checked = settings.enablePreview;
                 updatePasswordModeUI();
                 updateEmailModeUI();
                 socks5InputGroup.style.display = useSocks5Checkbox.checked ? 'flex' : 'none';
@@ -1056,7 +1058,7 @@
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
             globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
             useSocks5Checkbox, usePsiphonCheckbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio,
-            debugProxyCheckbox, idleTimeoutInput
+            debugProxyCheckbox, idleTimeoutInput, document.getElementById('enable-preview')
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
         inputsToSave.forEach(el => el.addEventListener('keyup', saveSettings));
