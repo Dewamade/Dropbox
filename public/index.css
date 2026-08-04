@@ -718,7 +718,7 @@ textarea { resize: vertical; min-height: 80px; max-height: 150px; line-height: 1
 /* ── Browser Preview ────────────────────────────── */
 .browser-preview {
     width: 100%;
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 16 / 14;
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: rgba(0,0,0,0.35);
