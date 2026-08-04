@@ -880,7 +880,8 @@
                         useWarp: useWarpCheckbox.checked,
                         useSocks5: useSocks5Checkbox.checked,
                         usePsiphon: usePsiphonCheckbox.checked,
-                        psiphonRegions: getSelectedPsiphonRegions()
+                        psiphonRegions: getSelectedPsiphonRegions(),
+                        enablePreview: document.getElementById('enable-preview').checked
                     })
                 });
                 if (res.ok) {

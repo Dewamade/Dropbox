@@ -115,6 +115,7 @@ let useSocks5 = savedSettings.useSocks5 || false;
 let usePsiphon = savedSettings.usePsiphon || false;
 let psiphonRegions = savedSettings.psiphonRegions || [];
 global.psiphonRegions = psiphonRegions;
+let enablePreview = savedSettings.enablePreview || false;
 
 function setWorkerStatus(newStatus) {
     if (workerStatus === newStatus) return;
@@ -219,7 +220,8 @@ app.get('/api/settings', (_req, res) => {
         useDirect,
         useWarp,
         useSocks5,
-        usePsiphon
+        usePsiphon,
+        enablePreview
     });
 });
 
@@ -264,7 +266,8 @@ app.post('/api/settings/apply', (req, res) => {
 
         // ── LAIN-LAIN ───────────────────────────
         idleTimeout: typeof body.idleTimeout === 'number' ? body.idleTimeout : (parseInt(body.idleTimeout) || currentSettings.idleTimeout || 600),
-        debugProxy: typeof body.debugProxy === 'boolean' ? body.debugProxy : (body.debugProxy !== undefined ? !!body.debugProxy : currentSettings.debugProxy)
+        debugProxy: typeof body.debugProxy === 'boolean' ? body.debugProxy : (body.debugProxy !== undefined ? !!body.debugProxy : currentSettings.debugProxy),
+        enablePreview: body.enablePreview !== undefined ? !!body.enablePreview : (currentSettings.enablePreview || false)
     };
 
     // Ensure deviceTypes is stored as a string in the JSON file
@@ -299,6 +302,7 @@ app.post('/api/settings/apply', (req, res) => {
     usePsiphon = mergedSettings.usePsiphon;
     psiphonRegions = mergedSettings.psiphonRegions;
     global.psiphonRegions = psiphonRegions;
+    enablePreview = mergedSettings.enablePreview;
     
     // Apply idle timeout (restart timer if needed)
     if (body.idleTimeout !== undefined) {
