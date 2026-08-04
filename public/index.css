@@ -714,3 +714,41 @@ textarea { resize: vertical; min-height: 80px; max-height: 150px; line-height: 1
 }
 .psiphon-cb:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 .psiphon-cb:hover:not(:has(input:disabled)) { border-color: rgba(255,255,255,0.2); }
+
+/* ── Browser Preview ────────────────────────────── */
+.browser-preview {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: rgba(0,0,0,0.35);
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 0.75rem;
+}
+.browser-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: none;
+}
+.browser-preview img.visible {
+    display: block;
+}
+.preview-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+}
+.preview-placeholder svg {
+    opacity: 0.4;
+}
+.browser-preview:has(img.visible) .preview-placeholder {
+    display: none;
+}

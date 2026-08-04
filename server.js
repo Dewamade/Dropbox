@@ -496,6 +496,19 @@ wss.on('connection', (ws) => {
 
                 safeSend(ws, { type: 'status', status: 'running' });
 
+                // ── Live Preview: screenshot interval ─────────────
+                global.livePreview = global.livePreview && data.enablePreview ? true : false;
+                let screenshotInterval = null;
+                if (global.livePreview) {
+                    screenshotInterval = setInterval(async () => {
+                        try {
+                            if (!global.page) return;
+                            const buf = await global.page.screenshot({ type: 'jpeg', quality: 40 });
+                            safeSend({ type: 'preview', data: buf.toString('base64') });
+                        } catch (_) { /* page may be closed */ }
+                    }, 1000);
+                }
+
                 const { 
                     action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
@@ -879,6 +892,9 @@ wss.on('connection', (ws) => {
                     if (global.killAllBrowsers) global.killAllBrowsers();
                     if (global.killAllBox64) global.killAllBox64();
                     if (global.killAllVpnProxy) global.killAllVpnProxy();
+                    // Stop live preview interval
+                    if (screenshotInterval) clearInterval(screenshotInterval);
+                    global.livePreview = false;
                     // Reset progress so refresh shows 0% after finish
                     globalState.progress = { current: 0, total: 0, status: 'Selesai', successCount: 0, failedCount: 0, verifCount: 0 };
                     globalState.stats = { timeouts: 0, errors: 0 };

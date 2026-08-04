@@ -884,6 +884,8 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
     // Kita gunakan halaman pertama yang sudah terbuka agar tidak meluncurkan 2 jendela browser.
     const pages = context.pages();
     const page = pages.length > 0 ? pages[0] : await context.newPage();
+    // Expose page for live preview screenshot
+    global.page = page;
 
     // Helper to fill input directly
     async function humanType(selector, text) {
@@ -1564,6 +1566,8 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
         if (browserObj) {
             try { await browserObj.close(); } catch (e) { }
         }
+        // Clear global page reference
+        global.page = null;
         // Force-kill any lingering Firefox/playwright + box64 processes
         killAllBrowsers();
         killAllBox64();
