@@ -39,6 +39,31 @@ function getCSSSelectors(selectors) {
     );
 }
 
+// Helper: try to find a visible element using any selector type (CSS, :has-text, XPath)
+async function waitForSelectorVisible(page, selectors, timeoutMs) {
+    for (const sel of selectors) {
+        try {
+            const loc = page.locator(sel);
+            if (await loc.first().isVisible({ timeout: timeoutMs })) return true;
+        } catch (_) { }
+    }
+    return false;
+}
+
+// Helper: try to click an element using any selector type
+async function clickSelector(page, selectors) {
+    for (const sel of selectors) {
+        try {
+            const loc = page.locator(sel);
+            if (await loc.first().isVisible()) {
+                await loc.first().click();
+                return true;
+            }
+        } catch (_) { }
+    }
+    return false;
+}
+
 // Track whether Warp/Psiphon is already active (avoid unnecessary stop/start between cycles)
 let warpActive = false;
 let psiphonActive = false;
@@ -1466,63 +1491,63 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                         // Click Send email button inside the modal
                         let sendEmailSelectors = getSelectors('send_email');
                         if (sendEmailSelectors.length === 0) {
-                            sendEmailSelectors = ['button.js-email-modal-button.dig-Button--primary', 'button[data-testid*="send-email"]', 'button[type="submit"].js-email-modal-button'];
+                            sendEmailSelectors = [
+                                'button:has-text("Send email")',
+                                'button:has-text("Kirim email")',
+                                'button.js-email-modal-button.dig-Button--primary',
+                                'button[data-testid*="send-email"]',
+                                'button[type="submit"].js-email-modal-button'
+                            ];
                         }
 
-                        let sendBtnFound = false;
-                        const cssSendEmailSelectors = getCSSSelectors(sendEmailSelectors);
-                        for (const sel of cssSendEmailSelectors) {
-                            try {
-                                await page.waitForSelector(sel, { state: 'visible', timeout: 5000 });
-                                sendBtnFound = true;
-                                break;
-                            } catch (_) { }
-                        }
-
+                        // Wait for any send-email selector to be visible
+                        let sendBtnFound = await waitForSelectorVisible(page, sendEmailSelectors, 8000);
                         if (!sendBtnFound) {
                             throw new Error("Tombol Send email tidak ditemukan di modal.");
                         }
 
-                        let clickSuccess = false;
-                        for (const sel of sendEmailSelectors) {
-                            try {
-                                if (await page.isVisible(sel)) {
-                                    await page.click(sel);
-                                    console.log(`[Browser] Tombol Send email diklik.`);
-                                    clickSuccess = true;
-                                    break;
-                                }
-                            } catch (e) { }
-                        }
-
-                        if (!clickSuccess) {
+                        // Click using any selector (supports :has-text, CSS, XPath)
+                        let clickSuccess = await clickSelector(page, sendEmailSelectors);
+                        if (clickSuccess) {
+                            console.log(`[Browser] Tombol Send email diklik.`);
+                        } else {
                             throw new Error("Gagal mengklik tombol Send email di modal.");
                         }
 
-                        // Wait for modal to change and check for resend button to verify success
+                        // Wait for modal to change — check for resend button AND confirm send button is gone
                         console.log(`[Browser] Menunggu konfirmasi pengiriman (tombol Resend/Kirim ulang)...`);
                         let resendSelectors = getSelectors('resend_email');
                         if (resendSelectors.length === 0) {
-                            resendSelectors = ['button[data-testid*="resend"]', 'button.js-email-modal-button', 'button[type="submit"].js-email-modal-button'];
+                            resendSelectors = [
+                                'button:has-text("Resend")',
+                                'button:has-text("Kirim ulang")',
+                                'button:has-text("Resend email")',
+                                'button:has-text("Resend verification")',
+                                'button[data-testid*="resend"]'
+                            ];
                         }
 
                         let resendBtnFound = false;
-                        const resendDeadline = Date.now() + 15000; // wait up to 15 seconds
+                        let sendBtnGone = false;
+                        const resendDeadline = Date.now() + 20000; // wait up to 20 seconds
                         while (Date.now() < resendDeadline) {
-                            for (const sel of resendSelectors) {
-                                try {
-                                    if (await page.locator(sel).first().isVisible()) {
-                                        resendBtnFound = true;
-                                        break;
-                                    }
-                                } catch (e) { }
+                            // Check for resend button
+                            if (await waitForSelectorVisible(page, resendSelectors, 500)) {
+                                resendBtnFound = true;
                             }
-                            if (resendBtnFound) break;
-                            await page.waitForTimeout(500);
+                            // Also verify original send button is gone
+                            if (resendBtnFound && !(await waitForSelectorVisible(page, sendEmailSelectors, 500))) {
+                                sendBtnGone = true;
+                                break; // Both conditions met — confirmed success
+                            }
+                            await page.waitForTimeout(1000);
                         }
 
                         if (!resendBtnFound) {
                             throw new Error("Tombol Resend tidak muncul di modal (verifikasi gagal/tidak terkirim).");
+                        }
+                        if (!sendBtnGone) {
+                            console.log(`⚠️ Tombol Resend ditemukan TAPI tombol Send masih ada — kemungkinan belum berhasil terkirim.`);
                         }
 
                         console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email} (tombol Resend terdeteksi)!`);
