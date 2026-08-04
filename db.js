@@ -35,7 +35,7 @@ function loadDB() {
             useWarp: false,
             useSocks5: false,
             usePsiphon: false,
-            psiphonRegion: '',
+            psiphonRegions: [],
             // LAIN-LAIN
             idleTimeout: 600,
             debugProxy: false

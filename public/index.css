@@ -689,3 +689,28 @@ textarea { resize: vertical; min-height: 80px; max-height: 150px; line-height: 1
     .header-subtitle { display: none; }
     #worker-status-pill { display: none; }
 }
+
+/* -- Psiphon Country Checkboxes -------------------- */
+.psiphon-cb {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border-2);
+    border-radius: 6px;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    user-select: none;
+    white-space: nowrap;
+}
+.psiphon-cb input { accent-color: var(--indigo); cursor: pointer; }
+.psiphon-cb:has(input:checked) {
+    border-color: rgba(99,102,241,0.45);
+    background: rgba(99,102,241,0.12);
+    color: #c4b5fd;
+}
+.psiphon-cb:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+.psiphon-cb:hover:not(:has(input:disabled)) { border-color: rgba(255,255,255,0.2); }

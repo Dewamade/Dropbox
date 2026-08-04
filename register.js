@@ -495,16 +495,38 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
             const appDir = path.join(__dirname, 'app');
 
-            // Choose EgressRegion for Psiphon (from user setting or random fallback)
+            // Choose EgressRegion from user-selected list (random, skip already-used)
             const allRegions = ["AT", "BE", "CA", "CH", "CZ", "DE", "DK", "ES", "FI", "FR", "GB", "IE", "IN", "IT", "JP", "LT", "NL", "NO", "PL", "RO", "RS", "SE", "SG", "US"];
-            let selectedRegion = global.psiphonRegion;
-            console.log(`[Psiphon] global.psiphonRegion diterima: "${selectedRegion}"`);
-            if (!selectedRegion || !allRegions.includes(selectedRegion)) {
-                selectedRegion = allRegions[Math.floor(Math.random() * allRegions.length)];
-                console.log(`[Psiphon] Nilai kosong/invalid, fallback ke random: ${selectedRegion}`);
+            let availableRegions = global.psiphonRegions || [];
+            console.log(`[Psiphon] Negara terpilih user: [${availableRegions.join(', ')}]`);
+
+            // Filter: only valid region codes
+            availableRegions = availableRegions.filter(r => allRegions.includes(r));
+
+            // Track regions already tried in this session
+            const usedRegions = global.psiphonUsedRegions || [];
+            const unusedRegions = availableRegions.length > 0
+                ? availableRegions.filter(r => !usedRegions.includes(r))
+                : allRegions.filter(r => !usedRegions.includes(r));
+
+            let selectedRegion;
+            if (unusedRegions.length > 0) {
+                selectedRegion = unusedRegions[Math.floor(Math.random() * unusedRegions.length)];
+            } else {
+                // All selected countries exhausted — allow reuse from pool
+                selectedRegion = (availableRegions.length > 0 ? availableRegions : allRegions)
+                    [Math.floor(Math.random() * (availableRegions.length > 0 ? availableRegions.length : allRegions.length))];
+                console.log(`[Psiphon] Semua negara sudah dicoba, mengulang dari pool...`);
             }
+
+            // Track this region as used
+            if (!usedRegions.includes(selectedRegion)) {
+                usedRegions.push(selectedRegion);
+                global.psiphonUsedRegions = usedRegions;
+            }
+
             const selectedLabel = selectedRegion;
-            console.log(`[Psiphon] Mengatur EgressRegion ke: ${selectedLabel}`);
+            console.log(`[Psiphon] Mengatur EgressRegion ke: ${selectedLabel} (sisa negara: ${unusedRegions.length > 0 ? unusedRegions.filter(r => r !== selectedRegion).join(', ') : '—'})`);
 
             // Always read from the original config at project root, never from app/
             const sourceConfigPath = path.join(__dirname, 'psiphon.config');
