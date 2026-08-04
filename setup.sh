@@ -2,7 +2,7 @@
 
 # ==============================================================================
 # Setup Script - Dashboard UI Pendaftaran Massal Dropbox
-# Branch: webui2
+# Branch: webui3
 # ==============================================================================
 
 # Warna untuk output terminal
@@ -16,7 +16,7 @@ echo -e "${GREEN}      Memulai Setup Dashboard UI Pendaftaran Massal Dropbox    
 echo -e "${GREEN}======================================================================${NC}"
 
 REPO_URL="https://github.com/Dewamade/Dropbox.git"
-BRANCH="webui2"
+BRANCH="webui3"
 
 # 1. Deteksi Lingkungan
 echo -e "\n${GREEN}[1/6] Memeriksa lingkungan sistem...${NC}"
