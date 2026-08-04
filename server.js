@@ -857,14 +857,18 @@ wss.on('connection', (ws) => {
 
                     const finalStatus = shouldStop ? 'stopped' : 'success';
                     safeSend({ type: 'status', status: finalStatus });
-                    safeSend({
-                        type: 'progress',
-                        current: processedCount,
-                        total: emails.length,
-                        status: shouldStop ? 'Proses dihentikan oleh pengguna.' : 'Semua email selesai diproses.',
-                        successCount,
-                        failedCount
-                    });
+                    // Only send progress summary when completed (not when stopped) —
+                    // to avoid overwriting the stop handler's globalState reset
+                    if (!shouldStop) {
+                        safeSend({
+                            type: 'progress',
+                            current: processedCount,
+                            total: emails.length,
+                            status: 'Semua email selesai diproses.',
+                            successCount,
+                            failedCount
+                        });
+                    }
                 } catch (err) {
                     console.error('Error saat menjalankan proses pendaftaran:', err);
                     safeSend({ type: 'status', status: 'error' });

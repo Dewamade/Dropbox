@@ -1272,7 +1272,7 @@
                             logPanel.innerHTML = '';
                             data.state.logs.forEach(log => handleLogMessage(log.message));
                         }
-                        if (data.state.progress && data.state.progress.total > 0) {
+                        if (data.state.progress) {
                             updateProgress(data.state.progress.current, data.state.progress.total, data.state.progress.status, data.state.progress.successCount, data.state.progress.failedCount, data.state.progress.verifCount);
                         }
                         if (data.state.info) {
@@ -1389,13 +1389,15 @@
         }
 
         function updateProgress(current, total, status, successCount, failedCount, verifCount) {
-            const pct = Math.round((current / total) * 100);
+            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
             progressPercentage.innerText = `${pct}%`;
 
             const offset = 376.99 - (376.99 * pct) / 100;
             progressIndicator.style.strokeDashoffset = offset;
 
-            progressDetail.innerText = `Memproses email ke-${current} dari ${total} (${status})`;
+            progressDetail.innerText = total > 0
+                ? `Memproses email ke-${current} dari ${total} (${status})`
+                : (status || 'Standby');
 
             if (successCount !== undefined) document.getElementById('stat-success-count').innerText = successCount;
             if (failedCount !== undefined) document.getElementById('stat-failed-count').innerText = failedCount;
