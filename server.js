@@ -507,7 +507,7 @@ wss.on('connection', (ws) => {
                     screenshotInterval = setInterval(async () => {
                         try {
                             if (!global.page) return;
-                            const buf = await global.page.screenshot({ type: 'jpeg', quality: 40 });
+                            const buf = await global.page.screenshot({ type: 'jpeg', quality: 40, fullPage: true });
                             safeSend({ type: 'preview', data: buf.toString('base64') });
                         } catch (_) { /* page may be closed */ }
                     }, 1000);
