@@ -342,6 +342,37 @@
                                     </div>
                                 </div>
 
+                                <div class="form-group" id="psiphon-region-group" style="display:none;">
+                                    <label for="psiphon-region-select">🌍 Psiphon — Pilih Negara</label>
+                                    <select id="psiphon-region-select" style="width:100%;padding:0.6rem 0.75rem;background:#27272a;border:1px solid #3f3f46;border-radius:8px;color:#fafafa;font-family:inherit;font-size:0.85rem;appearance:none;cursor:pointer;">
+                                        <option value="">— Acak (Random) —</option>
+                                        <option value="AT">🇦🇹 Austria (AT)</option>
+                                        <option value="BE">🇧🇪 Belgia (BE)</option>
+                                        <option value="CA">🇨🇦 Kanada (CA)</option>
+                                        <option value="CH">🇨🇭 Swiss (CH)</option>
+                                        <option value="CZ">🇨🇿 Ceko (CZ)</option>
+                                        <option value="DE">🇩🇪 Jerman (DE)</option>
+                                        <option value="DK">🇩🇰 Denmark (DK)</option>
+                                        <option value="ES">🇪🇸 Spanyol (ES)</option>
+                                        <option value="FI">🇫🇮 Finlandia (FI)</option>
+                                        <option value="FR">🇫🇷 Prancis (FR)</option>
+                                        <option value="GB">🇬🇧 Inggris (GB)</option>
+                                        <option value="IE">🇮🇪 Irlandia (IE)</option>
+                                        <option value="IN">🇮🇳 India (IN)</option>
+                                        <option value="IT">🇮🇹 Italia (IT)</option>
+                                        <option value="JP">🇯🇵 Jepang (JP)</option>
+                                        <option value="LT">🇱🇹 Lituania (LT)</option>
+                                        <option value="NL">🇳🇱 Belanda (NL)</option>
+                                        <option value="NO">🇳🇴 Norwegia (NO)</option>
+                                        <option value="PL">🇵🇱 Polandia (PL)</option>
+                                        <option value="RO">🇷🇴 Rumania (RO)</option>
+                                        <option value="RS">🇷🇸 Serbia (RS)</option>
+                                        <option value="SE">🇸🇪 Swedia (SE)</option>
+                                        <option value="SG">🇸🇬 Singapura (SG)</option>
+                                        <option value="US">🇺🇸 Amerika Serikat (US)</option>
+                                    </select>
+                                </div>
+
                                 <div class="form-group" id="socks5-input-group" style="display:none;">
                                     <label for="socks5-host">Socks5 Host:Port</label>
                                     <input type="text" id="socks5-host" placeholder="127.0.0.1:1080">
@@ -515,6 +546,13 @@
         const useSocks5Checkbox = document.getElementById('use-socks5');
         const socks5InputGroup = document.getElementById('socks5-input-group');
         const socks5HostInput = document.getElementById('socks5-host');
+
+        const psiphonRegionGroup = document.getElementById('psiphon-region-group');
+        const psiphonRegionSelect = document.getElementById('psiphon-region-select');
+
+        usePsiphonCheckbox.addEventListener('change', (e) => {
+            psiphonRegionGroup.style.display = e.target.checked ? 'flex' : 'none';
+        });
 
         const debugProxyCheckbox  = document.getElementById('debug-proxy');
         const vpnLogContainer     = document.getElementById('vpn-log-container');
@@ -815,7 +853,8 @@
                         useDirect: useDirectCheckbox.checked,
                         useWarp: useWarpCheckbox.checked,
                         useSocks5: useSocks5Checkbox.checked,
-                        usePsiphon: usePsiphonCheckbox.checked
+                        usePsiphon: usePsiphonCheckbox.checked,
+                        psiphonRegion: psiphonRegionSelect.value
                     })
                 });
                 if (res.ok) {
@@ -902,6 +941,7 @@
                 useWarp: useWarpCheckbox.checked,
                 useSocks5: useSocks5Checkbox.checked,
                 usePsiphon: usePsiphonCheckbox.checked,
+                psiphonRegion: psiphonRegionSelect.value,
                 socks5Host: socks5HostInput.value,
                 passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
                 fixedPassword: fixedPasswordInput.value,
@@ -956,6 +996,7 @@
                 if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
                 if (settings.useSocks5 !== undefined) useSocks5Checkbox.checked = settings.useSocks5;
                 if (settings.usePsiphon !== undefined) usePsiphonCheckbox.checked = settings.usePsiphon;
+                if (settings.psiphonRegion) psiphonRegionSelect.value = settings.psiphonRegion;
                 if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
                 
                 if (settings.debugProxy !== undefined) {
@@ -980,6 +1021,7 @@
                 updatePasswordModeUI();
                 updateEmailModeUI();
                 socks5InputGroup.style.display = useSocks5Checkbox.checked ? 'flex' : 'none';
+                psiphonRegionGroup.style.display = usePsiphonCheckbox.checked ? 'flex' : 'none';
             }
         }
         
@@ -987,7 +1029,7 @@
         const inputsToSave = [
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
             globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
-            useSocks5Checkbox, usePsiphonCheckbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio,
+            useSocks5Checkbox, usePsiphonCheckbox, psiphonRegionSelect, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio,
             debugProxyCheckbox, idleTimeoutInput
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
@@ -1359,6 +1401,7 @@
             useWarpCheckbox.disabled = disabled;
             useSocks5Checkbox.disabled = disabled;
             usePsiphonCheckbox.disabled = disabled;
+            psiphonRegionSelect.disabled = disabled;
             socks5HostInput.disabled = disabled;
             pwRandomRadio.disabled = disabled;
             pwFixedRadio.disabled = disabled;
@@ -1544,6 +1587,7 @@
                 appendLog('log-info', `[Dashboard] Mode Password: ${passwordMode === 'fixed' ? 'Fixed (' + fixedPassword + ')' : 'Random'}`);
                 appendLog('log-info', '[Dashboard] Mengirimkan data formulir registrasi...');
 
+                const selectedPsiphonRegion = psiphonRegionSelect.value;
                 socket.send(JSON.stringify({
                     action: 'start',
                     alias,
@@ -1565,7 +1609,8 @@
                     fixedPassword,
                     uaMode,
                     deviceTypes,
-                    debugProxy: debugProxyCheckbox.checked
+                    debugProxy: debugProxyCheckbox.checked,
+                    psiphonRegion: selectedPsiphonRegion
                 }));
             } else {
                 alert('WebSocket belum siap. Silakan muat ulang halaman.');

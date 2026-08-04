@@ -496,10 +496,14 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
 
             const appDir = path.join(__dirname, 'app');
 
-            // Choose a random EgressRegion for Psiphon
-            const regions = ["AT", "BE", "CA", "CH", "CZ", "DE", "DK", "ES", "FI", "FR", "GB", "IE", "IN", "IT", "JP", "LT", "NL", "NO", "PL", "RO", "RS", "SE", "SG", "US"];
-            const randomRegion = regions[Math.floor(Math.random() * regions.length)];
-            console.log(`[Psiphon] Mengatur EgressRegion ke random region: ${randomRegion}`);
+            // Choose EgressRegion for Psiphon (from user setting or random fallback)
+            const allRegions = ["AT", "BE", "CA", "CH", "CZ", "DE", "DK", "ES", "FI", "FR", "GB", "IE", "IN", "IT", "JP", "LT", "NL", "NO", "PL", "RO", "RS", "SE", "SG", "US"];
+            let selectedRegion = global.psiphonRegion;
+            if (!selectedRegion || !allRegions.includes(selectedRegion)) {
+                selectedRegion = allRegions[Math.floor(Math.random() * allRegions.length)];
+            }
+            const selectedLabel = selectedRegion;
+            console.log(`[Psiphon] Mengatur EgressRegion ke: ${selectedLabel}`);
 
             const configPath = path.join(appDir, 'psiphon.config');
             try {
@@ -511,14 +515,14 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 if (fs.existsSync(configSourcePath)) {
                     const rawConfig = fs.readFileSync(configSourcePath, 'utf8');
                     const config = JSON.parse(rawConfig);
-                    config.EgressRegion = randomRegion;
+                    config.EgressRegion = selectedRegion;
 
                     if (!fs.existsSync(appDir)) {
                         fs.mkdirSync(appDir, { recursive: true });
                     }
 
                     fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf8');
-                    console.log(`[Psiphon] ✓ Config EgressRegion berhasil di-update ke ${randomRegion}`);
+                    console.log(`[Psiphon] ✓ Config EgressRegion berhasil di-update ke ${selectedLabel}`);
                 } else {
                     console.log(`[Psiphon Warning] File config asal tidak ditemukan di: ${configSourcePath}`);
                 }

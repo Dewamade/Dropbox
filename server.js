@@ -113,6 +113,8 @@ let useDirect = savedSettings.useDirect !== false;
 let useWarp = savedSettings.useWarp || false;
 let useSocks5 = savedSettings.useSocks5 || false;
 let usePsiphon = savedSettings.usePsiphon || false;
+let psiphonRegion = savedSettings.psiphonRegion || '';
+if (psiphonRegion) global.psiphonRegion = psiphonRegion;
 
 function setWorkerStatus(newStatus) {
     if (workerStatus === newStatus) return;
@@ -258,6 +260,7 @@ app.post('/api/settings/apply', (req, res) => {
         useWarp:    body.useWarp    !== undefined ? !!body.useWarp    : (currentSettings.useWarp    || false),
         useSocks5:  body.useSocks5  !== undefined ? !!body.useSocks5  : (currentSettings.useSocks5  || false),
         usePsiphon: body.usePsiphon !== undefined ? !!body.usePsiphon : (currentSettings.usePsiphon || false),
+        psiphonRegion: body.psiphonRegion !== undefined ? (body.psiphonRegion || '') : (currentSettings.psiphonRegion || ''),
 
         // ── LAIN-LAIN ───────────────────────────
         idleTimeout: typeof body.idleTimeout === 'number' ? body.idleTimeout : (parseInt(body.idleTimeout) || currentSettings.idleTimeout || 600),
@@ -294,6 +297,8 @@ app.post('/api/settings/apply', (req, res) => {
     useWarp = mergedSettings.useWarp;
     useSocks5 = mergedSettings.useSocks5;
     usePsiphon = mergedSettings.usePsiphon;
+    psiphonRegion = mergedSettings.psiphonRegion;
+    if (psiphonRegion) global.psiphonRegion = psiphonRegion;
     
     // Apply idle timeout (restart timer if needed)
     if (body.idleTimeout !== undefined) {
@@ -490,10 +495,12 @@ wss.on('connection', (ws) => {
                 const { 
                     action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
-                    useDirect, useWarp, useSocks5, usePsiphon, socks5Host, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes, debugProxy 
+                    useDirect, useWarp, useSocks5, usePsiphon, socks5Host, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes, debugProxy,
+                    psiphonRegion: clientPsiphonRegion
                 } = data;
 
                 global.debugProxy = !!debugProxy;
+                if (clientPsiphonRegion) global.psiphonRegion = clientPsiphonRegion;
                 
                 let emails = [];
                 if (emailMode === 'auto') {
