@@ -1227,7 +1227,6 @@
         historyBtn.addEventListener('click', () => {
             historyModal.classList.add('open');
             loadHistory();
-            fetch('/api/worker-stat/boot', { method: 'POST' }).catch(() => {});
         });
 
         modalCloseBtn.addEventListener('click', () => historyModal.classList.remove('open'));
