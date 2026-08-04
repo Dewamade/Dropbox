@@ -3,4 +3,5 @@ firefox-profile/
 data/
 app/
 history.json
+selector.json
 .agents
