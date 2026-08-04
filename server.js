@@ -726,9 +726,6 @@ wss.on('connection', (ws) => {
                                         } catch (dbErr) {
                                             originalError('DB save error:', dbErr.message);
                                         }
-                                        // Wait 5 seconds before next email
-                                        console.log('⏳ Jeda 5 detik sebelum email berikutnya...');
-                                        await new Promise(r => setTimeout(r, 5000));
                                     } else if (result === true) {
                                         // backward compat
                                         registrationSuccess = true;
@@ -748,9 +745,6 @@ wss.on('connection', (ws) => {
                                             success: true
                                         });
                                         try { saveRegistration(email, usedPwd, 'success', alias, '', '', emailTimeouts, emailErrors); } catch (_) {}
-                                        // Wait 5 seconds before next email
-                                        console.log('⏳ Jeda 5 detik sebelum email berikutnya...');
-                                        await new Promise(r => setTimeout(r, 5000));
                                     } else {
                                         console.log(`⚠️ Pendaftaran ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
                                         if (global.killAllBrowsers) global.killAllBrowsers();

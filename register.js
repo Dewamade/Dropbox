@@ -1563,6 +1563,12 @@ async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abo
                 killDropbox();
             }
 
+            // Wait 5 seconds before closing browser (before kill all)
+            if (finalStatus !== 'VERIF') {
+                console.log(`⏳ Jeda 5 detik setelah pendaftaran sukses untuk ${email}...`);
+                await page.waitForTimeout(5000);
+            }
+
             return { success: true, status: finalStatus, password, ip: serverIp || '', ua: playwrightUA || '' };
 
 
