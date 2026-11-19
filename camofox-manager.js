@@ -67,6 +67,10 @@ function killTree(signal = 'SIGTERM') {
     try { proc.kill(signal); } catch (_) { }
 }
 
+function escapeForPkill(text) {
+    return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Stop the server and make sure nothing of ours survives (scoped to our paths).
 async function stop({ log = () => { } } = {}) {
     if (proc) {
@@ -83,13 +87,19 @@ async function stop({ log = () => { } } = {}) {
         }
     }
     proc = null; spec = null; currentBaseUrl = null;
-    // Scoped cleanup: only processes whose command line points at this project.
+    // Scoped cleanup: only processes whose command line points at this project or at
+    // our own VNC/display ports. camofox starts x11vnc with -bg, websockify and Xvfb
+    // detached, so they are NOT in our process group — without this they survive the
+    // stop, keep holding 5902/6082, and the next visible run streams a dead display.
     const scoped = [
-        path.join(CAMOFOX_DIR, 'server.js'),
-        path.join(CAMOUFOX_DIR, 'browser'),
+        escapeForPkill(path.join(CAMOFOX_DIR, 'server.js')),
+        escapeForPkill(path.join(CAMOUFOX_DIR, 'browser')),
+        `[x]11vnc.*-rfbport ${VNC_PORT}`,
+        `[w]ebsockify.*127\\.0\\.0\\.1:${NOVNC_PORT}`,
+        `[X]vfb.*-screen 0 ${SCREEN_RESOLUTION}x24`,
     ];
-    for (const needle of scoped) {
-        try { require('child_process').execSync(`pkill -9 -f "${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, { stdio: 'ignore' }); } catch (_) { }
+    for (const pattern of scoped) {
+        try { require('child_process').execSync(`pkill -9 -f "${pattern}"`, { stdio: 'ignore' }); } catch (_) { }
     }
 }
 
