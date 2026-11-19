@@ -3,7 +3,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const { saveRegistration, getAllRegistrations, clearRegistrations, getSettingsFull, saveSettingsFull, getSelectors, saveSelectors, resetSelectors } = require('./db.js');
-const { registerSingleEmail: _registerSingleEmail } = require('./register.js');
+const { registerSingleEmail: _registerSingleEmail, daemonStatus } = require('./register.js');
 const camofox = require('./camofox-manager');
 const proxyManager = require('./proxy-manager');
 
@@ -58,6 +58,7 @@ app.get('/api/proxy/status', (_req, res) => {
         res.json({
             ...proxyManager.status(),
             camofox: camofox.status(),
+            daemon: daemonStatus(),
             dropboxDaemon: !!(global.isDropboxRunning && global.isDropboxRunning()),
         });
     } catch (e) {
@@ -599,6 +600,36 @@ wss.on('connection', (ws) => {
                                 if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
                             };
 
+                            // Pencatatan hasil sukses — dipakai jalur normal maupun
+                            // jalur pengulangan device connect dengan sesi yang sama.
+                            const handleSuccess = (result) => {
+                                registrationSuccess = true;
+                                const finalStatus = result.status || 'success';
+                                if (finalStatus === 'VERIF') {
+                                    verifCount++;
+                                } else {
+                                    successCount++;
+                                }
+                                console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
+                                safeSend(ws, { type: 'email_success', email: email });
+                                // Update progress ring for this successful email
+                                safeSend(ws, {
+                                    type: 'progress',
+                                    current: processedCount,
+                                    total: emails.length,
+                                    status: `Berhasil: ${email}`,
+                                    successCount,
+                                    failedCount,
+                                    verifCount,
+                                    success: true
+                                });
+                                try {
+                                    saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua, emailTimeouts, emailErrors);
+                                } catch (dbErr) {
+                                    originalError('DB save error:', dbErr.message);
+                                }
+                            };
+
                             let attempts = 0;
                             while (!registrationSuccess && attempts < maxAttempts) {
                                 if (shouldStop) break;
@@ -619,31 +650,7 @@ wss.on('connection', (ws) => {
                                     );
 
                                     if (result && result.success) {
-                                        registrationSuccess = true;
-                                        const finalStatus = result.status || 'success';
-                                        if (finalStatus === 'VERIF') {
-                                            verifCount++;
-                                        } else {
-                                            successCount++;
-                                        }
-                                        console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
-                                        safeSend(ws, { type: 'email_success', email: email });
-                                        // Update progress ring for this successful email
-                                        safeSend(ws, {
-                                            type: 'progress',
-                                            current: processedCount,
-                                            total: emails.length,
-                                            status: `Berhasil: ${email}`,
-                                            successCount,
-                                            failedCount,
-                                            verifCount,
-                                            success: true
-                                        });
-                                        try {
-                                            saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua, emailTimeouts, emailErrors);
-                                        } catch (dbErr) {
-                                            originalError('DB save error:', dbErr.message);
-                                        }
+                                        handleSuccess(result);
                                     } else {
                                         console.log(`⚠️ Pendaftaran ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
                                         await resetSession();
@@ -660,9 +667,29 @@ wss.on('connection', (ws) => {
                                     }
                                     safeSend(ws, { type: 'email_stats', timeouts: emailTimeouts, errors: emailErrors });
                                     
-                                    console.log(`\n❌ Error attempt ${attempts}/${maxAttempts} [${phaseLabel}]: ${errMsg.replace('BROWSER_KILL_REQUIRED: ', '').split('\n')[0]}`);
-                                    // Always drop the browser session after any failure
-                                    await resetSession();
+                                    console.log(`\n❌ Error attempt ${attempts}/${maxAttempts} [${phaseLabel}]: ${errMsg.replace(/^(BROWSER_KILL_REQUIRED|DEVICE_CONNECT_FAILED): /, '').split('\n')[0]}`);
+
+                                    // Kegagalan di langkah menghubungkan perangkat: akun
+                                    // sudah dibuat dan tab masih login, jadi sesi TIDAK
+                                    // dimatikan — cukup ulangi langkah itu dengan sesi yang
+                                    // sama. Sesi baru dilepas untuk kegagalan yang memang
+                                    // mengharuskan mulai dari awal.
+                                    if (errMsg.startsWith('DEVICE_CONNECT_FAILED') && global.retryDeviceConnect) {
+                                        console.log(`🔌 Sesi dipertahankan — mengulang langkah menghubungkan perangkat tanpa login ulang...`);
+                                        currentAbortController = { shouldStop, abort: null };
+                                        try {
+                                            const resumed = await global.retryDeviceConnect({ abortController: currentAbortController });
+                                            if (resumed && resumed.success) handleSuccess(resumed);
+                                        } catch (resumeError) {
+                                            console.log(`❌ Pengulangan device connect gagal: ${(resumeError.message || '').split('\n')[0]}`);
+                                        }
+                                        // retryDeviceConnect menutup sesi sendiri saat langkah
+                                        // selesai; kalau masih gagal, loop fase di bawah yang memutuskan.
+                                        if (registrationSuccess) continue;
+                                        await resetSession();
+                                    } else {
+                                        await resetSession();
+                                    }
 
                                     if (errMsg.toLowerCase().includes('too many attempts')) {
                                         console.log(`🔄 Deteksi 'Too many attempts'. Langsung memicu rotasi IP / Fase berikutnya...`);

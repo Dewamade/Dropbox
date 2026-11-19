@@ -40,6 +40,26 @@ function vpnLog(line) {
     }
 }
 
+// warp-go writes its whole startup chatter to stdout/stderr (and stderr is where
+// the "MASQUE connected" line is), so none of it goes to the log console — only to
+// the debugProxy channel. The last lines stay in memory so a failed start can still
+// be explained by the real reason instead of a generic timeout message.
+const WARP_TAIL_MAX = 12;
+let warpTail = [];
+
+function warpRaw(stream, line) {
+    warpTail.push(`[warp-go ${stream}] ${line}`);
+    if (warpTail.length > WARP_TAIL_MAX) warpTail.shift();
+    vpnLog(`[Warp ${stream}] ${line}`);
+}
+
+function dumpWarpTail(reason) {
+    if (!warpTail.length) return;
+    console.log(`[Warp] log warp-go (${reason}):`);
+    warpTail.forEach((l) => console.log(l));
+    warpTail = [];
+}
+
 function checkPort(host, port, timeoutMs = 3000) {
     return new Promise((resolve) => {
         const socket = new net.Socket();
@@ -116,14 +136,17 @@ function warpStatus() {
     return { ...warpState, running: !!warpProc && warpProc.exitCode === null, registered: fs.existsSync(WARP_REG) };
 }
 
-async function stopWarp({ log = true } = {}) {
+// Silent by design: a WARP tunnel being (re)started or stopped is routine; only
+// failures and the resulting exit IP are worth the log console.
+async function stopWarp() {
     if (warpProc) {
-        const pid = warpProc.pid;
+        // Inactive before the kill: an intentional stop must not look like a crash
+        // (the 'exit' handler below keys on this).
+        warpState.active = false;
         try { warpProc.kill('SIGTERM'); } catch (_) { }
         await sleep(700);
         try { warpProc.kill('SIGKILL'); } catch (_) { }
         warpProc = null;
-        if (log) console.log(`[Warp] ✓ Proses warp-go (PID ${pid}) dihentikan.`);
     }
     try { require('child_process').execSync(`pkill -9 -f "${WARP_BIN}"`, { stdio: 'ignore' }); } catch (_) { }
     warpState = { active: false, port: null, exitIp: null };
@@ -136,15 +159,15 @@ function reRegisterWarp() {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
         try { fs.copyFileSync(WARP_REG, path.join(WARP_DIR, `reg.json.${stamp}.bak`)); } catch (_) { }
         fs.rmSync(WARP_REG, { force: true });
-        console.log('[Warp] reg.json dihapus, registrasi kunci WARP baru...');
     }
+    warpTail = [];
     const r = spawnSync(WARP_BIN, ['-reg'], { cwd: WARP_DIR, timeout: 60000, encoding: 'utf8' });
-    (r.stdout || '').toString().split('\n').forEach((l) => { if (l.trim()) vpnLog(`[Warp -reg] ${l.trim()}`); });
-    (r.stderr || '').toString().split('\n').forEach((l) => { if (l.trim()) console.log(`[Warp -reg] ${l.trim()}`); });
+    (r.stdout || '').toString().split('\n').forEach((l) => { if (l.trim()) warpRaw('out', l.trim()); });
+    (r.stderr || '').toString().split('\n').forEach((l) => { if (l.trim()) warpRaw('err', l.trim()); });
     if (!fs.existsSync(WARP_REG)) {
-        throw new Error(`[Warp] Gagal registrasi ulang WARP (kode ${r.status}): ${(r.stderr || r.stdout || '').toString().trim().split('\n')[0] || 'reg.json tidak terbentuk'}`);
+        const detail = (r.stderr || r.stdout || '').toString().split('\n').map((l) => l.trim()).filter(Boolean).slice(-3).join(' | ') || 'reg.json tidak terbentuk';
+        throw new Error(`[Warp] Gagal registrasi ulang WARP (kode ${r.status}): ${detail}`);
     }
-    console.log('[Warp] ✓ Kunci WARP baru terdaftar (exit IP akan berubah).');
 }
 
 async function startWarp({ port = DEFAULT_WARP_PORT, rotate = false, abortController = null } = {}) {
@@ -153,10 +176,8 @@ async function startWarp({ port = DEFAULT_WARP_PORT, rotate = false, abortContro
     // Reuse an identical, healthy tunnel.
     if (warpState.active && warpState.port === port && !rotate) {
         if (await checkPort('127.0.0.1', port, 2000)) {
-            console.log(`[Warp] Sudah aktif di 127.0.0.1:${port} (exit IP ${warpState.exitIp || 'unknown'}), memakai kembali.`);
             return { proxy: `socks5://127.0.0.1:${port}`, exitIp: warpState.exitIp };
         }
-        console.log(`[Warp] Port ${port} tidak hidup lagi, restart...`);
     }
 
     await stopWarp();
@@ -164,19 +185,20 @@ async function startWarp({ port = DEFAULT_WARP_PORT, rotate = false, abortContro
 
     if (rotate || !fs.existsSync(WARP_REG)) reRegisterWarp();
 
-    console.log(`[Warp] Menjalankan warp-go SOCKS5 di 127.0.0.1:${port}...`);
+    warpTail = [];
     warpProc = spawn(WARP_BIN, ['-l', `127.0.0.1:${port}`], { cwd: WARP_DIR });
     const onData = (stream) => (chunk) => chunk.toString().split('\n').forEach((line) => {
         const t = line.trim();
-        if (!t) return;
-        vpnLog(`[Warp ${stream}] ${t}`);
-        if (stream === 'err') console.log(`[Warp] ${t}`);
+        if (t) warpRaw(stream, t);
     });
     warpProc.stdout.on('data', onData('out'));
     warpProc.stderr.on('data', onData('err'));
     warpProc.on('error', (err) => console.log(`[Warp] Gagal menjalankan warp-go: ${err.message}`));
     warpProc.on('exit', (code) => {
-        if (warpState.active) console.log(`[Warp] Proses warp-go berhenti (kode ${code}).`);
+        if (warpState.active) {
+            console.log(`[Warp] Proses warp-go berhenti (kode ${code}).`);
+            dumpWarpTail('berhenti tak terduga');
+        }
         warpState.active = false;
     });
 
@@ -187,6 +209,7 @@ async function startWarp({ port = DEFAULT_WARP_PORT, rotate = false, abortContro
         await sleep(1000);
     }
     if (!portReady) {
+        dumpWarpTail('port tidak terbuka');
         await stopWarp();
         throw new Error(`[Warp] Port SOCKS5 ${port} tidak terbuka dalam 45 detik.`);
     }
@@ -197,13 +220,14 @@ async function startWarp({ port = DEFAULT_WARP_PORT, rotate = false, abortContro
         if (!probe) await sleep(2000);
     }
     if (!probe) {
+        dumpWarpTail('tunnel tidak bisa keluar ke internet');
         await stopWarp();
         throw new Error('[Warp] Tunnel terbentuk tapi tidak bisa keluar ke internet (cek koneksi/registrasi WARP).');
     }
     const exitIp = probe.ip;
     warpState = { active: true, port, exitIp };
     global.warpExitIp = exitIp;
-    console.log(`[Warp] ✓ WARP aktif — exit IP: ${exitIp}${probe.warp ? ` (cdn-cgi/trace warp=${probe.warp})` : ''}`);
+    console.log(`[Warp] ✓ WARP aktif — exit IP ${exitIp}${probe.warp ? ` (warp=${probe.warp})` : ''}`);
     return { proxy: `socks5://127.0.0.1:${port}`, exitIp };
 }
 

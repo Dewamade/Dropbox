@@ -10,6 +10,11 @@
 #   warp/              warp-go (source + binary 'warp' + reg.json)
 #   psiphon/           psiphon-tunnel-core-x86_64 + psiphon.config per region
 #   dropbox-app/       daemon Dropbox resmi (.dropbox-dist/dropboxd)
+#
+# Satu-satunya biner di luar folder proyek adalah docker engine (service sistem):
+# daemon Dropbox justru dijalankan DI DALAM container ubuntu:24.04 supaya setiap akun
+# melihat perangkat yang benar-benar baru. Tanpa docker, register.js fallback ke
+# eksekusi langsung dari dropbox-app/ dan menghapus state perangkat tiap run.
 # ==============================================================================
 
 # Warna untuk output terminal
@@ -33,6 +38,26 @@ BRANCH="webui3"
 CAMOFOX_REPO="https://github.com/jo-inc/camofox-browser"
 WARP_REPO="https://github.com/badafans/warp-go"
 PSIPHON_URL="https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/raw/master/linux/psiphon-tunnel-core-x86_64"
+DOCKER_IMAGE="ubuntu:24.04"   # image tempat daemon Dropbox berjalan (lihat langkah 7)
+
+# Unduh image daemon sekali; dipanggil di langkah 7 dan lagi setelah apt di langkah 8
+# (untuk mesin yang docker-nya baru saja dipasang). Idempotent.
+prepare_daemon_image() {
+    if ! command -v docker >/dev/null 2>&1 || ! docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
+        return 1
+    fi
+    if docker image inspect "$DOCKER_IMAGE" >/dev/null 2>&1; then
+        echo -e "Image container daemon (${DOCKER_IMAGE}) sudah ada."
+        return 0
+    fi
+    echo -e "Mengunduh image container daemon ${DOCKER_IMAGE}..."
+    if docker pull "$DOCKER_IMAGE" >/dev/null 2>&1; then
+        echo -e "${GREEN}Image ${DOCKER_IMAGE} terunduh.${NC}"
+        return 0
+    fi
+    echo -e "${YELLOW}Peringatan: docker pull gagal — daemon akan mengunduhnya saat run pertama (butuh internet).${NC}"
+    return 1
+}
 
 # 1. Deteksi Lingkungan
 echo -e "\n${GREEN}[1/8] Memeriksa lingkungan sistem...${NC}"
@@ -127,25 +152,29 @@ else
     echo -e "${RED}Error: kloning camofox-browser gagal.${NC}"
 fi
 
-# Plugin 'screen' (sumbernya ada di camofox-plugins/, ter-track git): memasang Xvfb
-# pada ukuran layar tetap dan mengunci angka window/screen Camoufox ke nilai yang
-# sama, supaya halaman selalu 1360x768 di mesin mana pun. camofox-browser/ adalah
-# kloning (di-gitignore) jadi plugin + konfigurasinya dipasang di sini.
-if [ -d "camofox-plugins/screen" ] && [ -f "camofox-browser/server.js" ]; then
-    mkdir -p camofox-browser/plugins/screen
-    cp -r camofox-plugins/screen/. camofox-browser/plugins/screen/
-    node -e '
+# Plugin kami (sumbernya di camofox-plugins/, ter-track git) dipasang ke kloning
+# camofox-browser/ + diaktifkan di camofox.config.json-nya. 'screen' mengunci
+# ukuran layar 1360x768, 'locale' memaksa bahasa browser (en-US) supaya teks
+# halaman deterministik. camofox-browser/ di-gitignore, jadi pemasangan ini
+# bagian dari setup.
+if [ -d "camofox-plugins" ] && [ -f "camofox-browser/server.js" ]; then
+    for plugin_dir in camofox-plugins/*/; do
+        plugin="$(basename "$plugin_dir")"
+        mkdir -p "camofox-browser/plugins/$plugin"
+        cp -r "$plugin_dir." "camofox-browser/plugins/$plugin/"
+        node -e '
 const fs = require("fs");
 const p = "camofox-browser/camofox.config.json";
 const cfg = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : {};
 cfg.plugins = cfg.plugins || {};
-cfg.plugins.screen = Object.assign({}, cfg.plugins.screen, { enabled: true });
+cfg.plugins[process.argv[1]] = Object.assign({}, cfg.plugins[process.argv[1]], { enabled: true });
 fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
-' || {
-        echo -e "${RED}Error: mengaktifkan plugin screen di camofox.config.json gagal.${NC}"
-        exit 1
-    }
-    echo -e "${GREEN}Plugin 'screen' terpasang di camofox-browser (ukuran layar dikunci).${NC}"
+' "$plugin" || {
+            echo -e "${RED}Error: mengaktifkan plugin $plugin di camofox.config.json gagal.${NC}"
+            exit 1
+        }
+        echo -e "${GREEN}Plugin '$plugin' terpasang di camofox-browser.${NC}"
+    done
 fi
 
 # 5. warp-go (Cloudflare WARP rootless, SOCKS5 127.0.0.1:40000)
@@ -209,6 +238,11 @@ else
 fi
 
 # 7. Daemon Dropbox resmi (dipakai untuk menautkan perangkat + kirim email verifikasi)
+#    Biner di ./dropbox-app, tapi normalnya dijalankan DI DALAM container docker yang
+#    selalu baru: hanya .dropbox-dist yang di-mount (ro), state (.dropbox/) + folder
+#    sync di tmpfs, hostname + machine-id acak -> Dropbox melihat perangkat baru setiap
+#    kali, jadi URL cli_link selalu muncul. Tanpa docker, register.js fallback ke
+#    eksekusi langsung dan menghapus state lama di ./dropbox-app untuk efek yang sama.
 echo -e "\n${GREEN}[7/8] Memasang daemon Dropbox di ./dropbox-app...${NC}"
 if [ -d "dropbox-app/.dropbox-dist" ]; then
     echo -e "Daemon Dropbox sudah ada."
@@ -218,10 +252,16 @@ else
         || curl -sL "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C dropbox-app -xzf -
     if [ -f "dropbox-app/.dropbox-dist/dropboxd" ]; then
         echo -e "${GREEN}Daemon Dropbox terpasang di ./dropbox-app/.dropbox-dist.${NC}"
-        echo -e "${YELLOW}Catatan: HOME daemon dipinning ke ./dropbox-app (state .dropbox/ tetap lokal).${NC}"
     else
         echo -e "${RED}Error: gagal mengunduh/mengekstrak daemon Dropbox.${NC}"
     fi
+fi
+
+if prepare_daemon_image; then
+    echo -e "Docker terdeteksi — daemon akan dijalankan di container ${DOCKER_IMAGE} (perangkat baru setiap run)."
+else
+    echo -e "${YELLOW}Docker tidak tersedia/tidak jalan — daemon Dropbox akan dijalankan langsung dari ./dropbox-app (state perangkat dihapus tiap run).${NC}"
+    echo -e "Untuk mode container: pasang docker (paket docker.io, lihat langkah 8) dan pastikan user ada di grup docker."
 fi
 
 # 8. Dependensi sistem untuk Camoufox + VNC (opsional; hanya Debian/Ubuntu)
@@ -230,12 +270,13 @@ SYSDEPS="libgtk-3-0 libdbus-glib-1-2 libxt6 libasound2 libx11-xcb1 libxcomposite
 libxcursor1 libxdamage1 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
 libegl1 libgl1-mesa-dri libgbm1 xvfb x11vnc novnc websockify \
 fonts-liberation fonts-noto-color-emoji fontconfig ca-certificates curl wget unzip \
-build-essential python3"
+build-essential python3 docker.io"
 if [ -f /etc/debian_version ] || [ -f /etc/lsb-release ]; then
     if [ "$EUID" -eq 0 ]; then
         apt-get update
         apt-get install -y $SYSDEPS || apt-get install -y $(echo "$SYSDEPS" | sed 's/\blibxt6\b/libxt6t64/; s/\blibasound2\b/libasound2t64/')
         echo -e "${GREEN}Dependensi sistem terpasang.${NC}"
+        prepare_daemon_image   # docker mungkin baru saja terpasang
     else
         echo -e "${YELLOW}Bukan root — jika Camoufox gagal start karena pustaka hilang, jalankan:${NC}"
         echo -e "sudo apt update && sudo apt install -y $SYSDEPS"
@@ -252,5 +293,6 @@ echo -e "  1) Registrasi WARP sekali saja:  ${YELLOW}./warp/warp -reg${NC}"
 echo -e "  2) Jalankan dashboard:          ${YELLOW}node server.js${NC}"
 echo -e "  3) Buka:                        ${YELLOW}http://localhost:3000${NC}"
 echo -e "Biner: camofox-browser/ (Camoufox di .camoufox/), warp/, psiphon/, dropbox-app/ — semua di folder ini."
+echo -e "Daemon Dropbox: container ${DOCKER_IMAGE} baru setiap akun (state di tmpfs). Tanpa docker = mode langsung + state dihapus tiap run."
 echo -e "Mode browser terlihat (CAPTCHA manual): centang 'Tampilkan Browser' di Pengaturan, noVNC di http://localhost:6082"
 echo -e "${GREEN}======================================================================${NC}"

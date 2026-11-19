@@ -2,7 +2,7 @@
 
 Dashboard web untuk mengotomatisasi pendaftaran massal akun Dropbox: monitoring progress visual, console log real-time, rotasi IP keluar (Direct, **WARP**, Psiphon, Socks5), dan integrasi otomatis dengan Dropbox Daemon resmi untuk menautkan perangkat + mengirim email verifikasi.
 
-Browser yang dipakai adalah **[camofox-browser](https://github.com/jo-inc/camofox-browser)** (Camoufox, anti-deteksi) yang di-install **di dalam folder proyek** — tidak ada Playwright, tidak ada biner di luar folder proyek.
+Browser yang dipakai adalah **[camofox-browser](https://github.com/jo-inc/camofox-browser)** (Camoufox, anti-deteksi) yang di-install **di dalam folder proyek** — tidak ada Playwright, tidak ada biner yang dijalankan dari luar folder proyek. Satu-satunya layanan sistem yang dipakai adalah **docker engine**: daemon Dropbox justru dijalankan **di dalam container `ubuntu:24.04` yang selalu baru** supaya setiap akun melihat perangkat benar-benar baru (state perangkat di tmpfs, lenyap bersama container). Tanpa docker, program fallback menjalankan daemon langsung dari `dropbox-app/` dan menghapus state perangkat tiap run — hasilnya sama, hanya lebih rapuh.
 
 > [!IMPORTANT]
 > Proyek ini **khusus Linux x86_64**. Biner Dropbox dan Psiphon yang diunduh bersifat x86_64-only; `setup.sh` akan berhenti jika platform lain.
@@ -33,10 +33,10 @@ Script `setup.sh` memasang semuanya di dalam folder ini:
 |Folder|Isi|
 |---|---|
 |`camofox-browser/`|Server REST camofox-browser (git clone) + Camoufox di `camofox-browser/.camoufox/`|
-|`camofox-plugins/`|Plugin camofox buatan sendiri (ter-track git). `screen/` mengunci ukuran layar browser 1360x768 — Xvfb + angka window/screen Camoufox; `setup.sh` menyalinnya ke `camofox-browser/plugins/` dan mengaktifkannya di `camofox-browser/camofox.config.json`|
+|`camofox-plugins/`|Plugin camofox buatan sendiri (ter-track git). `screen/` mengunci ukuran layar browser 1360x768 (Xvfb + angka window/screen Camoufox); `locale/` memaksa bahasa browser (default `en-US`, override lewat env `BROWSER_LOCALE=…`, `off` untuk melepas) supaya dropbox.com selalu melayani teks English — bukan `?lang=en`, karena halaman `cli_link` yang dicetak daemon ikut bahasa sesi. `setup.sh` menyalin SEMUA folder di sini ke `camofox-browser/plugins/` dan mengaktifkannya di `camofox-browser/camofox.config.json`|
 |`warp/`|warp-go (source + binary `warp` + `reg.json` hasil registrasi)|
 |`psiphon/`|`psiphon-tunnel-core-x86_64` + `psiphon.config` per region (dibuat saat runtime)|
-|`dropbox-app/`|Daemon Dropbox resmi (`.dropbox-dist/dropboxd`); state `.dropbox/` juga disimpan di sini. State device lama dihapus otomatis setiap akun: satu akun = satu identitas perangkat, kalau tidak daemon tidak pernah memberi URL `cli_link` lagi|
+|`dropbox-app/`|Daemon Dropbox resmi (`.dropbox-dist/dropboxd`). Normalnya **tidak dijalankan di host**: hanya `.dropbox-dist/` di-mount (read-only) ke container `ubuntu:24.04` yang selalu baru, jadi state perangkat (`.dropbox/`) + folder sync hidup di tmpfs dan ikut hilang bersama container — satu akun = satu identitas perangkat. Tanpa docker, daemon dijalankan langsung dari folder ini dan state `.dropbox/` dihapus otomatis setiap akun (kalau tidak, daemon tidak pernah memberi URL `cli_link` lagi)|
 |`camofox-data/`|Profil/cookie browser per akun (dibuat saat runtime)|
 
 Jika host tidak punya Go, `setup.sh` mengunduh toolchain Go resmi ke `.toolchain/` untuk membangun warp-go. Paket sistem untuk Camoufox/Xvfb/noVNC dipasang otomatis bila dijalankan sebagai root; kalau tidak, daftarnya dicetak.
@@ -59,12 +59,15 @@ Jika host tidak punya Go, `setup.sh` mengunduh toolchain Go resmi ke `.toolchain
 5. Daemon Dropbox:
    ```bash
    wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C dropbox-app -xzf -
+   docker pull ubuntu:24.04   # opsional; tanpa docker daemon dijalankan langsung (mode fallback)
    ```
-6. Plugin ukuran layar browser (yang dilakukan `setup.sh` di langkah 4):
+6. Plugin camofox buatan sendiri (yang dilakukan `setup.sh` di langkah 4 — semua plugin di `camofox-plugins/`):
    ```bash
-   mkdir -p camofox-browser/plugins/screen
-   cp -r camofox-plugins/screen/. camofox-browser/plugins/screen/
-   node -e 'const fs=require("fs"),p="camofox-browser/camofox.config.json";const c=JSON.parse(fs.readFileSync(p));c.plugins=c.plugins||{};c.plugins.screen={enabled:true};fs.writeFileSync(p,JSON.stringify(c,null,2)+"\n")'
+   for d in camofox-plugins/*/; do p=$(basename "$d")
+     mkdir -p camofox-browser/plugins/$p
+     cp -r "$d." camofox-browser/plugins/$p/
+     node -e 'const fs=require("fs"),p="camofox-browser/camofox.config.json";const c=JSON.parse(fs.readFileSync(p));c.plugins=c.plugins||{};c.plugins[process.argv[1]]=Object.assign({},c.plugins[process.argv[1]],{enabled:true});fs.writeFileSync(p,JSON.stringify(c,null,2)+"\n")' "$p"
+   done
    ```
 
 ---

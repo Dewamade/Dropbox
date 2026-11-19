@@ -15,7 +15,8 @@
 const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
-const { spawn } = require('child_process');
+const crypto = require('crypto');
+const { spawn, execSync } = require('child_process');
 
 const camofox = require('./camofox-manager');
 const { CamofoxClient } = require('./camofox-client');
@@ -25,6 +26,19 @@ const DROPBOX_DIST = path.join(__dirname, 'dropbox-app', '.dropbox-dist');
 const DROPBOX_DAEMON = path.join(DROPBOX_DIST, 'dropboxd');
 const DAEMON_HOME = path.join(__dirname, 'dropbox-app');
 const SCREENSHOT_DIR = path.join(__dirname, 'data');
+
+// The daemon normally runs in a throwaway container. Only its read-only binary tree is
+// mounted; the device state (.dropbox/) and the sync folder (Dropbox/) live in the
+// container's tmpfs, and the hostname + machine-id are regenerated per run — so every
+// account really does face a brand-new machine and the cli_link URL always appears.
+// (A host_id that is already linked never prints that URL again.)
+const DOCKER_IMAGE = 'ubuntu:24.04';
+const CONTAINER_DIST = '/opt/dropbox/.dropbox-dist';
+const CONTAINER_DAEMON = path.posix.join(CONTAINER_DIST, 'dropboxd');
+
+function randomHex(bytes) {
+    return crypto.randomBytes(bytes).toString('hex');
+}
 
 // ── Selector catalogue (selector.json, editable from the dashboard) ───────────
 let cachedSelectors = null;
@@ -50,19 +64,132 @@ function getSelectors(key) {
 // ── Process cleanup (reached from server.js through global) ──────────────────
 let activeClient = null;
 let dropboxProc = null;
+let dropboxContainer = null;       // container name while the daemon runs in Docker
+let dropboxMode = null;            // 'docker' | 'native'
+let dockerUsable = null;           // cached answer of hasDocker()
+
+function hasDocker() {
+    if (dockerUsable === null) {
+        try {
+            execSync('docker version --format {{.Server.Version}}', { stdio: 'pipe' });
+            dockerUsable = true;
+        } catch (_) {
+            dockerUsable = false;
+        }
+    }
+    return dockerUsable;
+}
+
+// Pull the daemon image once, streaming its output into the log.
+let imagePresent = null;
+async function ensureDaemonImage() {
+    try { execSync(`docker image inspect ${DOCKER_IMAGE}`, { stdio: 'pipe' }); imagePresent = true; return true; } catch (_) { }
+    console.log(`[dropboxd] Image ${DOCKER_IMAGE} belum ada — menariknya...`);
+    await new Promise((resolve) => {
+        const p = spawn('docker', ['pull', DOCKER_IMAGE]);
+        p.stdout.on('data', (c) => console.log(`[dropboxd] ${c.toString().trim()}`));
+        p.stderr.on('data', (c) => console.log(`[dropboxd] ${c.toString().trim()}`));
+        p.on('exit', (code) => resolve(code === 0));
+        p.on('error', () => resolve(false));
+    }).then((ok) => {
+        if (!ok) throw new Error(`[dropboxd] docker pull ${DOCKER_IMAGE} gagal — jalankan ./setup.sh`);
+        imagePresent = true;
+    });
+    return true;
+}
+
+// What the dashboard shows under Status Mesin Lokal.
+function daemonStatus() {
+    const docker = hasDocker();
+    if (docker && imagePresent === null) {
+        try { execSync(`docker image inspect ${DOCKER_IMAGE}`, { stdio: 'pipe' }); imagePresent = true; } catch (_) { imagePresent = false; }
+    }
+    return {
+        mode: docker ? 'docker' : 'native',
+        docker,
+        image: DOCKER_IMAGE,
+        imagePresent: docker ? imagePresent : null,
+        running: !!(dropboxProc && dropboxProc.exitCode === null),
+        container: dropboxContainer,
+    };
+}
+
+// Start the daemon process. Docker is the normal path: a container that never existed
+// before IS a fresh machine. Without a docker daemon we fall back to running the
+// binary directly, which forces freshness by deleting the host-side device state.
+async function startDropboxDaemon(tag) {
+    if (!fs.existsSync(DROPBOX_DAEMON)) throw new Error(`Dropbox daemon tidak ada: ${DROPBOX_DAEMON} — jalankan ./setup.sh`);
+
+    if (hasDocker()) {
+        await ensureDaemonImage();
+        const name = `dropbox-link-${tag}-${randomHex(3)}`;
+        const hostname = `pc-${randomHex(3)}`;
+        const machineId = randomHex(16);
+        dropboxMode = 'docker';
+        dropboxContainer = name;
+        console.log(`[dropboxd] Perangkat baru via Docker (${DOCKER_IMAGE}, hostname ${hostname}, machine-id ${machineId}) — state di tmpfs, hanya .dropbox-dist yang di-mount (ro).`);
+        dropboxProc = spawn('docker', [
+            'run', '-i', '--rm', '--init', '--name', name, '--net=host',
+            '--hostname', hostname,
+            '-v', `${DROPBOX_DIST}:${CONTAINER_DIST}:ro`,
+            '--tmpfs', '/root/.dropbox',
+            '--tmpfs', '/root/Dropbox',
+            DOCKER_IMAGE, 'sh', '-c',
+            `mkdir -p /var/lib/dbus; printf '%s\\n' '${machineId}' > /etc/machine-id; cp /etc/machine-id /var/lib/dbus/machine-id; exec ${CONTAINER_DAEMON}`,
+        ]);
+        return;
+    }
+
+    // Fallback: satu akun = satu identitas perangkat. State lama menyimpan host_id yang
+    // sudah ter-link; daemon yang sudah ter-link tidak pernah mencetak URL cli_link lagi,
+    // jadi langkah ini selalu timeout (akun berikutnya hanya jadi VERIF).
+    for (const stale of ['.dropbox', 'Dropbox']) {
+        const p = path.join(DAEMON_HOME, stale);
+        if (fs.existsSync(p)) {
+            fs.rmSync(p, { recursive: true, force: true });
+            console.log(`[dropboxd] State lama dihapus (${stale}/) — perangkat baru untuk akun ini.`);
+        }
+    }
+    dropboxMode = 'native';
+    dropboxContainer = null;
+    console.log('[dropboxd] Docker tidak tersedia — menjalankan daemon langsung di host.');
+    // HOME dipaku di dropbox-app/ supaya state (.dropbox/) dan folder sync (Dropbox/)
+    // tidak pernah muncul di luar proyek. DISPLAY/DBus dihapus: dengan display, daemon
+    // 278.x membuka jendela GUI (Firefox bawaannya) dan tidak mencetak apa pun; tanpa
+    // display ia mode CLI headless dan mencetak URL cli_link.
+    const daemonEnv = { ...process.env, HOME: DAEMON_HOME };
+    ['DISPLAY', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'].forEach((v) => delete daemonEnv[v]);
+    fs.mkdirSync(DAEMON_HOME, { recursive: true });
+    dropboxProc = spawn(DROPBOX_DAEMON, [], { cwd: path.dirname(DROPBOX_DAEMON), env: daemonEnv });
+}
 
 function killDropboxDaemon({ log = true } = {}) {
+    if (dropboxContainer) {
+        try { execSync(`docker kill ${dropboxContainer}`, { stdio: 'ignore' }); } catch (_) { }
+        try { execSync(`docker rm -f ${dropboxContainer}`, { stdio: 'ignore' }); } catch (_) { }
+        dropboxContainer = null;
+    }
     if (dropboxProc) {
         try { dropboxProc.kill('SIGTERM'); } catch (_) { }
         dropboxProc = null;
     }
-    // dropboxd exec() ke .dropbox-dist/dropbox-lnx.x86_64-<ver>/dropbox, jadi pola
-    // harus mencocokkan direktori dist-nya, bukan nama binary awal saja.
-    try { require('child_process').execSync(`pkill -9 -f "${DROPBOX_DIST}"`, { stdio: 'ignore' }); } catch (_) { }
+    // Pola mencocokkan direktori dist-nya, bukan nama binary: daemon native exec() ke
+    // .dropbox-dist/dropbox-lnx.x86_64-<ver>/dropbox, dan argv `docker run` kita juga
+    // memuat path itu — jadi satu pkill membersihkan kedua jalur.
+    try { execSync(`pkill -9 -f "${DROPBOX_DIST.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, { stdio: 'ignore' }); } catch (_) { }
     if (log) console.log('[Kill] Proses Dropbox daemon dihentikan.');
 }
 
+// Sesi yang masih "hidup" setelah akun tercipta, yaitu selama langkah menghubungkan
+// perangkat. Sesi TIDAK boleh dimatikan di langkah itu: akun sudah dibuat dan tab
+// masih login, jadi kegagalan di sini cukup diulang dengan sesi yang sama lewat
+// retryDeviceConnect(). Sesi ditutup hanya bila langkah selesai, user menghentikan,
+// atau error memang mengharuskan mulai dari awal — closeBrowserSession() selalu
+// mengosongkan ini, jadi tidak ada sesi palsu yang tertinggal.
+let liveRun = null;
+
 async function closeBrowserSession() {
+    liveRun = null;
     if (activeClient) {
         const userId = activeClient.userId;
         try { await activeClient.destroy(); } catch (_) { }
@@ -87,6 +214,7 @@ async function stopEverything({ server = false } = {}) {
 }
 
 global.closeBrowserSession = closeBrowserSession;
+global.retryDeviceConnect = retryDeviceConnect;
 global.killDropboxDaemon = killDropboxDaemon;
 global.isDropboxRunning = () => !!(dropboxProc && dropboxProc.exitCode === null);
 global.killAllVpnProxy = killAllVpnProxy;
@@ -274,6 +402,7 @@ async function registerSingleEmail(
     let serverIp = exitIp || 'Unknown';
     let userAgent = 'Unknown';
     let finalStatus = 'VERIF';
+    let keepSessionAlive = false;
 
     try {
         // ── Preflight: exit IP + UA as the browser really sees them ──────────
@@ -492,11 +621,17 @@ async function registerSingleEmail(
         console.log('✅ Pendaftaran berhasil! Memulai menghubungkan perangkat...');
         await sleep(1500);
 
+        const deviceOpts = { email, password, url, gtMs, globalTimeout, daemonTimeout, maxCliAttempts: globalRetry || 3, maxVerifAttempts: globalRetry || 3 };
+        // Akun sudah ada dan tab masih login: catat sesi supaya caller bisa mengulang
+        // HANYA langkah menghubungkan perangkat dengan sesi yang sama.
+        liveRun = { cf, opts: deviceOpts, password, ip: serverIp || '', ua: userAgent || '' };
+
         try {
-            finalStatus = await linkDaemonAndVerifyEmail(cf, { email, password, url, gtMs, globalTimeout, daemonTimeout, maxCliAttempts: globalRetry || 3, maxVerifAttempts: globalRetry || 3, abortController });
+            finalStatus = await linkDaemonAndVerifyEmail(cf, { ...deviceOpts, abortController });
         } catch (verifError) {
-            console.log(`[Info] Terjadi error saat menghubungkan daemon atau verifikasi email: ${verifError.message}`);
-            finalStatus = 'VERIF';
+            keepSessionAlive = true;
+            console.log(`[Info] Gagal menghubungkan perangkat: ${verifError.message}`);
+            throw new Error(`DEVICE_CONNECT_FAILED: ${verifError.message}`);
         } finally {
             killDropboxDaemon({ log: false });
         }
@@ -516,12 +651,41 @@ async function registerSingleEmail(
             try { await abortController.abort(); } catch (_) { }
             abortController.abort = null;
         }
-        console.log(`Menutup sesi camofox untuk ${email}...`);
-        await closeBrowserSession();
-        global.currentUserId = null;
-        global.camofoxTab = null;
+        if (keepSessionAlive && liveRun) {
+            console.log(`[Sesi] Sesi DIPERTAHANKAN untuk ${email} — akun sudah dibuat; ulangi langkah menghubungkan perangkat (retryDeviceConnect) tanpa login ulang.`);
+        } else {
+            console.log(`Menutup sesi camofox untuk ${email}...`);
+            await closeBrowserSession();
+            global.currentUserId = null;
+            global.camofoxTab = null;
+        }
         killDropboxDaemon({ log: false });
     }
+}
+
+// ── Ulangi langkah menghubungkan perangkat dengan SESI YANG SAMA ──────────────
+// Dipanggil caller setelah registerSingleEmail melempar 'DEVICE_CONNECT_FAILED:'.
+// Akun sudah tercipta dan tab masih login, jadi yang diulang hanya device connect +
+// permintaan email verifikasi — tanpa profil baru dan tanpa login ulang. Sesi ditutup
+// di akhir fungsi ini karena langkahnya sudah selesai (sukses maupun VERIF).
+async function retryDeviceConnect({ abortController } = {}) {
+    if (!liveRun || !liveRun.cf || liveRun.cf !== activeClient) {
+        throw new Error('DEVICE_CONNECT_FAILED: tidak ada sesi hidup yang bisa dilanjutkan.');
+    }
+    const { cf, opts, password, ip, ua } = liveRun;
+    console.log(`\n[Device Connect] Mengulang langkah menghubungkan perangkat dengan sesi yang sama (${opts.email})...`);
+    let finalStatus = 'VERIF';
+    try {
+        finalStatus = await linkDaemonAndVerifyEmail(cf, { ...opts, abortController });
+    } catch (error) {
+        console.log(`[Info] Device connect tetap gagal di sesi yang sama: ${error.message}`);
+    } finally {
+        killDropboxDaemon({ log: false });
+    }
+    await closeBrowserSession();
+    global.currentUserId = null;
+    global.camofoxTab = null;
+    return { success: true, status: finalStatus, password, ip, ua };
 }
 
 // ── Login recovery at the cli_link page ──────────────────────────────────────
@@ -569,33 +733,11 @@ async function ensureDropboxLogin(cf, { email, password, gtMs, abortController }
 async function linkDaemonAndVerifyEmail(cf, { email, password, gtMs, globalTimeout, daemonTimeout, maxCliAttempts, maxVerifAttempts, abortController }) {
     // ── Start the local Dropbox daemon (binary lives in ./dropbox-app) ───────
     console.log('\n[dropboxd] Memulai proses Dropbox daemon...');
-    if (!fs.existsSync(DROPBOX_DAEMON)) throw new Error(`Dropbox daemon tidak ada: ${DROPBOX_DAEMON} — jalankan ./setup.sh`);
-
-    // Satu akun = satu identitas perangkat. State lama menyimpan host_id yang sudah
-    // ter-link ke akun sebelumnya; daemon yang sudah ter-link tidak pernah mencetak
-    // URL cli_link lagi, jadi langkah ini akan selalu timeout (akun berikutnya hanya
-    // jadi VERIF). Hapus state + folder sync akun sebelumnya; .dropbox-dist/ (biner)
-    // dan HOME pinning tetap utuh.
-    for (const stale of ['.dropbox', 'Dropbox']) {
-        const p = path.join(DAEMON_HOME, stale);
-        if (fs.existsSync(p)) {
-            fs.rmSync(p, { recursive: true, force: true });
-            console.log(`[dropboxd] State lama dihapus (${stale}/) — perangkat baru untuk akun ini.`);
-        }
-    }
+    await startDropboxDaemon(String(email).split('@')[0].replace(/[^a-z0-9._-]/gi, '').slice(0, 24) || 'account');
 
     let cliLinkUrl = null;
     let isLinked = false;
 
-    // HOME is pinned inside dropbox-app/ so the daemon's own state (.dropbox/) and
-    // its synced folder (Dropbox/) never land outside the project.
-    const daemonEnv = { ...process.env, HOME: DAEMON_HOME };
-    // DISPLAY/DBus dihapus: dengan display, daemon 278.x membuka jendela GUI (Firefox
-    // bawaannya) dan tidak mencetak apa pun ke stdout; tanpa display ia masuk mode
-    // CLI headless dan mencetak "Please visit https://www.dropbox.com/cli_link_nonce?…".
-    ['DISPLAY', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'].forEach((v) => delete daemonEnv[v]);
-    fs.mkdirSync(DAEMON_HOME, { recursive: true });
-    dropboxProc = spawn(DROPBOX_DAEMON, [], { cwd: path.dirname(DROPBOX_DAEMON), env: daemonEnv });
     const onDaemon = (chunk) => {
         const text = chunk.toString();
         text.split('\n').forEach((line) => {
@@ -621,7 +763,10 @@ async function linkDaemonAndVerifyEmail(cf, { email, password, gtMs, globalTimeo
     while (!cliLinkUrl && Date.now() - startedAt < daemonTimeout * 1000) {
         abortCheck(abortController);
         if (dropboxProc && dropboxProc.exitCode !== null && !cliLinkUrl) {
-            throw new Error(`[dropboxd] Proses berhenti (kode ${dropboxProc.exitCode}) sebelum URL ditemukan`);
+            const hint = dropboxMode === 'docker' && dropboxProc.exitCode === 125
+                ? ' — container tidak bisa dibuat (image / mount / docker permission)'
+                : (dropboxMode === 'docker' ? ' — periksa `docker ps -a` dan `docker logs`' : '');
+            throw new Error(`[dropboxd] Proses berhenti (mode ${dropboxMode}, kode ${dropboxProc.exitCode}) sebelum URL ditemukan${hint}`);
         }
         await sleep(200);
     }
@@ -713,7 +858,7 @@ async function linkDaemonAndVerifyEmail(cf, { email, password, gtMs, globalTimeo
 
             let verifySelectors = getSelectors('verify_email');
             if (verifySelectors.length === 0) {
-                verifySelectors = ['button[aria-label="Verify email"]', 'button.account-key-value-block__link', 'button[data-testid*="verify-email"]'];
+                verifySelectors = ['button[aria-label="Verify email"]', 'button.account-key-value-block__link:has-text("Verify email")', 'button:xtext("verify email|verifikasikan|verifikasi email")', 'a:xtext("verify email|verifikasikan|verifikasi email")', 'button.account-key-value-block__link'];
             }
             const verifyHit = await cf.waitForVisible(verifySelectors, gtMs * 1000, {
                 abortController,
@@ -745,6 +890,7 @@ async function linkDaemonAndVerifyEmail(cf, { email, password, gtMs, globalTimeo
         } catch (err) {
             if (err.message === 'Pendaftaran dihentikan oleh pengguna.') throw err;
             console.log(`\n⚠️ Error saat navigasi/verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts}): ${err.message}`);
+            await saveErrorScreenshot(cf, email, 'verif');
             if (verifAttempt >= maxVerifAttempts) console.log('Batas maksimal percobaan verifikasi email tercapai.');
             await sleep(2000);
         }
@@ -808,9 +954,22 @@ async function run() {
                 ok = !!result;
             } catch (error) {
                 console.log(`\n⚠️ Kesalahan registrasi: ${error.message}`);
-                const msg = (error.message || '').toLowerCase();
-                const tooMany = ['too many attempts', 'please try later', 'terlalu banyak percobaan'].some((k) => msg.includes(k));
-                const connection = ['net::err', 'timeout', 'connection', 'proxy', 'tunnel'].some((k) => msg.includes(k));
+                const msg = error.message || '';
+                // Akun sudah dibuat dan sesi masih login: ulangi HANYA langkah
+                // menghubungkan perangkat, jangan mulai dari awal.
+                if (msg.startsWith('DEVICE_CONNECT_FAILED')) {
+                    try {
+                        const resumed = await retryDeviceConnect();
+                        ok = !!(resumed && resumed.success);
+                    } catch (resumeError) {
+                        console.log(`\n⚠️ Pengulangan device connect gagal: ${resumeError.message}`);
+                        await closeBrowserSession();
+                    }
+                    continue;
+                }
+                const lower = msg.toLowerCase();
+                const tooMany = ['too many attempts', 'please try later', 'terlalu banyak percobaan'].some((k) => lower.includes(k));
+                const connection = ['net::err', 'timeout', 'connection', 'proxy', 'tunnel'].some((k) => lower.includes(k));
                 if (!((tooMany || (proxyType !== 'direct' && connection)) && attempts < maxAttempts)) {
                     console.log('Batas percobaan tercapai atau kesalahan permanen. Melewati email ini.');
                     break;
@@ -828,11 +987,13 @@ if (require.main === module) {
 } else {
     module.exports = {
         registerSingleEmail,
+        retryDeviceConnect,
         getRandomName,
         getSelectors,
         loadSelectors,
         stopEverything,
         closeBrowserSession,
         killDropboxDaemon,
+        daemonStatus,
     };
 }

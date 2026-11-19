@@ -948,7 +948,10 @@
                     (cam.visible ? ' visible noVNC=' + cam.novncPort : '') +
                     (cam.proxy ? ' exit=' + cam.proxy : '') +
                     (cam.profileCount ? ' profiles=' + cam.profileCount : ''),
-                    `dropboxd ${on(s.dropboxDaemon)}`
+                    `dropboxd ${on(s.dropboxDaemon)}` +
+                    (s.daemon && s.daemon.mode ? ` via ${s.daemon.mode}` : '') +
+                    (s.daemon && s.daemon.mode === 'docker' && s.daemon.imagePresent === false ? ` (image ${s.daemon.image} belum ada — jalankan ./setup.sh)` : '') +
+                    (s.daemon && s.daemon.mode === 'native' && s.daemon.docker === false ? ' (docker tidak tersedia)' : '')
                 ];
                 if (cam.installed === false) lines.push('camofox-browser BELUM terpasang — jalankan ./setup.sh');
                 else if (cam.browserInstalled === false) lines.push('Camoufox BELUM terunduh — jalankan ./setup.sh');

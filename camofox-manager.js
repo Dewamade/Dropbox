@@ -12,6 +12,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const net = require('net');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 
@@ -27,6 +28,10 @@ const NOVNC_PORT = 6082;
 // halaman selalu berukuran sama di mesin mana pun (VNC_RESOLUTION saat visible).
 const SCREEN = { width: 1360, height: 768 };
 const SCREEN_RESOLUTION = `${SCREEN.width}x${SCREEN.height}`;
+// Bahasa UI browser: plugin `locale` di camofox-browser memaksa locale Camoufox,
+// jadi dropbox.com selalu melayani teks English (katalog selector + pencocokan
+// teks di register.js berasumsi begitu). BROWSER_LOCALE=off menonaktifkan.
+const BROWSER_LOCALE = process.env.BROWSER_LOCALE || 'en-US';
 
 let proc = null;
 let spec = null;          // what the running server was started with
@@ -69,6 +74,15 @@ function killTree(signal = 'SIGTERM') {
 
 function escapeForPkill(text) {
     return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function portBusy(port) {
+    return new Promise((resolve) => {
+        const s = net.createConnection({ host: '127.0.0.1', port }, () => { s.destroy(); resolve(true); });
+        s.setTimeout(1500, () => { s.destroy(); resolve(false); });
+        s.once('error', () => resolve(false));
+        s.once('close', () => resolve(false));
+    });
 }
 
 // Stop the server and make sure nothing of ours survives (scoped to our paths).
@@ -126,6 +140,20 @@ async function ensureRunning({ proxy = null, visible = false, port = DEFAULT_POR
         fs.mkdirSync(dir, { recursive: true });
     }
 
+    // A camofox server left running by an earlier run (another node process) is
+    // invisible to our own state but still holds the port: spawning on top of it
+    // dies with EADDRINUSE while the readiness probe below "succeeds" against that
+    // stale server, and every tab request then fails. Clear ours before spawning.
+    if (await portBusy(port)) {
+        console.log(`[Camofox] Port ${port} sudah dipakai server camofox — membersihkan proses milik proyek ini...`);
+        await stop({ log: (m) => console.log(m) });
+        const until = Date.now() + 8000;
+        while (await portBusy(port) && Date.now() < until) await new Promise((r) => setTimeout(r, 300));
+        if (await portBusy(port)) {
+            throw new Error(`Port ${port} masih dipakai proses di luar proyek ini — hentikan dulu (lihat: pgrep -fa camofox-browser/server.js).`);
+        }
+    }
+
     const env = {
         ...process.env,
         // A CUDA libOpenCL.so.1 earlier on the loader path breaks Camoufox's GPU
@@ -149,6 +177,7 @@ async function ensureRunning({ proxy = null, visible = false, port = DEFAULT_POR
         BUILDREFS_TIMEOUT_MS: '15000',
         BROWSER_RSS_RESTART_THRESHOLD_MB: '8192',
         SCREEN_RESOLUTION,
+        BROWSER_LOCALE,
         NODE_ENV: 'production',
     };
     if (proxy) {

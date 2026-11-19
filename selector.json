@@ -61,8 +61,9 @@
     "verify_email": [
       "button[aria-label=\"Verify email\"]",
       "button.account-key-value-block__link:has-text(\"Verify email\")",
-      "button:has-text(\"Verify email\")",
-      "button:has-text(\"Verifikasi email\")"
+      "button:xtext(\"verify email|verifikasikan|verifikasi email\")",
+      "a:xtext(\"verify email|verifikasikan|verifikasi email\")",
+      "button.account-key-value-block__link"
     ],
     "send_email": [
       "button.js-email-modal-button.dig-Button--primary",
