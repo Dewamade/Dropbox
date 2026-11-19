@@ -36,7 +36,13 @@ function findVisibleExpression(selectors, mark) {
         const mark = ${JSON.stringify(!!mark)};
         const clean = () => { document.querySelectorAll('[' + '${MARK_ATTR}' + ']').forEach(e => e.removeAttribute('${MARK_ATTR}')); };
         clean();
-        const norm = (s) => (s.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        const norm = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\\s+/g, ' ').trim();
+        // Text of the element plus its accessible names, so a label written in
+        // aria-label/title is matched as well as visible text.
+        const hay = (el) => [
+            el.textContent, el.getAttribute && el.getAttribute('aria-label'), el.getAttribute && el.getAttribute('title'),
+            el.getAttribute && el.getAttribute('placeholder'), el.getAttribute && el.getAttribute('alt'), el.value,
+        ].map(norm).join(' ');
         const visible = (el) => {
             if (!el || !el.getBoundingClientRect) return false;
             const r = el.getBoundingClientRect();
@@ -46,18 +52,26 @@ function findVisibleExpression(selectors, mark) {
             return true;
         };
         const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
+        const all = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+        // :has-text("x") narrows the elements before it by text; :xtext("a|b|c")
+        // matches any of several language variants, case- and accent-insensitively.
+        // Text after the pseudo-selector is ordinary CSS, e.g.
+        //   .email-block:has-text("mail") button  — anchor on the block, click inside it.
+        const TEXT_SEL = /^(.*?):(xtext|has-text)\\(\\s*"([^"]*)"\\s*\\)(.*)$/;
         for (const raw of sels) {
             try {
                 let els = [];
-                const hasText = /^(.*?):has-text\\("([^"]*)"\\)$/.exec(raw);
+                const m = TEXT_SEL.exec(raw);
                 if (raw.startsWith('xpath=')) {
                     const it = document.evaluate(raw.slice(6), document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                     for (let i = 0; i < it.snapshotLength; i++) els.push(it.snapshotItem(i));
-                } else if (hasText) {
-                    const needle = hasText[2].toLowerCase();
-                    els = Array.from(document.querySelectorAll(hasText[1] || '*')).filter(e => norm(e).includes(needle));
+                } else if (m) {
+                    const [, scope, kind, needleText, suffix] = m;
+                    const needles = (kind === 'xtext' ? needleText.split('|') : [needleText]).map(norm).filter(Boolean);
+                    els = all(scope || '*', document).filter((e) => needles.some((n) => (kind === 'xtext' ? hay(e) : norm(e.textContent)).includes(n)));
+                    if (suffix.trim()) els = els.flatMap((e) => all(suffix.trim(), e));
                 } else {
-                    els = Array.from(document.querySelectorAll(raw));
+                    els = all(raw);
                 }
                 const ok = els.filter(visible);
                 if (ok.length > 0) {
