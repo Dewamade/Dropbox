@@ -1,0 +1,5 @@
+{
+  "name": "screen",
+  "description": "Fixed Xvfb screen size for the Camoufox display",
+  "enableEnvVar": "SCREEN_RESOLUTION"
+}

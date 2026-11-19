@@ -22,6 +22,11 @@ const DATA_DIR = path.join(__dirname, 'camofox-data');
 const DEFAULT_PORT = 9379;
 const VNC_PORT = 5902;
 const NOVNC_PORT = 6082;
+// Ukuran layar browser: plugin `screen` di camofox-browser memakai nilai ini untuk
+// Xvfb sekaligus mengunci ukuran jendela/layar yang dilaporkan Camoufox, jadi
+// halaman selalu berukuran sama di mesin mana pun (VNC_RESOLUTION saat visible).
+const SCREEN = { width: 1360, height: 768 };
+const SCREEN_RESOLUTION = `${SCREEN.width}x${SCREEN.height}`;
 
 let proc = null;
 let spec = null;          // what the running server was started with
@@ -133,6 +138,7 @@ async function ensureRunning({ proxy = null, visible = false, port = DEFAULT_POR
         NAVIGATE_TIMEOUT_MS: '60000',
         BUILDREFS_TIMEOUT_MS: '15000',
         BROWSER_RSS_RESTART_THRESHOLD_MB: '8192',
+        SCREEN_RESOLUTION,
         NODE_ENV: 'production',
     };
     if (proxy) {
@@ -145,6 +151,7 @@ async function ensureRunning({ proxy = null, visible = false, port = DEFAULT_POR
         env.ENABLE_VNC = '1';
         env.VNC_PORT = String(VNC_PORT);
         env.NOVNC_PORT = String(NOVNC_PORT);
+        env.VNC_RESOLUTION = SCREEN_RESOLUTION;
     }
 
     console.log(`[Camofox] Menjalankan camofox-browser di port ${port} via ${describeSpec(desired)}...`);

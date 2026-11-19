@@ -127,6 +127,27 @@ else
     echo -e "${RED}Error: kloning camofox-browser gagal.${NC}"
 fi
 
+# Plugin 'screen' (sumbernya ada di camofox-plugins/, ter-track git): memasang Xvfb
+# pada ukuran layar tetap dan mengunci angka window/screen Camoufox ke nilai yang
+# sama, supaya halaman selalu 1360x768 di mesin mana pun. camofox-browser/ adalah
+# kloning (di-gitignore) jadi plugin + konfigurasinya dipasang di sini.
+if [ -d "camofox-plugins/screen" ] && [ -f "camofox-browser/server.js" ]; then
+    mkdir -p camofox-browser/plugins/screen
+    cp -r camofox-plugins/screen/. camofox-browser/plugins/screen/
+    node -e '
+const fs = require("fs");
+const p = "camofox-browser/camofox.config.json";
+const cfg = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : {};
+cfg.plugins = cfg.plugins || {};
+cfg.plugins.screen = Object.assign({}, cfg.plugins.screen, { enabled: true });
+fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
+' || {
+        echo -e "${RED}Error: mengaktifkan plugin screen di camofox.config.json gagal.${NC}"
+        exit 1
+    }
+    echo -e "${GREEN}Plugin 'screen' terpasang di camofox-browser (ukuran layar dikunci).${NC}"
+fi
+
 # 5. warp-go (Cloudflare WARP rootless, SOCKS5 127.0.0.1:40000)
 echo -e "\n${GREEN}[5/8] Memasang warp-go di ./warp...${NC}"
 

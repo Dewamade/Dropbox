@@ -33,6 +33,7 @@ Script `setup.sh` memasang semuanya di dalam folder ini:
 |Folder|Isi|
 |---|---|
 |`camofox-browser/`|Server REST camofox-browser (git clone) + Camoufox di `camofox-browser/.camoufox/`|
+|`camofox-plugins/`|Plugin camofox buatan sendiri (ter-track git). `screen/` mengunci ukuran layar browser 1360x768 — Xvfb + angka window/screen Camoufox; `setup.sh` menyalinnya ke `camofox-browser/plugins/` dan mengaktifkannya di `camofox-browser/camofox.config.json`|
 |`warp/`|warp-go (source + binary `warp` + `reg.json` hasil registrasi)|
 |`psiphon/`|`psiphon-tunnel-core-x86_64` + `psiphon.config` per region (dibuat saat runtime)|
 |`dropbox-app/`|Daemon Dropbox resmi (`.dropbox-dist/dropboxd`); state `.dropbox/` juga disimpan di sini. State device lama dihapus otomatis setiap akun: satu akun = satu identitas perangkat, kalau tidak daemon tidak pernah memberi URL `cli_link` lagi|
@@ -59,6 +60,12 @@ Jika host tidak punya Go, `setup.sh` mengunduh toolchain Go resmi ke `.toolchain
    ```bash
    wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C dropbox-app -xzf -
    ```
+6. Plugin ukuran layar browser (yang dilakukan `setup.sh` di langkah 4):
+   ```bash
+   mkdir -p camofox-browser/plugins/screen
+   cp -r camofox-plugins/screen/. camofox-browser/plugins/screen/
+   node -e 'const fs=require("fs"),p="camofox-browser/camofox.config.json";const c=JSON.parse(fs.readFileSync(p));c.plugins=c.plugins||{};c.plugins.screen={enabled:true};fs.writeFileSync(p,JSON.stringify(c,null,2)+"\n")'
+   ```
 
 ---
 
@@ -81,7 +88,7 @@ node register.js       # mode CLI interaktif (alternatif)
 
 Isi URL referral Dropbox, daftar email (pisahkan dengan `;`) atau aktifkan mode otomatis, pilih jalur koneksi, lalu klik **Mulai Pendaftaran**.
 
-- **Mode browser terlihat** (untuk menyelesaikan CAPTCHA manual): centang **Tampilkan Browser** di Pengaturan, lalu buka noVNC di `http://localhost:6082`.
+- **Mode browser terlihat** (untuk menyelesaikan CAPTCHA manual): centang **Tampilkan Browser** di Pengaturan, lalu buka noVNC di `http://localhost:6082`. Layar browser dikunci 1360x768 (halaman 1360x712 setelah UI Firefox), jadi tampilan noVNC sama di mesin mana pun.
 - Port tetap: `3000` dashboard, `9379` camofox, `40000` WARP SOCKS5, `3080` Psiphon SOCKS, `5902`/`6082` VNC/noVNC.
 
 ---
