@@ -316,30 +316,6 @@
                                 Browser &amp; Koneksi
                             </div>
                             <div class="settings-section-body">
-                                <div class="form-group">
-                                    <label>Mode User Agent</label>
-                                    <div class="radio-group">
-                                        <label class="radio-option">
-                                            <input type="radio" name="ua-mode" value="generate" id="ua-generate-radio" checked>
-                                            Generate Lokal (Acak)
-                                        </label>
-                                        <label class="radio-option">
-                                            <input type="radio" name="ua-mode" value="extension" id="ua-extension-radio">
-                                            Ekstensi (firefox-profile)
-                                        </label>
-                                    </div>
-                                    <button id="view-ua-btn" class="btn-outline btn-sm" style="margin-top:0.5rem;width:fit-content;display:none;">View UA List</button>
-                                </div>
-
-                                <div class="form-group" id="device-type-group">
-                                    <label>Perangkat</label>
-                                    <div class="check-group">
-                                        <label class="check-option"><input type="checkbox" id="dt-desktop" checked> 🖥 Desktop</label>
-                                        <label class="check-option"><input type="checkbox" id="dt-mobile"  checked> 📱 Mobile</label>
-                                        <label class="check-option"><input type="checkbox" id="dt-tablet"  checked> 📟 Tablet</label>
-                                    </div>
-                                </div>
-
                                 <div class="form-group" id="connection-type-group">
                                     <label>Tipe Koneksi</label>
                                     <div class="check-group">
@@ -357,7 +333,14 @@
                                             <input type="checkbox" id="enable-preview">
                                             📸 Live Preview Browser
                                         </label>
+                                        <label class="check-option">
+                                            <input type="checkbox" id="use-visible">
+                                            🖥 Tampilkan Browser (Xvfb + noVNC)
+                                        </label>
                                     </div>
+                                    <p id="novnc-hint" style="display:none; font-size:0.8rem; color:#a1a1aa; margin:0.4rem 0 0;">
+                                        Browser tampil di virtual display — buka <a id="novnc-link" href="#" target="_blank" rel="noopener">noVNC</a> untuk menyelesaikan CAPTCHA manual.
+                                    </p>
                                 </div>
 
                                 <div class="form-group" id="psiphon-region-group" style="display:none; flex-direction:column; gap:0.5rem;">
@@ -393,6 +376,25 @@
                                 <div class="form-group" id="socks5-input-group" style="display:none;">
                                     <label for="socks5-host">Socks5 Host:Port</label>
                                     <input type="text" id="socks5-host" placeholder="127.0.0.1:1080">
+                                </div>
+
+                                <div class="form-group" id="warp-port-group" style="display:none;">
+                                    <label for="warp-port">WARP SOCKS5 Port (warp-go di folder ./warp)</label>
+                                    <input type="number" id="warp-port" value="40000" min="1024" max="65535">
+                                </div>
+
+                                <div class="form-group">
+                                    <div style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem;">
+                                        <label>Status Mesin Lokal</label>
+                                        <div style="display:flex; gap:0.4rem;">
+                                            <button id="rotate-warp" class="btn-outline btn-sm" type="button" style="width:fit-content;">🔄 WARP</button>
+                                            <button id="rotate-psiphon" class="btn-outline btn-sm" type="button" style="width:fit-content;">🔄 Psiphon</button>
+                                            <button id="refresh-proxy-status" class="btn-outline btn-sm" type="button" style="width:fit-content;">↻ Cek Status</button>
+                                        </div>
+                                    </div>
+                                    <div id="proxy-status" style="font-size:0.8rem; line-height:1.6; color:#a1a1aa; white-space:pre-line; border:1px solid rgba(255,255,255,0.08); border-radius:0.5rem; padding:0.5rem 0.65rem;">
+                                        Tekan "Cek Status" untuk membaca kondisi warp-go / psiphon / camofox.
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -455,26 +457,6 @@
             </section>
         </main>
     </div>
-    <!-- ── View UA Modal ─────────────────────────────────── -->
-    <div class="modal-backdrop" id="ua-modal">
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h3>Daftar User Agent</h3>
-                <button class="close-modal" id="close-ua-modal">&times;</button>
-            </div>
-            <div style="padding: 1rem; overflow-y: auto; max-height: 400px;">
-                <h4 style="margin-top:0;">Desktop</h4>
-                <ul id="ua-list-desktop" style="font-size: 0.85rem; color: #a1a1aa; padding-left: 1.2rem; word-break: break-all; margin-bottom: 1rem;"></ul>
-                
-                <h4>Mobile</h4>
-                <ul id="ua-list-mobile" style="font-size: 0.85rem; color: #a1a1aa; padding-left: 1.2rem; word-break: break-all; margin-bottom: 1rem;"></ul>
-                
-                <h4>Tablet</h4>
-                <ul id="ua-list-tablet" style="font-size: 0.85rem; color: #a1a1aa; padding-left: 1.2rem; word-break: break-all;"></ul>
-            </div>
-        </div>
-    </div>
-
     <!-- ── History Modal ─────────────────────────────────── -->
     <div class="modal-backdrop" id="history-modal">
         <div class="modal">
@@ -548,9 +530,13 @@
         const fixedPasswordWrap   = document.getElementById('fixed-password-wrap');
         const fixedPasswordInput  = document.getElementById('fixed-password-input');
 
-        const uaGenerateRadio     = document.getElementById('ua-generate-radio');
-        const uaExtensionRadio    = document.getElementById('ua-extension-radio');
-        const deviceTypeGroup     = document.getElementById('device-type-group');
+        const useVisibleCheckbox  = document.getElementById('use-visible');
+        const novncHint           = document.getElementById('novnc-hint');
+        const novncLink           = document.getElementById('novnc-link');
+        const warpPortInput       = document.getElementById('warp-port');
+        const warpPortGroup       = document.getElementById('warp-port-group');
+        const proxyStatusEl       = document.getElementById('proxy-status');
+        const refreshProxyStatusBtn = document.getElementById('refresh-proxy-status');
         
         const infoAlias = document.getElementById('info-alias');
         const infoMode  = document.getElementById('info-mode');
@@ -859,14 +845,10 @@
                         idleTimeout,
                         globalTimeout: parseInt(globalTimeoutInput.value) || 30,
                         daemonTimeout: parseInt(daemonTimeoutInput.value) || 30,
-                        useHeadless: false,
+                        useVisible: useVisibleCheckbox.checked,
+                        useHeadless: !useVisibleCheckbox.checked,
                         socks5Host: socks5HostInput.value,
-                        uaMode: uaGenerateRadio.checked ? 'generate' : 'extension',
-                        deviceTypes: {
-                            desktop: document.getElementById('dt-desktop').checked,
-                            mobile: document.getElementById('dt-mobile').checked,
-                            tablet: document.getElementById('dt-tablet').checked
-                        },
+                        warpPort: parseInt(warpPortInput.value) || 40000,
                         debugProxy: debugProxyCheckbox.checked,
                         aliasWorker: aliasInput.value,
                         urlDropbox: dropboxUrlInput.value,
@@ -931,30 +913,78 @@
         emAutoRadio.addEventListener('change', updateEmailModeUI);
         updateEmailModeUI();
 
-        function updateUaModeUI() {
-            const isGenerate = uaGenerateRadio.checked;
-            deviceTypeGroup.style.display = isGenerate ? 'flex' : 'none';
-            viewUaBtn.style.display = isGenerate ? 'inline-block' : 'none';
-        }
-        uaGenerateRadio.addEventListener('change', updateUaModeUI);
-        uaExtensionRadio.addEventListener('change', updateUaModeUI);
-        updateUaModeUI();
+        // ── Tampilan browser (Xvfb + noVNC) & status mesin lokal ─────
+        let lastEngineStatus = null;
 
-        // ── UA Fetching ────────────────────────────────────────
-        viewUaBtn.addEventListener('click', async () => {
+        function updateVisibleModeUI() {
+            novncHint.style.display = useVisibleCheckbox.checked ? 'block' : 'none';
+            const port = (lastEngineStatus && lastEngineStatus.camofox && lastEngineStatus.camofox.novncPort) || 6082;
+            const host = location.hostname || 'localhost';
+            novncLink.href = `http://${host}:${port}/vnc.html?resize=scale`;
+        }
+        useVisibleCheckbox.addEventListener('change', () => { updateVisibleModeUI(); });
+        updateVisibleModeUI();
+
+        function updateWarpPortUI() {
+            warpPortGroup.style.display = useWarpCheckbox.checked ? 'flex' : 'none';
+        }
+        useWarpCheckbox.addEventListener('change', updateWarpPortUI);
+        updateWarpPortUI();
+
+        // ── Status mesin lokal (warp-go / psiphon / camofox / daemon) ─
+        async function refreshProxyStatus() {
+            refreshProxyStatusBtn.disabled = true;
+            proxyStatusEl.textContent = 'Memeriksa…';
             try {
-                const res = await fetch('/api/uas');
-                const data = await res.json();
-                document.getElementById('ua-list-desktop').innerHTML = (data.desktop || []).map(ua => `<li>${ua}</li>`).join('');
-                document.getElementById('ua-list-mobile').innerHTML = (data.mobile || []).map(ua => `<li>${ua}</li>`).join('');
-                document.getElementById('ua-list-tablet').innerHTML = (data.tablet || []).map(ua => `<li>${ua}</li>`).join('');
-                uaModal.classList.add('open');
-            } catch (err) {
-                alert('Gagal mengambil data User Agent');
+                const s = await (await fetch('/api/proxy/status')).json();
+                lastEngineStatus = s;
+                const on = (v) => v ? '[AKTIF]' : '[mati]';
+                const cam = s.camofox || {};
+                const lines = [
+                    `WARP ${on(s.warp)} 127.0.0.1:${s.warpPort}` +
+                    (s.warpExitIp ? ' exit=' + s.warpExitIp : (s.warpRegistered === false ? ' (belum registrasi — jalankan ./warp/warp -reg)' : '')),
+                    `Psiphon ${on(s.psiphon)} 127.0.0.1:${s.psiphonPort}${s.psiphonRegion ? ' region=' + s.psiphonRegion : ''}`,
+                    `camofox ${on(cam.running)} 127.0.0.1:${cam.port || '?'}` +
+                    (cam.visible ? ' visible noVNC=' + cam.novncPort : '') +
+                    (cam.proxy ? ' exit=' + cam.proxy : '') +
+                    (cam.profileCount ? ' profiles=' + cam.profileCount : ''),
+                    `dropboxd ${on(s.dropboxDaemon)}`
+                ];
+                if (cam.installed === false) lines.push('camofox-browser BELUM terpasang — jalankan ./setup.sh');
+                else if (cam.browserInstalled === false) lines.push('Camoufox BELUM terunduh — jalankan ./setup.sh');
+                proxyStatusEl.textContent = lines.join('\n');
+                updateVisibleModeUI();
+            } catch (e) {
+                proxyStatusEl.textContent = 'Gagal membaca status: ' + e.message;
+            } finally {
+                refreshProxyStatusBtn.disabled = false;
             }
-        });
-        closeUaModal.addEventListener('click', () => uaModal.classList.remove('open'));
-        uaModal.addEventListener('click', (e) => { if (e.target === uaModal) uaModal.classList.remove('open'); });
+        }
+        refreshProxyStatusBtn.addEventListener('click', refreshProxyStatus);
+        setTimeout(refreshProxyStatus, 1500);
+
+        // ── Rotasi exit IP (kunci WARP baru / region Psiphon baru) ─
+        async function rotateExit(type) {
+            const others = document.querySelectorAll('#rotate-warp, #rotate-psiphon');
+            others.forEach((b) => { b.disabled = true; });
+            proxyStatusEl.textContent = `Rotasi ${type}: meminta exit IP baru…`;
+            try {
+                const res = await fetch('/api/proxy/rotate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type }),
+                });
+                const j = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+            } catch (e) {
+                proxyStatusEl.textContent = `Rotasi ${type} gagal: ${e.message}`;
+            } finally {
+                others.forEach((b) => { b.disabled = false; });
+                refreshProxyStatus();
+            }
+        }
+        document.getElementById('rotate-warp').addEventListener('click', (ev) => rotateExit('warp', ev.currentTarget));
+        document.getElementById('rotate-psiphon').addEventListener('click', (ev) => rotateExit('psiphon', ev.currentTarget));
 
         // ── LocalStorage Settings ──────────────────────────────
         function saveSettings() {
@@ -976,10 +1006,8 @@
                 globalTimeout: globalTimeoutInput.value,
                 globalRetry: globalRetryInput.value,
                 daemonTimeout: daemonTimeoutInput.value,
-                uaMode: uaGenerateRadio.checked ? 'generate' : 'extension',
-                dtDesktop: document.getElementById('dt-desktop').checked,
-                dtMobile: document.getElementById('dt-mobile').checked,
-                dtTablet: document.getElementById('dt-tablet').checked,
+                useVisible: useVisibleCheckbox.checked,
+                warpPort: warpPortInput.value,
                 debugProxy: debugProxyCheckbox.checked,
                 idleTimeout: idleTimeoutInput.value,
                 enablePreview: document.getElementById('enable-preview').checked
@@ -1010,15 +1038,10 @@
                 if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
                 if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
                 if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
-                if (settings.uaMode) {
-                    if (settings.uaMode === 'generate') uaGenerateRadio.checked = true;
-                    else uaExtensionRadio.checked = true;
-                }
-                if (settings.dtDesktop !== undefined) document.getElementById('dt-desktop').checked = settings.dtDesktop;
-                if (settings.dtMobile !== undefined) document.getElementById('dt-mobile').checked = settings.dtMobile;
-                if (settings.dtTablet !== undefined) document.getElementById('dt-tablet').checked = settings.dtTablet;
-                
-                updateUaModeUI();
+                if (settings.useVisible !== undefined) useVisibleCheckbox.checked = !!settings.useVisible;
+                if (settings.warpPort) warpPortInput.value = settings.warpPort;
+
+                updateVisibleModeUI();
                 
                 if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
                 if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
@@ -1058,7 +1081,7 @@
         const inputsToSave = [
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
             globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
-            useSocks5Checkbox, usePsiphonCheckbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, uaGenerateRadio, uaExtensionRadio,
+            useSocks5Checkbox, usePsiphonCheckbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, useVisibleCheckbox, warpPortInput,
             debugProxyCheckbox, idleTimeoutInput, document.getElementById('enable-preview')
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
@@ -1254,7 +1277,6 @@
 
             socket.onopen = () => {
                 appendLog('log-success', '[System] Terhubung ke WebSockets server.');
-                appendLog('log-info', `[Info] User Agent: ${navigator.userAgent}`);
                 fetch('https://api.ipify.org?format=json')
                     .then(res => res.json())
                     .then(data => appendLog('log-info', `[Info] Public IP (client): ${data.ip}`))
@@ -1348,7 +1370,7 @@
                 } else if (data.type === 'preview') {
                     const img = document.getElementById('preview-img');
                     if (img) {
-                        img.src = 'data:image/jpeg;base64,' + data.data;
+                        img.src = 'data:' + (data.mime || 'image/jpeg') + ';base64,' + data.data;
                         img.classList.add('visible');
                     }
                 }
@@ -1594,15 +1616,11 @@
                 return;
             }
 
-            const useHeadless  = true;
+            const useVisible   = useVisibleCheckbox.checked;
+            const useHeadless  = !useVisible;
+            const warpPort     = parseInt(warpPortInput.value) || 40000;
             const passwordMode = pwFixedRadio.checked ? 'fixed' : 'random';
             const fixedPassword = fixedPasswordInput.value.trim() || 'Aa12345678*';
-            const uaMode       = uaGenerateRadio.checked ? 'generate' : 'extension';
-            
-            const deviceTypes = [];
-            if (document.getElementById('dt-desktop').checked) deviceTypes.push('desktop');
-            if (document.getElementById('dt-mobile').checked) deviceTypes.push('mobile');
-            if (document.getElementById('dt-tablet').checked) deviceTypes.push('tablet');
             
             const emailMode    = emAutoRadio.checked ? 'auto' : 'manual';
             const domain       = autoDomainInput.value.trim();
@@ -1626,7 +1644,6 @@
                 failedCountEl.innerText = '0';
 
                 // Log client info
-                appendLog('log-info', `[Info] User Agent: ${navigator.userAgent}`);
                 fetch('https://api.ipify.org?format=json')
                     .then(res => res.json())
                     .then(data => appendLog('log-info', `[Info] Public IP (client): ${data.ip}`))
@@ -1655,11 +1672,11 @@
                     useSocks5: useSocks5,
                     usePsiphon: usePsiphon,
                     socks5Host: socks5Host,
-                    useHeadless: true,
+                    useHeadless,
+                    useVisible,
+                    warpPort,
                     passwordMode,
                     fixedPassword,
-                    uaMode,
-                    deviceTypes,
                     debugProxy: debugProxyCheckbox.checked,
                     psiphonRegions: selectedPsiphonRegions,
                     enablePreview: enablePreviewCheckbox ? enablePreviewCheckbox.checked : false

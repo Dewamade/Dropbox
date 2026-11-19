@@ -4,6 +4,8 @@ const WebSocket = require('ws');
 const path = require('path');
 const { saveRegistration, getAllRegistrations, clearRegistrations, getSettingsFull, saveSettingsFull, getSelectors, saveSelectors, resetSelectors } = require('./db.js');
 const { registerSingleEmail: _registerSingleEmail } = require('./register.js');
+const camofox = require('./camofox-manager');
+const proxyManager = require('./proxy-manager');
 
 // ── Random name generator (syllable-based) ──────────────────────────────────
 function getRandomName() {
@@ -50,21 +52,33 @@ app.delete('/api/history', (_req, res) => {
     res.json({ ok: true });
 });
 
-app.get('/api/uas', (_req, res) => {
-    const topUserAgents = require('top-user-agents');
-    const baseUas = topUserAgents.filter(ua => !ua.includes('NT 6'));
-    
-    const tabletUas = [
-        'Mozilla/5.0 (iPad; CPU OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
-        'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-    ];
+// ── Live status of the local engines (WARP / Psiphon / camofox / daemon) ──
+app.get('/api/proxy/status', (_req, res) => {
+    try {
+        res.json({
+            ...proxyManager.status(),
+            camofox: camofox.status(),
+            dropboxDaemon: !!(global.isDropboxRunning && global.isDropboxRunning()),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
-    res.json({
-        desktop: baseUas.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android')),
-        mobile: baseUas.filter(u => u.includes('Mobile') || u.includes('iPhone')),
-        tablet: baseUas.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(tabletUas)
-    });
+// Force a new exit IP: WARP gets a fresh key (reg.json regenerated), Psiphon
+// restarts the tunnel and picks a new country. Refused while a batch runs —
+// rotating mid-registration would pull the proxy out from under the open tab.
+app.post('/api/proxy/rotate', async (req, res) => {
+    if (isRunning) return res.status(409).json({ error: 'Batch sedang berjalan — hentikan dulu sebelum rotasi IP.' });
+    const type = (req.body && req.body.type) === 'psiphon' ? 'psiphon' : 'warp';
+    try {
+        const r = type === 'psiphon'
+            ? await proxyManager.startPsiphon({ rotate: true })
+            : await proxyManager.startWarp({ port: warpPort, rotate: true });
+        res.json({ ok: true, type, ...r, ...proxyManager.status() });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -92,12 +106,13 @@ const savedSettings = getSettingsFull();
 let idleDurationMs = (savedSettings.idleTimeout || 600) * 1000; // Configurable idle timeout (default: 10 minutes)
 
 // Other persisted settings
-let globalTimeout = savedSettings.globalTimeout || 30000;
-let daemonTimeout = savedSettings.daemonTimeout || 240000;
+// Unit: SECONDS (register.js multiplies by 1000). Kept identical to the units the
+// UI sends and selector.json's defaults declare.
+let globalTimeout = savedSettings.globalTimeout || 30;
+let daemonTimeout = savedSettings.daemonTimeout || 120;
 let useHeadless = savedSettings.useHeadless !== false;
 let socks5Host = savedSettings.socks5Host || '';
-let uaMode = savedSettings.uaMode || 'extension';
-let deviceTypes = savedSettings.deviceTypes ? JSON.parse(savedSettings.deviceTypes) : [];
+let warpPort = savedSettings.warpPort || proxyManager.DEFAULT_WARP_PORT;
 let debugProxy = savedSettings.debugProxy || false;
 
 // New settings fields (persisted but not used as in-memory globals yet)
@@ -206,8 +221,7 @@ app.get('/api/settings', (_req, res) => {
         daemonTimeout,
         useHeadless,
         socks5Host,
-        uaMode,
-        deviceTypes,
+        warpPort,
         debugProxy,
         aliasWorker,
         urlDropbox,
@@ -247,15 +261,14 @@ app.post('/api/settings/apply', (req, res) => {
         fixedPassword: body.fixedPassword !== undefined ? body.fixedPassword : currentSettings.fixedPassword,
 
         // ── TIMEOUT & RETRY ─────────────────────
-        globalTimeout: typeof body.globalTimeout === 'number' ? body.globalTimeout : (parseInt(body.globalTimeout) || currentSettings.globalTimeout || 30000),
+        globalTimeout: typeof body.globalTimeout === 'number' ? body.globalTimeout : (parseInt(body.globalTimeout) || currentSettings.globalTimeout || 30),
         globalRetry: typeof body.globalRetry === 'number' ? body.globalRetry : (parseInt(body.globalRetry) || currentSettings.globalRetry || 2),
-        daemonTimeout: typeof body.daemonTimeout === 'number' ? body.daemonTimeout : (parseInt(body.daemonTimeout) || currentSettings.daemonTimeout || 240000),
+        daemonTimeout: typeof body.daemonTimeout === 'number' ? body.daemonTimeout : (parseInt(body.daemonTimeout) || currentSettings.daemonTimeout || 120),
 
         // ── BROWSER & KONEKSI ───────────────────
         useHeadless: typeof body.useHeadless === 'boolean' ? body.useHeadless : (body.useHeadless !== undefined ? !!body.useHeadless : currentSettings.useHeadless),
         socks5Host: body.socks5Host !== undefined ? body.socks5Host : currentSettings.socks5Host,
-        uaMode: body.uaMode || currentSettings.uaMode,                     // 'generate' | 'extension'
-        deviceTypes: body.deviceTypes ? (typeof body.deviceTypes === 'string' ? body.deviceTypes : JSON.stringify(body.deviceTypes)) : currentSettings.deviceTypes,
+        warpPort: (typeof body.warpPort === 'number' ? body.warpPort : parseInt(body.warpPort)) || currentSettings.warpPort || proxyManager.DEFAULT_WARP_PORT,
 
         // Proxy type booleans
         useDirect:  body.useDirect  !== undefined ? !!body.useDirect  : (currentSettings.useDirect  !== false),
@@ -270,11 +283,6 @@ app.post('/api/settings/apply', (req, res) => {
         enablePreview: body.enablePreview !== undefined ? !!body.enablePreview : (currentSettings.enablePreview || false)
     };
 
-    // Ensure deviceTypes is stored as a string in the JSON file
-    if (typeof mergedSettings.deviceTypes !== 'string') {
-        mergedSettings.deviceTypes = JSON.stringify(mergedSettings.deviceTypes);
-    }
-
     // 3. Save the merged settings to file
     saveSettingsFull(mergedSettings);
 
@@ -283,8 +291,7 @@ app.post('/api/settings/apply', (req, res) => {
     daemonTimeout = mergedSettings.daemonTimeout;
     useHeadless = mergedSettings.useHeadless;
     socks5Host = mergedSettings.socks5Host;
-    uaMode = mergedSettings.uaMode;
-    deviceTypes = JSON.parse(mergedSettings.deviceTypes);
+    warpPort = mergedSettings.warpPort;
     debugProxy = mergedSettings.debugProxy;
 
     // New settings fields — update in-memory globals too
@@ -467,9 +474,9 @@ wss.on('connection', (ws) => {
                         await currentAbortController.abort();
                     }
                 }
-                if (global.killAllBrowsers) global.killAllBrowsers();
-                if (global.killAllBox64) global.killAllBox64();
-                if (global.killAllVpnProxy) global.killAllVpnProxy();
+                if (global.closeBrowserSession) await global.closeBrowserSession();
+                if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
+                if (global.killAllVpnProxy) await global.killAllVpnProxy();
                 // Reset progress state so refresh doesn't show stale data
                 globalState.progress = { current: 0, total: 0, status: 'Dihentikan', successCount: 0, failedCount: 0, verifCount: 0 };
                 globalState.stats = { timeouts: 0, errors: 0 };
@@ -506,21 +513,22 @@ wss.on('connection', (ws) => {
                 if (global.livePreview) {
                     screenshotInterval = setInterval(async () => {
                         try {
-                            if (!global.page) return;
-                            const buf = await global.page.screenshot({ type: 'jpeg', quality: 40, fullPage: true });
-                            safeSend({ type: 'preview', data: buf.toString('base64') });
-                        } catch (_) { /* page may be closed */ }
-                    }, 1000);
+                            if (typeof global.previewScreenshot !== 'function') return;
+                            const buf = await global.previewScreenshot();
+                            if (buf) safeSend({ type: 'preview', data: buf.toString('base64'), mime: 'image/png' });
+                        } catch (_) { /* session may be closing */ }
+                    }, 1500);
                 }
 
                 const { 
                     action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
-                    useDirect, useWarp, useSocks5, usePsiphon, socks5Host, useHeadless, passwordMode, fixedPassword, uaMode, deviceTypes, debugProxy,
+                    useDirect, useWarp, useSocks5, usePsiphon, socks5Host, warpPort: clientWarpPort, useHeadless, passwordMode, fixedPassword, debugProxy,
                     psiphonRegions: clientPsiphonRegions
                 } = data;
 
                 global.debugProxy = !!debugProxy;
+                const activeWarpPort = parseInt(clientWarpPort, 10) || warpPort || proxyManager.DEFAULT_WARP_PORT;
                 global.psiphonRegions = Array.isArray(clientPsiphonRegions) ? clientPsiphonRegions : [];
                 global.psiphonUsedRegions = [];
                 
@@ -555,21 +563,6 @@ wss.on('connection', (ws) => {
                 let failedCount = 0;
                 let verifCount = 0;
                 let processedCount = 0;
-                let uaRotationIndex = 0;
-
-                // Pre-fetch UAs for rotation
-                const topUserAgents = require('top-user-agents');
-                const baseUas = topUserAgents.filter(ua => !ua.includes('NT 6'));
-                const tabletUas = [
-                    'Mozilla/5.0 (iPad; CPU OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1',
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
-                    'Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-                ];
-                const uaLists = {
-                    desktop: baseUas.filter(u => !u.includes('Mobile') && !u.includes('Tablet') && !u.includes('iPad') && !u.includes('Android')),
-                    mobile: baseUas.filter(u => u.includes('Mobile') || u.includes('iPhone')),
-                    tablet: baseUas.filter(u => u.includes('iPad') || u.includes('Tablet') || (u.includes('Android') && !u.includes('Mobile'))).concat(tabletUas)
-                };
 
                 try {
                     for (let i = 0; i < emails.length; i++) {
@@ -597,81 +590,15 @@ wss.on('connection', (ws) => {
                         let registrationSuccess = false;
                         const maxAttempts = globalRetry || 3;
 
-                        // ── Warp restart helper ───────────────────────────────────────────
-                        const runWarpRestart = async () => {
-                            const { exec } = require('child_process');
-                            const runCmd = (cmd, tms = 8000) => new Promise(resolve => {
-                                const proc = exec(cmd, { timeout: tms }, () => resolve());
-                                if (global.debugProxy) {
-                                    proc.stdout.on('data', (data) => {
-                                        data.toString().split('\n').forEach(line => {
-                                            const trimmed = line.trim();
-                                            if (trimmed) safeSend({ type: 'vpn_log', message: `[Warp Command: ${cmd}] ${trimmed}` });
-                                        });
-                                    });
-                                    proc.stderr.on('data', (data) => {
-                                        data.toString().split('\n').forEach(line => {
-                                            const trimmed = line.trim();
-                                            if (trimmed) safeSend({ type: 'vpn_log', message: `[Warp Command Err: ${cmd}] ${trimmed}` });
-                                        });
-                                    });
-                                }
-                                setTimeout(resolve, tms + 500);
-                            });
-
-                            const checkWarp = (desiredStatus) => new Promise(resolve => {
-                                const proc = exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
-                                    if (err) return resolve(false);
-                                    const out = (stdout || '').toLowerCase();
-                                    if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
-                                    else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
-                                    else resolve(false);
-                                });
-                                if (global.debugProxy) {
-                                    proc.stdout.on('data', (data) => {
-                                        data.toString().split('\n').forEach(line => {
-                                            const trimmed = line.trim();
-                                            if (trimmed) safeSend({ type: 'vpn_log', message: `[Warp Status] ${trimmed}` });
-                                        });
-                                    });
-                                }
-                            });
-
-                            console.log(`\n[Warp Restart] Menjalankan: warp-ctl stop`);
-                            await runCmd('warp-ctl stop', 5000);
-                            
-                            // Poll stop for up to 10s
-                            for(let i = 0; i < 10; i++) {
-                                if (await checkWarp('stop')) {
-                                    console.log(`[Warp Restart] ✓ Status: BERHENTI`);
-                                    break;
-                                }
-                                await new Promise(r => setTimeout(r, 1000));
-                            }
-                            
-                            console.log(`[Warp Restart] Menunggu 1 detik...`);
-                            await new Promise(r => setTimeout(r, 1000));
-
-                            console.log(`[Warp Restart] Menjalankan: warp-ctl start (Max 60x percobaan)...`);
-                            let started = false;
-                            for (let i = 0; i < 60; i++) {
-                                await runCmd('warp-ctl start', 2000);
-                                if (await checkWarp('start')) {
-                                    started = true;
-                                    console.log(`[Warp Restart] ✓ Status: TERHUBUNG pada percobaan ke-${i + 1}`);
-                                    break;
-                                }
-                                await new Promise(r => setTimeout(r, 1000));
-                            }
-
-                            if (!started) console.log(`[Warp Restart] ⚠️ Peringatan: Status TERHUBUNG gagal dicapai setelah 60 percobaan.`);
-
-                            console.log(`[Warp Restart] Menunggu 10 detik agar koneksi stabil...`);
-                            await new Promise(r => setTimeout(r, 10000));
-                        };
-
                         // ── Helper: run inner browser retry loop for a given proxyType ───
                         const runBrowserLoop = async (proxyType, proxyHost, phaseLabel, isPhaseRetry) => {
+                            // Any hard reset between attempts: drop the browser session
+                            // (camofox profile + tab) and the daemon, keep the server up.
+                            const resetSession = async () => {
+                                if (global.closeBrowserSession) await global.closeBrowserSession();
+                                if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
+                            };
+
                             let attempts = 0;
                             while (!registrationSuccess && attempts < maxAttempts) {
                                 if (shouldStop) break;
@@ -681,23 +608,14 @@ wss.on('connection', (ws) => {
                                 if (attempts > 1 || isPhaseRetry) {
                                     console.log(`\n[Mencoba Kembali] ${phaseLabel} — Attempt ${attempts}/${maxAttempts} untuk ${email}`);
                                 }
-                                
-                                // Rotate UA for each attempt
-                                let selectedUaString = '';
-                                let selectedDeviceType = '';
-                                if (uaMode !== 'extension' && deviceTypes && deviceTypes.length > 0) {
-                                    selectedDeviceType = deviceTypes[uaRotationIndex % deviceTypes.length];
-                                    const list = uaLists[selectedDeviceType] || uaLists.desktop;
-                                    selectedUaString = list[Math.floor(Math.random() * list.length)];
-                                    uaRotationIndex++;
-                                }
 
                                 try {
                                     currentAbortController = { shouldStop: false, abort: null };
                                     const result = await _registerSingleEmail(
-                                        url, email, proxyType, proxyHost, false,
+                                        url, email, proxyType, proxyHost,
                                         currentAbortController, useHeadless,
-                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry, uaMode, selectedUaString, selectedDeviceType
+                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry,
+                                        { warpPort: activeWarpPort }
                                     );
 
                                     if (result && result.success) {
@@ -726,29 +644,9 @@ wss.on('connection', (ws) => {
                                         } catch (dbErr) {
                                             originalError('DB save error:', dbErr.message);
                                         }
-                                    } else if (result === true) {
-                                        // backward compat
-                                        registrationSuccess = true;
-                                        successCount++;
-                                        const usedPwd = passwordMode === 'fixed' ? fixedPassword : '(random)';
-                                        console.log(`✓ Pendaftaran sukses untuk ${email}`);
-                                        safeSend(ws, { type: 'email_success', email: email });
-                                        // Update progress ring for this successful email (backward compat)
-                                        safeSend(ws, {
-                                            type: 'progress',
-                                            current: processedCount,
-                                            total: emails.length,
-                                            status: `Berhasil: ${email}`,
-                                            successCount,
-                                            failedCount,
-                                            verifCount,
-                                            success: true
-                                        });
-                                        try { saveRegistration(email, usedPwd, 'success', alias, '', '', emailTimeouts, emailErrors); } catch (_) {}
                                     } else {
                                         console.log(`⚠️ Pendaftaran ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
-                                        if (global.killAllBrowsers) global.killAllBrowsers();
-                                        if (global.killAllBox64) global.killAllBox64();
+                                        await resetSession();
                                     }
 
                                 } catch (error) {
@@ -763,9 +661,8 @@ wss.on('connection', (ws) => {
                                     safeSend(ws, { type: 'email_stats', timeouts: emailTimeouts, errors: emailErrors });
                                     
                                     console.log(`\n❌ Error attempt ${attempts}/${maxAttempts} [${phaseLabel}]: ${errMsg.replace('BROWSER_KILL_REQUIRED: ', '').split('\n')[0]}`);
-                                    // Always kill browsers after any failure
-                                    if (global.killAllBrowsers) global.killAllBrowsers();
-                                    if (global.killAllBox64) global.killAllBox64();
+                                    // Always drop the browser session after any failure
+                                    await resetSession();
 
                                     if (errMsg.toLowerCase().includes('too many attempts')) {
                                         console.log(`🔄 Deteksi 'Too many attempts'. Langsung memicu rotasi IP / Fase berikutnya...`);
@@ -773,7 +670,7 @@ wss.on('connection', (ws) => {
                                     }
 
                                     if (attempts < maxAttempts) {
-                                        console.log(`🔄 Kill selesai, meluncurkan browser baru untuk percobaan ${attempts + 1}/${maxAttempts}...`);
+                                        console.log(`🔄 Sesi direset, memulai percobaan ${attempts + 1}/${maxAttempts} dengan sesi (dan IP) baru...`);
                                         await new Promise(r => setTimeout(r, 2000));
                                     } else {
                                         console.log(`🛑 Batas ${maxAttempts} percobaan browser tercapai untuk fase ${phaseLabel}.`);
@@ -802,49 +699,10 @@ wss.on('connection', (ws) => {
                             const phaseLabel = currentPhase === 'warp' ? 'Warp+Socks5' : (currentPhase === 'psiphon' ? 'Psiphon' : (currentPhase === 'socks5' ? `Socks5 Only (${currentHost})` : 'Direct Connection'));
                             console.log(`\n[Phase ${phaseIdx + 1}/${phases.length}] Memulai dengan mode: ${phaseLabel}`);
 
-                            if (currentPhase === 'warp') {
-                                const maxWarpRestarts = maxAttempts;
-                                let warpRestartCount = 0;
-
-                                while (!registrationSuccess && !shouldStop) {
-                                    if (warpRestartCount > 0) {
-                                        if (warpRestartCount > maxWarpRestarts) break;
-                                        console.log(`\n🔁 [Warp Restart ${warpRestartCount}/${maxWarpRestarts}] Restart Warp sebelum mencoba ulang...`);
-                                        try { await runWarpRestart(); } catch (e) {
-                                            console.log(`⚠️ Gagal restart Warp: ${e.message}`);
-                                        }
-                                    }
-
-                                    await runBrowserLoop('warp', null, `Warp+Socks5${warpRestartCount > 0 ? ` (Restart ${warpRestartCount})` : ''}`, warpRestartCount > 0);
-
-                                    if (registrationSuccess) break;
-
-                                    warpRestartCount++;
-                                    if (warpRestartCount > maxWarpRestarts) {
-                                        console.log(`\n❌ GAGAL TOTAL [Warp+Socks5]: Semua ${maxAttempts} percobaan browser × ${maxWarpRestarts} Warp Restart sudah habis untuk ${email}.`);
-                                        break;
-                                    }
-                                }
-                            } else if (currentPhase === 'psiphon') {
-                                const maxPsiphonRestarts = maxAttempts;
-                                let psiphonRestartCount = 0;
-
-                                while (!registrationSuccess && !shouldStop) {
-                                    await runBrowserLoop('psiphon', null, `Psiphon${psiphonRestartCount > 0 ? ` (Restart ${psiphonRestartCount})` : ''}`, psiphonRestartCount > 0);
-
-                                    if (registrationSuccess) break;
-
-                                    psiphonRestartCount++;
-                                    if (psiphonRestartCount > maxPsiphonRestarts) {
-                                        console.log(`\n❌ GAGAL TOTAL [Psiphon]: Semua ${maxAttempts} percobaan browser × ${maxPsiphonRestarts} Psiphon Restart sudah habis untuk ${email}.`);
-                                        break;
-                                    }
-                                }
-                            } else if (currentPhase === 'socks5') {
-                                await runBrowserLoop('socks5', currentHost, phaseLabel, phaseIdx > 0);
-                            } else {
-                                await runBrowserLoop('direct', null, phaseLabel, phaseIdx > 0);
-                            }
+                            // Rotasi IP keluar (restart WARP/reg.json, region Psiphon) dan
+                            // sesi browser baru sudah ditangani registerSingleEmail saat
+                            // isRetry=true, jadi satu loop percobaan per fase sudah cukup.
+                            await runBrowserLoop(currentPhase, currentHost, phaseLabel, phaseIdx > 0);
 
                             if (registrationSuccess) { globalDone = true; break; }
 
@@ -857,9 +715,9 @@ wss.on('connection', (ws) => {
                         if (!registrationSuccess && !shouldStop) {
                             const phaseSummary = phases.map(p => p.type === 'warp' ? 'Warp+Socks5' : (p.type === 'psiphon' ? 'Psiphon' : (p.type === 'socks5' ? 'Socks5 Only' : 'Direct Connection'))).join(' → ');
                             console.log(`\n❌ GAGAL TOTAL [${phaseSummary}]: Semua percobaan untuk ${email} sudah habis.`);
-                            console.log(`🛠️ Kill paksa semua proses browser dan box64...`);
-                            if (global.killAllBrowsers) global.killAllBrowsers();
-                            if (global.killAllBox64) global.killAllBox64();
+                            console.log(`🛠️ Mereset sesi browser dan menghentikan daemon...`);
+                            if (global.closeBrowserSession) await global.closeBrowserSession();
+                            if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
 
                             failedCount++;
                             try {
@@ -893,9 +751,9 @@ wss.on('connection', (ws) => {
                     isRunning = false;
                     activeWs = null;
                     global.activeWs = null;
-                    if (global.killAllBrowsers) global.killAllBrowsers();
-                    if (global.killAllBox64) global.killAllBox64();
-                    if (global.killAllVpnProxy) global.killAllVpnProxy();
+                    if (global.closeBrowserSession) await global.closeBrowserSession();
+                    if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
+                    await proxyManager.stopAll();
                     // Stop live preview interval
                     if (screenshotInterval) clearInterval(screenshotInterval);
                     global.livePreview = false;
@@ -923,6 +781,28 @@ wss.on('connection', (ws) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// Child processes (camofox server + Xvfb/x11vnc, warp-go, psiphon, dropboxd) must
+// not survive the dashboard — kill the whole tree on shutdown/restart.
+let shuttingDown = false;
+async function shutdown(signal) {
+    if (shuttingDown) process.exit(0);
+    shuttingDown = true;
+    originalLog(`\n[Server] ${signal} diterima, membersihkan proses anak...`);
+    try {
+        if (global.closeBrowserSession) await global.closeBrowserSession();
+        if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
+        await proxyManager.stopAll();
+        await camofox.stop({ log: (m) => originalLog(m) });
+    } catch (e) {
+        originalError('[Server] Pembersihan selesai dengan error:', e.message);
+    }
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 3000).unref();
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
 server.listen(PORT, () => {
     originalLog(`===================================================`);
     originalLog(`Server berjalan di http://localhost:${PORT}`);

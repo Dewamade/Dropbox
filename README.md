@@ -1,98 +1,99 @@
 # Dashboard UI Pendaftaran Massal Dropbox
 
-Proyek ini menyediakan antarmuka web (Dashboard) modern untuk mengotomatisasi pendaftaran massal akun Dropbox, lengkap dengan monitoring progress secara visual, console log real-time, opsi rotasi IP/Proxy (Direct, Warp, Socks5), dan integrasi otomatis dengan Dropbox Daemon resmi.
+Dashboard web untuk mengotomatisasi pendaftaran massal akun Dropbox: monitoring progress visual, console log real-time, rotasi IP keluar (Direct, **WARP**, Psiphon, Socks5), dan integrasi otomatis dengan Dropbox Daemon resmi untuk menautkan perangkat + mengirim email verifikasi.
+
+Browser yang dipakai adalah **[camofox-browser](https://github.com/jo-inc/camofox-browser)** (Camoufox, anti-deteksi) yang di-install **di dalam folder proyek** — tidak ada Playwright, tidak ada biner di luar folder proyek.
+
+> [!IMPORTANT]
+> Proyek ini **khusus Linux x86_64**. Biner Dropbox dan Psiphon yang diunduh bersifat x86_64-only; `setup.sh` akan berhenti jika platform lain.
 
 ---
 
 ## 🚀 Cara Setup
 
-Anda dapat memilih antara menggunakan script otomatis (sangat disarankan) atau melakukan setup secara manual.
+### Metode A: Setup Otomatis (1 perintah)
 
-### Metode A: Setup Otomatis (1 Command via curl/wget)
-
-Kami telah menyediakan script setup otomatis yang dapat diunduh dan dijalankan secara langsung dengan **satu perintah** dari terminal Anda:
-
-**Menggunakan `curl`:**
+**curl:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/Dewamade/Dropbox/webui2/setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/Dewamade/Dropbox/webui3/setup.sh | bash
 ```
 
-**Menggunakan `wget`:**
+**wget:**
 ```bash
-wget -qO- https://raw.githubusercontent.com/Dewamade/Dropbox/webui2/setup.sh | bash
+wget -qO- https://raw.githubusercontent.com/Dewamade/Dropbox/webui3/setup.sh | bash
 ```
 
-> [!NOTE]
-> Setelah instalasi satu perintah di atas selesai, Anda perlu masuk ke direktori proyek sebelum menjalankan aplikasi:
-> ```bash
-> cd Dropbox
-> ```
+Setelah selesai, masuk ke direktori proyek:
+```bash
+cd Dropbox
+```
 
----
+Script `setup.sh` memasang semuanya di dalam folder ini:
 
+|Folder|Isi|
+|---|---|
+|`camofox-browser/`|Server REST camofox-browser (git clone) + Camoufox di `camofox-browser/.camoufox/`|
+|`warp/`|warp-go (source + binary `warp` + `reg.json` hasil registrasi)|
+|`psiphon/`|`psiphon-tunnel-core-x86_64` + `psiphon.config` per region (dibuat saat runtime)|
+|`dropbox-app/`|Daemon Dropbox resmi (`.dropbox-dist/dropboxd`); state `.dropbox/` juga disimpan di sini. State device lama dihapus otomatis setiap akun: satu akun = satu identitas perangkat, kalau tidak daemon tidak pernah memberi URL `cli_link` lagi|
+|`camofox-data/`|Profil/cookie browser per akun (dibuat saat runtime)|
+
+Jika host tidak punya Go, `setup.sh` mengunduh toolchain Go resmi ke `.toolchain/` untuk membangun warp-go. Paket sistem untuk Camoufox/Xvfb/noVNC dipasang otomatis bila dijalankan sebagai root; kalau tidak, daftarnya dicetak.
 
 ### Metode B: Setup Manual
 
-Jika Anda menggunakan Windows atau ingin melakukan instalasi langkah-demi-langkah:
-
-1. **Instal Dependensi NPM**:
+1. Dependensi dashboard: `npm install`
+2. camofox-browser + Camoufox (masuk ke folder proyek, jangan ke `~/.cache`):
    ```bash
-   npm install
+   git clone --depth 1 https://github.com/jo-inc/camofox-browser camofox-browser
+   export CAMOUFOX_INSTALL_DIR="$(pwd)/camofox-browser/.camoufox"
+   (cd camofox-browser && npm install --omit=dev)
    ```
-2. **Instal Playwright Firefox**:
+3. warp-go (dipakai untuk exit IP Cloudflare WARP):
    ```bash
-   npx playwright install firefox
+   git clone --depth 1 https://github.com/badafans/warp-go warp
+   (cd warp && go build -o warp .)
    ```
-3. **Unduh Aplikasi Dropbox Daemon**:
-   - Untuk **Linux x86_64**: Unduh dari [Dropbox](https://www.dropbox.com/download?plat=lnx.x86_64) lalu ekstrak kontennya ke folder `app/` dalam proyek ini.
+4. Psiphon: unduh `psiphon-tunnel-core-x86_64` ke `psiphon/`.
+5. Daemon Dropbox:
+   ```bash
+   wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C dropbox-app -xzf -
+   ```
 
 ---
 
-## 🐳 Panduan Khusus Lingkungan Kerja
+## 🔑 Registrasi WARP (sekali per mesin)
 
-### 1. Ubuntu x86_64 (Menggunakan Docker)
-Jika Anda menggunakan **Ubuntu x86_64**, Dropbox Daemon akan dijalankan secara otomatis di dalam container Docker demi keamanan dan isolasi.
+```bash
+./warp/warp -reg      # membuat warp/reg.json
+```
 
-* **Prasyarat**: Pastikan Docker sudah terpasang dan berjalan di sistem Anda.
-* **Instalasi Docker** (jika belum ada):
-  ```bash
-  sudo apt update && sudo apt install -y docker.io
-  ```
-* Skrip pendaftaran akan secara otomatis mendeteksi lingkungan ini dan menjalankan perintah Docker berikut di latar belakang:
-  ```bash
-  docker run -i --rm --init -v ~/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropboxd
-  ```
-
-### 2. Android (Termux)
-Jika Anda menjalankan script ini langsung di Android menggunakan **Termux**:
-
-* Pastikan Termux Anda telah diperbarui dan paket dasar terinstal:
-  ```bash
-  pkg update && pkg upgrade -y
-  pkg install -y nodejs git
-  ```
-* Jalankan [setup.sh](setup.sh) untuk mengonfigurasi browser Playwright secara headless. Pendaftaran akan menggunakan emulator emulator `box64` secara otomatis untuk menjalankan Dropbox daemon.
+Tombol **🔄 WARP** di tab Pengaturan mengganti kunci WARP (reg.json baru) sehingga exit IP ikut berubah; **🔄 Psiphon** restart tunnel + ganti negara. Panel **Status Mesin Lokal** menampilkan kondisi warp-go / psiphon / camofox / dropboxd beserta exit IP masing-masing.
 
 ---
 
 ## 🏃‍♂️ Cara Menjalankan Aplikasi
 
-Setelah semua langkah penyiapan selesai:
+```bash
+node server.js         # dashboard http://localhost:3000
+node register.js       # mode CLI interaktif (alternatif)
+```
 
-1. Jalankan backend server Node.js:
-   ```bash
-   node server.js
-   ```
-2. Buka browser utama Anda dan akses ke:
-   ```
-   http://localhost:3000
-   ```
-3. Masukkan URL referal Dropbox, daftar email (pisahkan dengan titik koma `;`), atur konfigurasi proxy/headless, lalu klik **Mulai Pendaftaran**.
+Isi URL referral Dropbox, daftar email (pisahkan dengan `;`) atau aktifkan mode otomatis, pilih jalur koneksi, lalu klik **Mulai Pendaftaran**.
+
+- **Mode browser terlihat** (untuk menyelesaikan CAPTCHA manual): centang **Tampilkan Browser** di Pengaturan, lalu buka noVNC di `http://localhost:6082`.
+- Port tetap: `3000` dashboard, `9379` camofox, `40000` WARP SOCKS5, `3080` Psiphon SOCKS, `5902`/`6082` VNC/noVNC.
 
 ---
 
 ## 📂 Informasi Berkas Penting
-* [server.js](server.js): Backend server Express & WebSocket.
-* [register.js](register.js): Skrip inti otomasi pendaftaran menggunakan Playwright.
-* [setup.sh](setup.sh): Script shell otomatisasi penyiapan lingkungan.
-* [.gitignore](.gitignore): Daftar file dan direktori yang diabaikan oleh Git (termasuk folder `app/`, `node_modules/`, `data/`, dan `firefox-profile/`).
+
+* [server.js](server.js): Backend server Express & WebSocket (batch, rotasi fase IP, status worker).
+* [register.js](register.js): Skrip inti otomasi pendaftaran (mengemudi camofox lewat REST).
+* [camofox-manager.js](camofox-manager.js): Menghidupkan/menghentikan `camofox-browser/server.js` lokal.
+* [camofox-client.js](camofox-client.js): Klien REST untuk sesi browser (tab, evaluate, klik/isi form).
+* [proxy-manager.js](proxy-manager.js): Siklus hidup warp-go + psiphon dan pengecekan IP keluar.
+* [db.js](db.js): Penyimpanan `history.json` (riwayat, pengaturan, selector).
+* [selector.json](selector.json): Katalog selector form Dropbox + batas waktu tiap langkah.
+* [setup.sh](setup.sh): Script penyiapan lingkungan (memasang semua biner di folder ini).
+* [.gitignore](.gitignore): Yang diabaikan Git — `node_modules/`, `camofox-browser/`, `camofox-data/`, `warp/`, `psiphon/`, `dropbox-app/`, `.toolchain/`, `data/`, `history.json`, `selector.json`.

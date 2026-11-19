@@ -1,17 +1,37 @@
-const { firefox } = require('playwright');
-const readline = require('readline');
-const https = require('https');
+/**
+ * register.js — Dropbox signup automation driven by camofox (Camoufox anti-detect
+ * browser) instead of Playwright+Firefox. The browser is a separate, long-running
+ * server (./camofox-browser) reached over REST; one *session* (userId) per email,
+ * destroyed afterwards, so every account gets a clean profile.
+ *
+ * Exit paths (direct / warp / psiphon / socks5) are set by proxy-manager plus the
+ * camofox PROXY_* env; changing the path restarts the camofox server.
+ *
+ * The failure vocabulary is a contract with server.js — keep it:
+ *   throw new Error('BROWSER_KILL_REQUIRED: …')  → caller resets session / rotates IP
+ *   throw new Error('NO_URL_CHANGE')             → soft retry of the same step
+ */
+
 const path = require('path');
 const fs = require('fs');
-const PROFILE_PATH = path.join(__dirname, 'firefox-profile');
+const readline = require('readline');
+const { spawn } = require('child_process');
 
-// ── Selector Loader (loads selectors from selector.json) ─────────────────────
+const camofox = require('./camofox-manager');
+const { CamofoxClient } = require('./camofox-client');
+const proxy = require('./proxy-manager');
+
+const DROPBOX_DIST = path.join(__dirname, 'dropbox-app', '.dropbox-dist');
+const DROPBOX_DAEMON = path.join(DROPBOX_DIST, 'dropboxd');
+const DAEMON_HOME = path.join(__dirname, 'dropbox-app');
+const SCREENSHOT_DIR = path.join(__dirname, 'data');
+
+// ── Selector catalogue (selector.json, editable from the dashboard) ───────────
 let cachedSelectors = null;
 function loadSelectors() {
     if (cachedSelectors) return cachedSelectors;
-    const selectorPath = path.join(__dirname, 'selector.json');
     try {
-        cachedSelectors = JSON.parse(fs.readFileSync(selectorPath, 'utf8'));
+        cachedSelectors = JSON.parse(fs.readFileSync(path.join(__dirname, 'selector.json'), 'utf8'));
         console.log('[Selector] Dimuat dari selector.json');
     } catch (_) {
         console.log('[Selector] selector.json tidak ditemukan, menggunakan default.');
@@ -20,171 +40,94 @@ function loadSelectors() {
     return cachedSelectors;
 }
 
-// Helper: get selectors array for a given key (returns [] if not found)
 function getSelectors(key) {
     const sel = loadSelectors();
-    // Check top-level key first, then check nested under "selectors"
     if (Array.isArray(sel[key])) return sel[key];
     if (sel.selectors && Array.isArray(sel.selectors[key])) return sel.selectors[key];
     return [];
 }
 
-// Helper: filter selectors for waitForSelector compatibility (removes :has-text() and XPath)
-function getCSSSelectors(selectors) {
-    if (!Array.isArray(selectors)) return [];
-    return selectors.filter(sel => 
-        !sel.includes(':has-text(') && 
-        !sel.startsWith('//') && 
-        !sel.startsWith('xpath=')
-    );
-}
+// ── Process cleanup (reached from server.js through global) ──────────────────
+let activeClient = null;
+let dropboxProc = null;
 
-// Helper: try to find a visible element using any selector type (CSS, :has-text, XPath)
-async function waitForSelectorVisible(page, selectors, timeoutMs) {
-    for (const sel of selectors) {
-        try {
-            const loc = page.locator(sel);
-            if (await loc.first().isVisible({ timeout: timeoutMs })) return true;
-        } catch (_) { }
+function killDropboxDaemon({ log = true } = {}) {
+    if (dropboxProc) {
+        try { dropboxProc.kill('SIGTERM'); } catch (_) { }
+        dropboxProc = null;
     }
-    return false;
+    // dropboxd exec() ke .dropbox-dist/dropbox-lnx.x86_64-<ver>/dropbox, jadi pola
+    // harus mencocokkan direktori dist-nya, bukan nama binary awal saja.
+    try { require('child_process').execSync(`pkill -9 -f "${DROPBOX_DIST}"`, { stdio: 'ignore' }); } catch (_) { }
+    if (log) console.log('[Kill] Proses Dropbox daemon dihentikan.');
 }
 
-// Helper: try to click an element using any selector type
-async function clickSelector(page, selectors) {
-    for (const sel of selectors) {
-        try {
-            const loc = page.locator(sel);
-            if (await loc.first().isVisible()) {
-                await loc.first().click();
-                return true;
-            }
-        } catch (_) { }
+async function closeBrowserSession() {
+    if (activeClient) {
+        const userId = activeClient.userId;
+        try { await activeClient.destroy(); } catch (_) { }
+        camofox.cleanupProfile(userId);
+        activeClient = null;
     }
-    return false;
 }
 
-// Track whether Warp/Psiphon is already active (avoid unnecessary stop/start between cycles)
-let warpActive = false;
-let psiphonActive = false;
-let psiphonProc = null;
-
-// ── Kill helpers (accessible from server.js via global) ─────────────────────
-function killAllBrowsers() {
-    try { require('child_process').execSync('pkill -9 -f firefox', { stdio: 'ignore' }); } catch (_) { }
-    try { require('child_process').execSync('pkill -9 -f playwright', { stdio: 'ignore' }); } catch (_) { }
-    console.log('[Kill] Semua proses Firefox/Playwright dihentikan paksa.');
-}
-
-function killAllBox64() {
-    try { require('child_process').execSync('pkill -9 -f dropbox-lnx.x86_64', { stdio: 'ignore' }); } catch (_) { }
-    try { require('child_process').execSync('pkill -9 -f dropboxd', { stdio: 'ignore' }); } catch (_) { }
-    try { require('child_process').execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' }); } catch (_) { }
-    console.log('[Kill] Semua proses box64/dropboxd/docker dihentikan paksa.');
-}
-
-function killAllVpnProxy() {
-    try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
-    try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) { }
-    warpActive = false;
-    psiphonActive = false;
-    global.psiphonRegion = null;
+async function killAllVpnProxy() {
+    await proxy.stopAll();
     console.log('[Kill] Semua proses Psiphon/Warp dihentikan paksa dan status di-reset.');
 }
 
-// Expose globally so server.js can call them
-global.killAllBrowsers = killAllBrowsers;
-global.killAllBox64 = killAllBox64;
-global.killAllVpnProxy = killAllVpnProxy;
-
-
-// Helper function to get user input from the console
-function askQuestion(query) {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-    });
-    return new Promise(resolve => rl.question(query, ans => {
-        rl.close();
-        resolve(ans.trim());
-    }));
+// Full stop: browser session + daemon + tunnels (the camofox server itself stays
+// up unless stopEverything({ server:true }) is asked for).
+async function stopEverything({ server = false } = {}) {
+    await closeBrowserSession();
+    killDropboxDaemon({ log: false });
+    await proxy.stopAll();
+    if (server) await camofox.stop({ log: () => console.log() });
+    console.log('[Kill] Semua sesi browser, daemon, dan proxy dihentikan.');
 }
 
-// Helper function to generate a random string/password that meets the criteria:
-// - At least 8 characters
-// - At least 1 letter (uppercase/lowercase)
-// - At least 1 number
-// - At least 1 special character
+global.closeBrowserSession = closeBrowserSession;
+global.killDropboxDaemon = killDropboxDaemon;
+global.isDropboxRunning = () => !!(dropboxProc && dropboxProc.exitCode === null);
+global.killAllVpnProxy = killAllVpnProxy;
+global.stopEverything = stopEverything;
+global.warpStatus = proxy.warpStatus;
+global.previewScreenshot = async () => {
+    if (!activeClient || !activeClient.tabId) return null;
+    return await activeClient.screenshot({ fullPage: true });
+};
+
+// ── Small helpers ────────────────────────────────────────────────────────────
+function askQuestion(query) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise((resolve) => rl.question(query, (ans) => { rl.close(); resolve(ans.trim()); }));
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function abortCheck(abortController) {
+    if (abortController && abortController.shouldStop) throw new Error('Pendaftaran dihentikan oleh pengguna.');
+}
+
 function generatePassword() {
-    const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const numbers = "0123456789";
-    const specials = "!@#$%^&*()_+~`|}{[]:;?><,./-=";
+    const letters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const numbers = '0123456789';
+    const specials = '!@#$%^&*()_+~`|}{[]:;?><,./-=';
     const allChars = letters + numbers + specials;
 
-    // Guarantee at least one of each required type
-    let password = [
+    const password = [
         letters.charAt(Math.floor(Math.random() * letters.length)),
         numbers.charAt(Math.floor(Math.random() * numbers.length)),
         specials.charAt(Math.floor(Math.random() * specials.length)),
     ];
-
-    // Fill the rest up to 12 characters randomly
-    for (let i = 0; i < 9; i++) {
-        password.push(allChars.charAt(Math.floor(Math.random() * allChars.length)));
-    }
-
-    // Shuffle the array to randomize the positions of the guaranteed characters
+    for (let i = 0; i < 9; i++) password.push(allChars.charAt(Math.floor(Math.random() * allChars.length)));
     for (let i = password.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [password[i], password[j]] = [password[j], password[i]];
     }
-
     return password.join('');
 }
 
-// Helper function to detect if any CAPTCHA elements are visible on the page
-async function hasCaptcha(page) {
-    const captchaSelectors = getSelectors('captcha');
-    if (captchaSelectors.length === 0) {
-        return ['iframe[src*="arkoselabs"]', 'iframe[src*="funcaptcha"]', 'iframe[src*="recaptcha"]', 'iframe[title*="CAPTCHA"]', 'iframe[title*="Verification"]', 'div[id*="captcha"]', 'div[class*="captcha"]', '.g-recaptcha', '#arkose-iframe', 'iframe[src*="arkose"]'];
-    }
-
-    for (const selector of captchaSelectors) {
-        try {
-            const locators = page.locator(selector);
-            const count = await locators.count();
-            for (let i = 0; i < count; i++) {
-                if (await locators.nth(i).isVisible()) {
-                    return true;
-                }
-            }
-        } catch (e) { }
-    }
-    return false;
-}
-
-// Helper function to detect if "Too many attempts" error is displayed
-async function checkTooManyAttempts(page) {
-    try {
-        const textContent = await page.innerText('body');
-        const hasError = [
-            'too many attempts',
-            'please try later',
-            'terlalu banyak percobaan',
-            'coba lagi nanti'
-        ].some(keyword => textContent.toLowerCase().includes(keyword));
-
-        if (hasError) {
-            throw new Error("BROWSER_KILL_REQUIRED: Too many attempts. Please try later.");
-        }
-    } catch (e) {
-        if (e.message.includes("Too many attempts")) {
-            throw e;
-        }
-    }
-}
-
-// Helper function to generate a natural-looking random name on the fly without hardcoded lists
 function getRandomName() {
     const startConsonants = ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'R', 'S', 'T', 'W', 'Y', 'Br', 'Cl', 'Dr', 'Fr', 'Gr', 'Pr', 'Sh', 'St', 'Tr'];
     const midVowels = ['a', 'e', 'i', 'o', 'u', 'ay', 'ee', 'ea', 'ie', 'oa', 'y'];
@@ -196,7 +139,6 @@ function getRandomName() {
         const coda = Math.random() > 0.25 ? endConsonants[Math.floor(Math.random() * endConsonants.length)] : '';
         return onset + vowel + coda;
     };
-
     const makeName = () => {
         let name = makeSyllable();
         if (Math.random() > 0.5) {
@@ -205,14 +147,9 @@ function getRandomName() {
         }
         return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
     };
-
-    return {
-        first: makeName(),
-        last: makeName()
-    };
+    return { first: makeName(), last: makeName() };
 }
 
-// Helper to parse first/last name from email, or fallback to random name generator
 function getNameFromEmail(email) {
     if (!email) return getRandomName();
     const prefix = email.split('@')[0];
@@ -222,1508 +159,680 @@ function getNameFromEmail(email) {
         const lastPart = parts[1].replace(/[0-9]/g, '');
         if (firstPart && lastPart) {
             const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-            return {
-                first: capitalize(firstPart),
-                last: capitalize(lastPart)
-            };
+            return { first: capitalize(firstPart), last: capitalize(lastPart) };
         }
     }
     return getRandomName();
 }
 
-// Helper to fetch server public IP (with explicit timeout)
-function getServerPublicIp() {
-    return new Promise((resolve) => {
-        const timer = setTimeout(() => { resolve(null); }, 8000);
-        try {
-            const req = https.get('https://api.ipify.org?format=json', (res) => {
-                let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', () => {
-                    clearTimeout(timer);
-                    try { resolve(JSON.parse(data).ip); } catch (e) { resolve(null); }
-                });
-                res.on('error', () => { clearTimeout(timer); resolve(null); });
-            });
-            req.setTimeout(7000, () => { req.destroy(); clearTimeout(timer); resolve(null); });
-            req.on('error', () => { clearTimeout(timer); resolve(null); });
-        } catch (e) { clearTimeout(timer); resolve(null); }
-    });
+// Human-like pause between actions (camoufox humanizes input, not the waits).
+function humanPause(minMs, maxMs) {
+    return sleep(minMs + Math.random() * (maxMs - minMs));
 }
 
-// Check if a TCP port is accepting connections
-function checkPort(host, port, timeoutMs = 3000) {
-    return new Promise((resolve) => {
-        const net = require('net');
-        const socket = new net.Socket();
-        let done = false;
-        socket.setTimeout(timeoutMs);
-        socket.on('connect', () => { done = true; socket.destroy(); resolve(true); });
-        socket.on('timeout', () => { socket.destroy(); if (!done) resolve(false); });
-        socket.on('error', () => { if (!done) resolve(false); });
-        socket.connect(port, host);
-    });
+async function checkTooManyAttempts(cf) {
+    const text = (await cf.bodyText()).toLowerCase();
+    const hit = ['too many attempts', 'please try later', 'terlalu banyak percobaan', 'coba lagi nanti']
+        .some((keyword) => text.includes(keyword));
+    if (hit) throw new Error('BROWSER_KILL_REQUIRED: Too many attempts. Please try later.');
 }
 
-// Helper to recursively delete directories
-function deleteDirRecursive(dirPath) {
-    if (fs.existsSync(dirPath)) {
-        try {
-            fs.readdirSync(dirPath).forEach((file) => {
-                const curPath = path.join(dirPath, file);
-                if (fs.lstatSync(curPath).isDirectory()) {
-                    deleteDirRecursive(curPath);
-                } else {
-                    try {
-                        fs.unlinkSync(curPath);
-                    } catch (e) { }
-                }
-            });
-            fs.rmdirSync(dirPath);
-        } catch (e) { }
+async function reportCaptcha(cf) {
+    let captchaSelectors = getSelectors('captcha');
+    if (captchaSelectors.length === 0) {
+        captchaSelectors = ['iframe[src*="arkoselabs"]', 'iframe[src*="funcaptcha"]', 'iframe[src*="recaptcha"]', 'iframe[title*="CAPTCHA"]', 'div[class*="captcha"]', '.g-recaptcha'];
     }
+    const hit = await cf.findVisible(captchaSelectors);
+    return !!hit;
 }
 
-// Function to clear browser cache, cookies, history, and site storage
-// while preserving extensions and their settings
-function clearProfileData(profilePath) {
-    if (!fs.existsSync(profilePath)) return;
-
-    console.log('Membersihkan cookies, cache, dan data penyimpanan situs...');
-
-    // Files to delete (including locks)
-    const filesToDelete = [
-        'cookies.sqlite',
-        'cookies.sqlite-wal',
-        'cookies.sqlite-shm',
-        'places.sqlite',
-        'places.sqlite-wal',
-        'places.sqlite-shm',
-        'formhistory.sqlite',
-        'sessionstore.jsonlz4',
-        'permissions.sqlite',
-        'content-prefs.sqlite',
-        'webappsstore.sqlite',
-        'favicons.sqlite',
-        'parent.lock',
-        'lock',
-        '.parentlock'
-    ];
-
-    // Directories to delete entirely
-    const dirsToDelete = [
-        'cache2',
-        'sessionstore-backups',
-        'startupCache',
-        'jumpListCache',
-        'entries',
-    ];
-
-    // Delete files
-    for (const file of filesToDelete) {
-        const filePath = path.join(profilePath, file);
-        try {
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        } catch (e) { }
-    }
-
-    // Delete directories entirely
-    for (const dir of dirsToDelete) {
-        const dirPath = path.join(profilePath, dir);
-        try {
-            if (fs.existsSync(dirPath)) {
-                deleteDirRecursive(dirPath);
-            }
-        } catch (e) { }
-    }
-
-    // Clean storage default directory while preserving moz-extensions (extension settings)
-    const storagePath = path.join(profilePath, 'storage', 'default');
-    if (fs.existsSync(storagePath)) {
-        try {
-            const items = fs.readdirSync(storagePath);
-            for (const item of items) {
-                if (!item.startsWith('moz-extension+++')) {
-                    const itemPath = path.join(storagePath, item);
-                    if (fs.lstatSync(itemPath).isDirectory()) {
-                        deleteDirRecursive(itemPath);
-                    } else {
-                        fs.unlinkSync(itemPath);
-                    }
-                }
-            }
-            console.log('✓ Data penyimpanan situs (Dropbox dll) berhasil dibersihkan.');
-        } catch (e) { }
-    }
+// ── Proxy / browser path ─────────────────────────────────────────────────────
+function parseSocks5Host(proxyHost) {
+    const raw = String(proxyHost || '127.0.0.1:1080');
+    const [host, port] = raw.includes(':') ? raw.split(':') : [raw, '1080'];
+    return { host, port: parseInt(port, 10) || 1080 };
 }
 
-// Single registration process for one email
-async function registerSingleEmail(url, email, proxyType, proxyHost, isInit, abortController, headless, passwordMode, fixedPassword, globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false, uaMode = 'generate', selectedUaString = '', selectedDeviceType = 'desktop') {
-    const gtMs = globalTimeout * 1000;
+/**
+ * Bring up the requested exit and a camofox server that uses it.
+ * Returns { baseUrl, proxyType, exitIp, mode } — `mode` is what the UI shows.
+ */
+async function ensureExitPath(proxyType, proxyHost, { abortController, isRetry, headless, warpPort }) {
+    let proxySpec = null;
+    let exitIp = null;
+    let mode = 'Direct Connection';
 
-    if (proxyType !== 'psiphon') {
-        global.psiphonRegion = null;
-    }
-
-    let proxyServer = null;
     if (proxyType === 'warp') {
-        proxyServer = 'socks5://127.0.0.1:8086';
-
-        // Ensure psiphon is stopped
-        if (psiphonActive) {
-            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
-            psiphonActive = false;
-            console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
-        }
-
-        // Force restart warp if this is a retry
-        if (isRetry && warpActive) {
-            console.log(`\n[Warp] Retry terdeteksi, memaksa restart Warp...`);
-            warpActive = false;
-        }
-
-        if (warpActive) {
-            // Verify port is still open before reusing
-            const portOk = await checkPort('127.0.0.1', 8086, 2000);
-            if (portOk) {
-                console.log(`\n[Warp] Koneksi Warp+Socks5 sudah aktif, menggunakan sesi yang ada di 127.0.0.1:8086`);
-            } else {
-                console.log(`\n[Warp] Port 8086 tidak lagi tersedia, restart Warp...`);
-                warpActive = false;
-            }
-        }
-
-        if (!warpActive) {
-            const { exec } = require('child_process');
-            console.log(`\nMengaktifkan koneksi Warp+Socks5...`);
-
-            const runCmd = (cmd, timeoutMs = 8000) => new Promise((resolve) => {
-                const proc = exec(cmd, { timeout: timeoutMs }, (err, stdout) => {
-                    resolve(stdout || '');
-                });
-                if (global.debugProxy) {
-                    proc.stdout.on('data', (data) => {
-                        data.toString().split('\n').forEach(line => {
-                            const trimmed = line.trim();
-                            if (trimmed) global.safeSend({ type: 'vpn_log', message: `[Warp Command: ${cmd}] ${trimmed}` });
-                        });
-                    });
-                    proc.stderr.on('data', (data) => {
-                        data.toString().split('\n').forEach(line => {
-                            const trimmed = line.trim();
-                            if (trimmed) global.safeSend({ type: 'vpn_log', message: `[Warp Command Err: ${cmd}] ${trimmed}` });
-                        });
-                    });
-                }
-                setTimeout(() => resolve(''), timeoutMs + 500);
-            });
-
-            const checkWarp = (desiredStatus) => new Promise(resolve => {
-                const proc = exec('warp-ctl status', { timeout: 3000 }, (err, stdout) => {
-                    if (err) return resolve(false);
-                    const out = (stdout || '').toLowerCase();
-                    if (desiredStatus === 'stop' && (out.includes('berhenti') || out.includes('disconnected'))) resolve(true);
-                    else if (desiredStatus === 'start' && (out.includes('terhubung') || out.includes('connected'))) resolve(true);
-                    else resolve(false);
-                });
-                if (global.debugProxy) {
-                    proc.stdout.on('data', (data) => {
-                        data.toString().split('\n').forEach(line => {
-                            const trimmed = line.trim();
-                            if (trimmed) global.safeSend({ type: 'vpn_log', message: `[Warp Status] ${trimmed}` });
-                        });
-                    });
-                }
-            });
-
-            let portReady = false;
-            while (!portReady) {
-                if (abortController && abortController.shouldStop) {
-                    throw new Error("Pendaftaran dihentikan oleh pengguna.");
-                }
-
-                console.log(`[Warp] Menjalankan: warp-ctl stop`);
-                await runCmd('warp-ctl stop', 5000);
-                for (let i = 0; i < 5; i++) {
-                    if (await checkWarp('stop')) break;
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-
-                console.log(`[Warp] Menjalankan: warp-ctl start...`);
-                let started = false;
-                for (let i = 0; i < 20; i++) {
-                    const startOut = await runCmd('warp-ctl start', 2000);
-                    // Check if the custom warp-ctl script outputs the success substring
-                    if (startOut.includes('WARP Berhasil aktif')) {
-                        started = true;
-                        console.log(`[Warp] WARP Berhasil aktif`);
-                        break;
-                    }
-                    // Fallback check using status just in case
-                    if (await checkWarp('start')) {
-                        started = true;
-                        break;
-                    }
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-
-                if (started) {
-                    console.log(`[Warp] Menunggu 5 detik agar port siap...`);
-                    await new Promise(r => setTimeout(r, 5000));
-                    portReady = await checkPort('127.0.0.1', 8086, 3000);
-                }
-
-                if (portReady) {
-                    console.log(`[Warp] ✓ Port 8086 tersedia. Koneksi siap.`);
-                    warpActive = true;
-                } else {
-                    console.log(`[Warp] ⚠️ Port 8086 belum tersedia atau gagal terhubung. Mengulang proses restart Warp...`);
-                }
-            }
-        }
+        await proxy.stopPsiphon();
+        const r = await proxy.startWarp({
+            port: warpPort || proxy.DEFAULT_WARP_PORT,
+            rotate: !!isRetry || !!global.warpRotateNext,
+            abortController,
+        });
+        global.warpRotateNext = false;
+        const u = new URL(r.proxy);
+        proxySpec = { host: u.hostname, port: Number(u.port), protocol: 'socks5' };
+        exitIp = r.exitIp;
+        mode = 'Warp+Socks5';
     } else if (proxyType === 'psiphon') {
-        proxyServer = 'socks5://127.0.0.1:3080';
-
-        // Ensure warp is stopped
-        if (warpActive) {
-            try { require('child_process').execSync('warp-ctl stop', { stdio: 'ignore' }); } catch (_) { }
-            warpActive = false;
-            console.log(`[Warp] Koneksi Warp dihentikan.`);
-        }
-
-        // Force restart Psiphon if this is a retry
-        if (isRetry && psiphonActive) {
-            console.log(`\n[Psiphon] Retry terdeteksi, memaksa restart Psiphon...`);
-            psiphonActive = false;
-            global.psiphonRegion = null;
-        }
-
-        if (psiphonActive && psiphonProc && psiphonProc.exitCode === null) {
-            const displayReg = global.psiphonRegion ? ` (Region: ${global.psiphonRegion})` : '';
-            console.log(`\n[Psiphon] Koneksi Psiphon sudah aktif di 127.0.0.1:3080${displayReg} (Process PID: ${psiphonProc.pid})`);
-        } else {
-            if (psiphonActive) {
-                console.log(`\n[Psiphon] Proses Psiphon tidak aktif di memori, restart Psiphon...`);
-                psiphonActive = false;
-                global.psiphonRegion = null;
-            }
-        }
-
-        if (!psiphonActive) {
-            const { spawn } = require('child_process');
-            console.log(`\nMengaktifkan koneksi Psiphon...`);
-
-            // Stop existing psiphon binary if running
-            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
-
-            const appDir = path.join(__dirname, 'app');
-
-            // Choose EgressRegion from user-selected list (random, skip already-used)
-            const allRegions = ["AT", "BE", "CA", "CH", "CZ", "DE", "DK", "ES", "FI", "FR", "GB", "IE", "IN", "IT", "JP", "LT", "NL", "NO", "PL", "RO", "RS", "SE", "SG", "US"];
-            let availableRegions = global.psiphonRegions || [];
-            console.log(`[Psiphon] Negara terpilih user: [${availableRegions.join(', ')}]`);
-
-            // Filter: only valid region codes
-            availableRegions = availableRegions.filter(r => allRegions.includes(r));
-
-            // Track regions already tried in this session
-            const usedRegions = global.psiphonUsedRegions || [];
-            const unusedRegions = availableRegions.length > 0
-                ? availableRegions.filter(r => !usedRegions.includes(r))
-                : allRegions.filter(r => !usedRegions.includes(r));
-
-            let selectedRegion;
-            if (unusedRegions.length > 0) {
-                selectedRegion = unusedRegions[Math.floor(Math.random() * unusedRegions.length)];
-            } else {
-                // All selected countries exhausted — allow reuse from pool
-                selectedRegion = (availableRegions.length > 0 ? availableRegions : allRegions)
-                    [Math.floor(Math.random() * (availableRegions.length > 0 ? availableRegions.length : allRegions.length))];
-                console.log(`[Psiphon] Semua negara sudah dicoba, mengulang dari pool...`);
-            }
-
-            // Track this region as used
-            if (!usedRegions.includes(selectedRegion)) {
-                usedRegions.push(selectedRegion);
-                global.psiphonUsedRegions = usedRegions;
-            }
-
-            const selectedLabel = selectedRegion;
-            console.log(`[Psiphon] Mengatur EgressRegion ke: ${selectedLabel} (sisa negara: ${unusedRegions.length > 0 ? unusedRegions.filter(r => r !== selectedRegion).join(', ') : '—'})`);
-
-            // Always read from the original config at project root, never from app/
-            const sourceConfigPath = path.join(__dirname, 'psiphon.config');
-            const targetConfigPath = path.join(appDir, 'psiphon.config');
-            try {
-                if (!fs.existsSync(appDir)) {
-                    fs.mkdirSync(appDir, { recursive: true });
-                }
-
-                if (fs.existsSync(sourceConfigPath)) {
-                    const rawConfig = fs.readFileSync(sourceConfigPath, 'utf8');
-                    const config = JSON.parse(rawConfig);
-                    config.EgressRegion = selectedRegion;
-
-                    fs.writeFileSync(targetConfigPath, JSON.stringify(config, null, 4), 'utf8');
-                    console.log(`[Psiphon] ✓ Config EgressRegion berhasil di-update ke ${selectedLabel} (${sourceConfigPath} → ${targetConfigPath})`);
-                } else {
-                    console.log(`[Psiphon Warning] File config asal tidak ditemukan: ${sourceConfigPath}`);
-                }
-            } catch (configErr) {
-                console.log(`[Psiphon Error] Gagal memodifikasi config EgressRegion: ${configErr.message}`);
-            }
-
-            // Launch psiphon-tunnel-core-x86_64 -config psiphon.config in app directory
-            psiphonProc = spawn('./psiphon-tunnel-core-x86_64', ['-config', 'psiphon.config'], {
-                cwd: appDir
-            });
-
-            if (global.debugProxy) {
-                global.safeSend({ type: 'vpn_log', message: '[Psiphon] Memulai proses psiphon-tunnel-core-x86_64...' });
-            }
-
-            psiphonProc.stdout.on('data', (data) => {
-                data.toString().split('\n').forEach(line => {
-                    const trimmed = line.trim();
-                    if (trimmed && global.debugProxy) {
-                        global.safeSend({ type: 'vpn_log', message: `[Psiphon stdout] ${trimmed}` });
-                    }
-                });
-            });
-
-            psiphonProc.stderr.on('data', (data) => {
-                data.toString().split('\n').forEach(line => {
-                    const trimmed = line.trim();
-                    if (trimmed) {
-                        if (global.debugProxy) {
-                            global.safeSend({ type: 'vpn_log', message: `[Psiphon stderr] ${trimmed}` });
-                        }
-
-                        // Parse JSON notices to find connected server region
-                        try {
-                            const match = trimmed.match(/\{.*\}/);
-                            if (match) {
-                                const jsonObj = JSON.parse(match[0]);
-                                if (jsonObj.noticeType === 'ConnectedServerRegion' && jsonObj.data && jsonObj.data.serverRegion) {
-                                    const region = jsonObj.data.serverRegion;
-                                    console.log(`[Psiphon] Terhubung ke region: ${region}`);
-                                    global.psiphonRegion = region;
-                                    // Send dynamic update to client UI
-                                    if (global.safeSend) {
-                                        global.safeSend({
-                                            type: 'info',
-                                            info: {
-                                                mode: `Psiphon (${region})`
-                                            }
-                                        });
-                                    }
-                                }
-                            }
-                        } catch (e) { }
-                    }
-                });
-            });
-
-            psiphonProc.on('error', (err) => {
-                console.log(`[Psiphon Error] Gagal menjalankan psiphon binary: ${err.message}`);
-                if (global.debugProxy) {
-                    global.safeSend({ type: 'vpn_log', message: `[Psiphon Error] Gagal menjalankan: ${err.message}` });
-                }
-            });
-
-            // Wait for port 3080 to be ready and ConnectedServerRegion to be populated (up to 30 seconds)
-            let portReady = false;
-            let regionDetected = false;
-            console.log(`[Psiphon] Menunggu koneksi tunnel dan region terdeteksi...`);
-
-            for (let i = 0; i < 30; i++) {
-                if (abortController && abortController.shouldStop) {
-                    throw new Error("Pendaftaran dihentikan oleh pengguna.");
-                }
-
-                if (!portReady) {
-                    portReady = await checkPort('127.0.0.1', 3080, 1000);
-                }
-                if (global.psiphonRegion) {
-                    regionDetected = true;
-                }
-                if (portReady && regionDetected) {
-                    break;
-                }
-                await new Promise(r => setTimeout(r, 1000));
-            }
-
-            if (portReady && regionDetected) {
-                console.log(`[Psiphon] ✓ Terkoneksi ke region: ${global.psiphonRegion}. Port 3080 siap.`);
-                console.log(`[Psiphon] Memberikan jeda 3 detik agar koneksi stabil...`);
-                await new Promise(r => setTimeout(r, 3000));
-                psiphonActive = true;
-            } else {
-                throw new Error("Gagal mengaktifkan Psiphon proxy atau mendeteksi region dalam 30 detik.");
-            }
-        }
+        await proxy.stopWarp();
+        const r = await proxy.startPsiphon({ abortController, rotate: !!isRetry });
+        const u = new URL(r.proxy);
+        proxySpec = { host: u.hostname, port: Number(u.port), protocol: 'socks5' };
+        mode = global.psiphonRegion ? `Psiphon (${global.psiphonRegion})` : 'Psiphon';
     } else if (proxyType === 'socks5') {
-        proxyServer = `socks5://${proxyHost}`;
-        console.log(`\n[Proxy] Menggunakan custom Socks5 host: ${proxyHost}`);
-        // Ensure warp is stopped when using direct or custom socks5 to prevent conflicts
-        if (warpActive) {
-            const { exec } = require('child_process');
-            exec('warp-ctl stop', { timeout: 5000 }, () => { });
-            warpActive = false;
-            console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Proxy Socks5).`);
-        }
-        if (psiphonActive) {
-            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
-            psiphonActive = false;
-            console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
-        }
+        await proxy.stopWarp();
+        await proxy.stopPsiphon();
+        const { host, port } = parseSocks5Host(proxyHost);
+        proxySpec = { host, port, protocol: 'socks5' };
+        mode = `Socks5 Only (${host}:${port})`;
+        console.log(`[Proxy] Menggunakan custom Socks5 ${host}:${port}`);
     } else {
-        // Direct connection — stop warp and psiphon if previously active
-        if (warpActive) {
-            const { exec } = require('child_process');
-            exec('warp-ctl stop', { timeout: 5000 }, () => { });
-            warpActive = false;
-            console.log(`[Warp] Koneksi Warp dihentikan (beralih ke Direct Connection).`);
-        }
-        if (psiphonActive) {
-            try { require('child_process').execSync('pkill -9 -f psiphon-tunnel-core', { stdio: 'ignore' }); } catch (_) { }
-            psiphonActive = false;
-            console.log(`[Psiphon] Koneksi Psiphon dihentikan.`);
-        }
+        await proxy.stopWarp();
+        await proxy.stopPsiphon();
     }
+
+    const baseUrl = await camofox.ensureRunning({
+        proxy: proxySpec,
+        visible: headless === false,
+        abortController,
+    });
+    return { baseUrl, proxySpec, exitIp, mode };
+}
+
+// ── One registration ─────────────────────────────────────────────────────────
+async function registerSingleEmail(
+    url, email, proxyType = 'direct', proxyHost = '', abortController = null,
+    headless = true, passwordMode = 'random', fixedPassword = '',
+    globalTimeout = 30, daemonTimeout = 120, alias = '', globalRetry = 3, isRetry = false,
+    { warpPort = proxy.DEFAULT_WARP_PORT } = {}
+) {
+    const gtMs = globalTimeout * 1000;
+    if (proxyType !== 'psiphon') global.psiphonRegion = null;
 
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
-    if (proxyServer) {
-        console.log(`Menggunakan Proxy   : ${proxyType === 'psiphon' ? 'Psiphon' : (proxyType === 'socks5' ? 'Socks5 Only' : 'Warp+Socks5')} (${proxyServer})`);
-    } else {
-        console.log(`Menggunakan Proxy   : TIDAK ADA (Direct Connection)`);
-    }
+    console.log(`Proxy: ${proxyType === 'psiphon' ? 'Psiphon' : proxyType === 'socks5' ? 'Socks5 Only' : proxyType === 'warp' ? 'Warp+Socks5' : 'TIDAK ADA (Direct Connection)'}`);
     console.log(`==========================================`);
 
     const { first: firstName, last: lastName } = getNameFromEmail(email);
-    // Use fixed or random password based on mode
     const password = (passwordMode === 'fixed' && fixedPassword) ? fixedPassword : generatePassword();
-
     console.log(`- First Name: ${firstName}`);
     console.log(`- Last Name : ${lastName}`);
     console.log(`- Password  : ${password}`);
 
-    const contextOptions = {
-        headless: headless !== undefined ? !!headless : false,
-        locale: 'en-US',
-        timezoneId: 'America/New_York',
-        args: [
-            '--start-maximized',
-        ]
-    };
+    abortCheck(abortController);
+    const { baseUrl, exitIp, mode } = await ensureExitPath(proxyType, proxyHost, { abortController, isRetry, headless, warpPort });
 
-    // Inject proxy into this context if one is available
-    if (proxyServer) {
-        contextOptions.proxy = { server: proxyServer };
-    }
+    // One clean profile per email: userId keys camofox's persisted profile.
+    const userId = `dropbox-${String(email).split('@')[0]}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const cf = new CamofoxClient({ baseUrl, userId });
+    activeClient = cf;
+    global.currentUserId = userId;
+    global.camofoxTab = null;
 
-    if (abortController && abortController.shouldStop) {
-        throw new Error("Pendaftaran dihentikan oleh pengguna.");
-    }
-
-    if (!isInit) {
-        // Full clean for normal registration run
-        clearProfileData(PROFILE_PATH);
-    } else {
-        // In initialization mode, only clean lock files to allow configuration retention
-        const lockFiles = ['parent.lock', 'lock', '.parentlock'];
-        for (const file of lockFiles) {
-            const filePath = path.join(PROFILE_PATH, file);
-            try {
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                    console.log(`✓ Membersihkan file lock profil: ${file}`);
-                }
-            } catch (e) { }
-        }
-    }
-
-    console.log(`Membuka Firefox dengan mode User Agent: ${uaMode === 'extension' ? 'Ekstensi (Profile)' : `Generate Local (${selectedDeviceType})`}`);
-
-    // Launch with timeout to avoid hanging if proxy is not ready
-    const launchTimeout = Math.max(gtMs, 60000);
-    let context;
-    let browserObj = null;
-
-    const launchFirefoxMode = async () => {
-        if (uaMode === 'extension') {
-            return await firefox.launchPersistentContext(PROFILE_PATH, contextOptions);
-        } else {
-            contextOptions.userAgent = selectedUaString;
-            browserObj = await firefox.launch({
-                headless: contextOptions.headless,
-                proxy: contextOptions.proxy,
-                args: contextOptions.args
-            });
-            return await browserObj.newContext(contextOptions);
-        }
-    };
+    let serverIp = exitIp || 'Unknown';
+    let userAgent = 'Unknown';
+    let finalStatus = 'VERIF';
 
     try {
-        context = await Promise.race([
-            launchFirefoxMode(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error(`[Firefox] Launch timeout ${launchTimeout / 1000}s — proxy mungkin tidak tersedia`)), launchTimeout))
-        ]);
-    } catch (launchErr) {
-        // If warp proxy caused a hang, retry without proxy
-        if (proxyType === 'warp') {
-            console.log(`[Firefox] Gagal launch dengan Warp proxy: ${launchErr.message}`);
-            console.log(`[Firefox] Mencoba ulang tanpa proxy sebagai fallback...`);
-            delete contextOptions.proxy;
-            context = await launchFirefoxMode();
-        } else {
-            throw launchErr;
-        }
-    }
-
-    // Grab UA and IP via browser (goes through the actual proxy/direct used by Firefox)
-    let playwrightUA = 'Unknown';
-    let serverIp = 'Unknown';
-    try {
-        const infoPage = context.pages()[0] || await context.newPage();
-
-        // Navigate to a real page first so the UA Switcher extension content script can inject.
-        // Reading navigator.userAgent on about:blank returns the raw browser UA before extension activates.
-        try {
-            console.log(`[Playwright] Navigasi ke ipify untuk cek IP dan UA (timeout ${globalTimeout} detik)...`);
-            await infoPage.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: gtMs });
-
-            // Small wait for extension content scripts to settle
-            await infoPage.waitForTimeout(800);
-
-            // Read IP from page body
-            const ipJson = await infoPage.innerText('body').catch(() => '{}');
-            serverIp = JSON.parse(ipJson).ip || ipJson.trim() || 'Unknown';
-            console.log(`[Server] Public IP (via browser/${proxyServer ? 'Warp' : 'Direct'}): ${serverIp}`);
-
-            // Read UA AFTER navigation — extension has had time to inject its content script
-            playwrightUA = await infoPage.evaluate(() => navigator.userAgent).catch(() => 'Unknown');
-            console.log(`[Playwright] User Agent (post-nav): ${playwrightUA}`);
-
-        } catch (ipErr) {
-            console.log(`[Playwright] Gagal cek IP/UA via browser: ${ipErr.message.split('\n')[0]}`);
-            // Fallback: Node.js direct IP, raw UA from blank page
-            serverIp = await getServerPublicIp() || 'Unknown';
-            console.log(`[Server] Public IP (fallback/direct): ${serverIp}`);
-            playwrightUA = await infoPage.evaluate(() => navigator.userAgent).catch(() => 'Unknown');
-        }
-    } catch (e) {
-        console.log(`[Playwright] Error infoPage: ${e.message}`);
-        serverIp = await getServerPublicIp() || 'Unknown';
-    }
-
-
-    // Broadcast Info ke UI WebSockets
-    if (global.safeSend) {
-        let displayMode = 'Direct Connection';
-        if (proxyType === 'warp') {
-            displayMode = 'Warp+Socks5';
-        } else if (proxyType === 'psiphon') {
-            displayMode = global.psiphonRegion ? `Psiphon (${global.psiphonRegion})` : 'Psiphon';
-        } else if (proxyType === 'socks5') {
-            displayMode = `Socks5 Only (${proxyHost})`;
-        }
-
-        global.safeSend({
-            type: 'info',
-            info: {
-                alias: alias || '-',
-                mode: displayMode,
-                email: email,
-                ip: serverIp,
-                ua: playwrightUA
+        // ── Preflight: exit IP + UA as the browser really sees them ──────────
+        console.log(`[Camofox] Membuat sesi ${userId}`);
+        await cf.createTab(proxy.EXIT_IP_ENDPOINTS[0].url);
+        global.camofoxTab = cf.tabId;
+        console.log(`[Camofox] Cek IP/UA via browser (timeout ${globalTimeout} detik)...`);
+        // IP dibaca ulang lewat browser (bukan dari proxy manager) supaya benar-benar
+        // yang terlihat tab yang dilaporkan; endpoint sama dengan proxy-manager:
+        // cdn-cgi/trace selalu menjawab, ipify kadang menantang egress WARP.
+        for (const [i, ep] of proxy.EXIT_IP_ENDPOINTS.entries()) {
+            if (i > 0) {
+                await cf.navigate(ep.url, { timeoutMs: Math.max(gtMs, 15000) });
+                await cf.settle({ timeoutMs: 5000 });
             }
-        });
-    }
-
-    if (playwrightUA.includes('NT 6')) {
-        throw new Error("BROWSER_KILL_REQUIRED: Bad User Agent terdeteksi (mengandung 'NT 6'). Ulangi dari awal.");
-    }
-
-    if (abortController) {
-        abortController.abort = async () => {
+            let body = '';
             try {
-                console.log("[Abort] Menutup browser context secara paksa karena perintah berhenti...");
-                await context.close();
-            } catch (e) { }
-        };
-        // If stopped while launching, abort immediately
-        if (abortController.shouldStop) {
-            await abortController.abort();
-            throw new Error("Pendaftaran dihentikan oleh pengguna.");
+                body = String(await cf.evaluate(`document.body ? document.body.innerText : ''`, { timeoutMs: Math.max(gtMs, 15000) }) || '');
+            } catch (e) {
+                console.log(`[Camofox] Gagal baca IP dari halaman: ${e.message.split('\n')[0]}`);
+            }
+            const parsed = ep.parse(body);
+            if (parsed) {
+                serverIp = parsed.ip;
+                if (parsed.warp) console.log(`[Camofox] cdn-cgi/trace: warp=${parsed.warp}`);
+                break;
+            } else if (body.trim()) {
+                console.log(`[Camofox] ${new URL(ep.url).host} tidak mengembalikan IP (halaman tantangan/blokir), coba endpoint lain.`);
+            }
         }
-    }
+        userAgent = await cf.evaluate('navigator.userAgent', { timeoutMs: 10000 }).catch(() => 'Unknown');
+        console.log(`[Server] Public IP (via browser/${mode}): ${serverIp}`);
+        console.log(`[Camofox] User Agent: ${userAgent}`);
 
-    if (isInit) {
-        console.log("\n========================================================");
-        console.log("MODE INISIALISASI AKTIF (-init=true)");
-        console.log("Silakan pasang ekstensi dan lakukan konfigurasi secara manual.");
-        console.log("Tutup jendela browser Firefox setelah Anda selesai untuk melanjutkan.");
-        console.log("========================================================\n");
-
-        await new Promise(resolve => {
-            context.on('close', resolve);
-        });
-        return true;
-    }
-
-    // Clear cookies for this session to ensure a clean registration session
-    await context.clearCookies();
-
-    // Advanced evasions to make browser tracking significantly harder
-    await context.addInitScript(() => {
-        // 1. Evade navigator.webdriver
-        try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) { }
-
-        // 2. Mock Plugins list (biasanya 0 pada headless/bot)
-        try {
-            const pluginData = [
-                { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
-                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgieooff', description: 'Portable Document Format', version: '' },
-                { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
-                { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', version: '' },
-            ];
-            Object.defineProperty(navigator, 'plugins', { get: () => pluginData });
-            Object.defineProperty(navigator, 'mimeTypes', { get: () => [{ type: 'application/pdf', suffixes: 'pdf', description: '', enabledPlugin: pluginData[0] }] });
-        } catch (e) { }
-
-        // 3. Override permissions API
-        try {
-            const originalQuery = navigator.permissions.query;
-            navigator.permissions.query = (parameters) =>
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters);
-        } catch (e) { }
-    });
-
-    // launchPersistentContext secara bawaan sudah membuka 1 halaman kosong.
-    // Kita gunakan halaman pertama yang sudah terbuka agar tidak meluncurkan 2 jendela browser.
-    const pages = context.pages();
-    const page = pages.length > 0 ? pages[0] : await context.newPage();
-    // Expose page for live preview screenshot
-    global.page = page;
-
-    // Helper to fill input directly
-    async function humanType(selector, text) {
-        await page.fill(selector, text);
-    }
-
-    // Helper to click directly
-    async function humanClick(selector) {
-        await page.click(selector);
-    }
-
-    let isRegistered = false;
-    let tabAttempt = 0;
-    const maxTabAttempts = globalRetry || 3;
-
-    while (tabAttempt < maxTabAttempts && !isRegistered) {
-        tabAttempt++;
-        if (tabAttempt > 1) {
-            console.log(`\n[Tab Reload] Mencoba ulang proses pendaftaran di tab yang sama (Percobaan ${tabAttempt}/${maxTabAttempts})...`);
+        if (typeof global.safeSend === 'function') {
+            global.safeSend({ type: 'info', info: { alias: alias || '-', mode, email, ip: serverIp, ua: userAgent } });
         }
 
-        try {
-            console.log(`[Navigasi] Ke: ${url} (timeout ${gtMs / 1000} detik)`);
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs });
-            // Wait for network to quiet down so JS-rendered form has time to appear
-            try { await page.waitForLoadState('networkidle', { timeout: Math.min(gtMs, 20000) }); } catch (_) { }
-            await checkTooManyAttempts(page);
+        if (!serverIp || serverIp === 'Unknown') {
+            throw new Error('BROWSER_KILL_REQUIRED: Exit IP tidak terbaca — koneksi keluar mati.');
+        }
 
-            console.log("Mencari form input pendaftaran...");
-            // More human-like: random wait before starting
-            await page.waitForTimeout(2000 + Math.random() * 2000);
+        if (abortController && abortController.shouldStop) throw new Error('Pendaftaran dihentikan oleh pengguna.');
 
-            // Optional: Dismiss cookie banners
+        let isRegistered = false;
+        let tabAttempt = 0;
+        const maxTabAttempts = globalRetry || 3;
+
+        while (tabAttempt < maxTabAttempts && !isRegistered) {
+            tabAttempt++;
+            if (tabAttempt > 1) console.log(`\n[Tab Reload] Mencoba ulang pendaftaran di tab yang sama (Percobaan ${tabAttempt}/${maxTabAttempts})...`);
+
             try {
-                const cookieBannerButton = page.locator('button[data-testid="accept-cookies"], #consent-accept-button, button[type="submit"]');
-                if (await cookieBannerButton.isVisible()) {
-                    await cookieBannerButton.click();
-                    console.log("✓ Menutup banner cookie");
-                    await page.waitForTimeout(1000);
-                }
-            } catch (e) { }
+                console.log(`[Navigasi] Ke: ${url}`);
+                await cf.navigate(url, { timeoutMs: Math.max(gtMs, 30000) });
+                await cf.settle({ timeoutMs: Math.min(gtMs, 20000) });
+                await checkTooManyAttempts(cf);
 
-            // --- STEP 1: Fill Email & Click Continue ---
-            console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout} detik)...`);
-            let emailSelectors = getSelectors('email_field');
-            console.log(`[Debug] email_field selectors:`, JSON.stringify(emailSelectors));
-            if (emailSelectors.length === 0) {
-                console.log(`[Debug] email_field kosong, menggunakan fallback hardcoded`);
-                emailSelectors = ['input[name="email2"]', 'input[type="email2"]', 'input[placeholder*="Email2"]', 'input[placeholder*="email2"]', 'input[id*="email2"]'];
-            }
+                console.log('Mencari form input pendaftaran...');
+                await humanPause(2000, 4000);
 
-            // First try a direct waitForSelector — more efficient than polling
-            let activeEmailSelector = null;
-            const cssEmailSelectors = getCSSSelectors(emailSelectors);
-            for (const sel of cssEmailSelectors) {
+                // Optional: dismiss cookie banners if any are present.
                 try {
-                    await page.waitForSelector(sel, { state: 'visible', timeout: Math.min(gtMs, 15000) });
-                    activeEmailSelector = sel;
-                    console.log(`✓ Field email ditemukan via waitForSelector: ${sel}`);
-                    break;
+                    const cookieHit = await cf.findVisible(['button[data-testid="accept-cookies"]', '#consent-accept-button']);
+                    if (cookieHit) {
+                        await cf.clickVisible([cookieHit.selector]);
+                        console.log('✓ Menutup banner cookie');
+                        await sleep(1000);
+                    }
                 } catch (_) { }
-            }
 
-            // Fallback: if still not found, scroll page to trigger lazy rendering and poll
-            if (!activeEmailSelector) {
-                console.log(`[Langkah 1] waitForSelector habis, scroll dan polling...`);
-                try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) { }
-                await page.waitForTimeout(2000);
-
-                const emailDeadline = Date.now() + gtMs;
-                while (Date.now() < emailDeadline && !activeEmailSelector) {
-                    for (const selector of emailSelectors) {
-                        try {
-                            const isVisible = await page.locator(selector).first().isVisible();
-                            if (isVisible) { activeEmailSelector = selector; break; }
-                        } catch (e) { }
-                    }
-                    if (!activeEmailSelector) await page.waitForTimeout(1000);
+                // ── STEP 1: email + Continue ─────────────────────────────────
+                console.log(`\n[Langkah 1] Menunggu field email muncul (timeout ${globalTimeout} detik)...`);
+                let emailSelectors = getSelectors('email_field');
+                if (emailSelectors.length === 0) {
+                    emailSelectors = ['input[name="email2"]', 'input[type="email2"]', 'input[placeholder*="Email2"]', 'input[placeholder*="email2"]', 'input[id*="email2"]'];
                 }
-            }
-
-            if (!activeEmailSelector) {
-                // Throw BROWSER_KILL_REQUIRED so server kills all browsers and performs Warp retry
-                throw new Error(`BROWSER_KILL_REQUIRED: Field email tidak muncul dalam ${globalTimeout} detik (waitForSelector + fallback scroll habis).`);
-            }
-
-            await humanType(activeEmailSelector, email);
-            console.log("✓ Mengisi Email");
-
-            await page.waitForTimeout(500 + Math.random() * 800);
-
-            // Click "Continue" with humanized mouse movement
-            console.log("Mengklik tombol 'Continue'...");
-            let continueSelectors = getSelectors('continue_button');
-            if (continueSelectors.length === 0) {
-                continueSelectors = ['button.email-submit-button', 'button[type="submit"]'];
-            }
-            let clickedContinue = false;
-            const cssContinueSelectors = getCSSSelectors(continueSelectors);
-            for (const selector of cssContinueSelectors) {
-                try {
-                    if (await page.isVisible(selector)) {
-                        await humanClick(selector);
-                        clickedContinue = true;
-                        console.log("✓ Mengklik tombol Continue (human-click)");
-                        break;
-                    }
-                } catch (e) { }
-            }
-
-            if (!clickedContinue) {
-                console.log("Peringatan: Tombol Continue tidak terdeteksi, mencoba menekan Enter...");
-                let enterPressed = false;
-                for (const selector of emailSelectors) {
-                    try {
-                        if (await page.isVisible(selector)) {
-                            await page.locator(selector).press('Enter');
-                            enterPressed = true;
-                            break;
-                        }
-                    } catch (e) { }
+                let activeEmailSelector = await cf.waitForVisible(emailSelectors, gtMs, {
+                    abortController,
+                    onPoll: ({ remainingMs, first }) => {
+                        if (first) return;
+                        if (remainingMs < gtMs * 0.5) cf.scroll('down', 200);
+                    },
+                });
+                if (!activeEmailSelector) {
+                    throw new Error(`BROWSER_KILL_REQUIRED: Field email tidak muncul dalam ${globalTimeout} detik.`);
                 }
-                if (!enterPressed) {
-                    await page.keyboard.press('Enter');
-                }
-            }
+                console.log(`✓ Field email ditemukan: ${activeEmailSelector}`);
+                await cf.typeVisible([activeEmailSelector], email);
+                console.log('✓ Mengisi Email');
 
-            // Wait for Step 2 fields to load and be visible
-            await page.waitForTimeout(2000);
-            await checkTooManyAttempts(page);
-            const step2Timeout = Math.round(globalTimeout / 2);
-            console.log(`\n[Langkah 2] Menunggu form detail nama dan password muncul (timeout ${step2Timeout} detik)...`);
+                await humanPause(500, 1300);
 
-            let firstNameSelectors = getSelectors('first_name');
-            if (firstNameSelectors.length === 0) {
-                firstNameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[autocomplete="given-name"]', 'input[placeholder*="First name"]', 'input[placeholder*="Nama depan"]'];
-            }
-
-            let step2Visible = false;
-            // First try a direct waitForSelector
-            const cssFirstNameSelectors = getCSSSelectors(firstNameSelectors);
-            for (const sel of cssFirstNameSelectors) {
-                try {
-                    await page.waitForSelector(sel, { state: 'visible', timeout: Math.min(gtMs / 2, 10000) });
-                    step2Visible = true;
-                    console.log(`✓ Form Langkah 2 terdeteksi via waitForSelector: ${sel}`);
-                    break;
-                } catch (_) { }
-            }
-
-            // Fallback: if still not found, scroll page to trigger lazy rendering and poll
-            if (!step2Visible) {
-                console.log(`[Langkah 2] waitForSelector habis, scroll dan polling...`);
-                try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) { }
-                await page.waitForTimeout(2000);
-
-                const step2Deadline = Date.now() + (gtMs / 2);
-                while (Date.now() < step2Deadline && !step2Visible) {
-                    for (const selector of firstNameSelectors) {
-                        try {
-                            const isVisible = await page.locator(selector).first().isVisible();
-                            if (isVisible) { step2Visible = true; break; }
-                        } catch (e) { }
-                    }
-                    if (!step2Visible) await page.waitForTimeout(1000);
-                }
-            }
-
-            if (!step2Visible) {
-                throw new Error(`BROWSER_KILL_REQUIRED: Form Langkah 2 tidak muncul dalam ${step2Timeout} detik.`);
-            }
-
-            // Fill First Name
-            let firstNameFilled = false;
-            for (const selector of firstNameSelectors) {
-                try {
-                    if (await page.isVisible(selector)) {
-                        await humanType(selector, firstName);
-                        firstNameFilled = true;
-                        console.log("✓ Mengisi First Name (human-typed)");
-                        break;
-                    }
-                } catch (e) { }
-            }
-
-            await page.waitForTimeout(400 + Math.random() * 600);
-
-            // Fill Last Name
-            let lastNameSelectors = getSelectors('last_name');
-            if (lastNameSelectors.length === 0) {
-                lastNameSelectors = ['input[id^="lname"]', 'input[name="lname"]', 'input[autocomplete="family-name"]', 'input[placeholder*="Last name"]', 'input[placeholder*="Nama belakang"]'];
-            }
-            let lastNameFilled = false;
-            for (const selector of lastNameSelectors) {
-                try {
-                    if (await page.isVisible(selector)) {
-                        await humanType(selector, lastName);
-                        lastNameFilled = true;
-                        console.log("✓ Mengisi Last Name (human-typed)");
-                        break;
-                    }
-                } catch (e) { }
-            }
-
-            await page.waitForTimeout(400 + Math.random() * 600);
-
-            // Fill Password
-            let passwordSelectors = getSelectors('password');
-            if (passwordSelectors.length === 0) {
-                passwordSelectors = ['input[id^="password"]', 'input[name="password"]', 'input[type="password"]', 'input[placeholder*="Password"]', 'input[placeholder*="Kata sandi"]'];
-            }
-            let passwordFilled = false;
-            for (const selector of passwordSelectors) {
-                try {
-                    if (await page.isVisible(selector)) {
-                        await humanType(selector, password);
-                        passwordFilled = true;
-                        console.log("✓ Mengisi Password (human-typed)");
-                        break;
-                    }
-                } catch (e) { }
-            }
-
-            await page.waitForTimeout(600 + Math.random() * 800);
-
-            // Click Agree to Terms Checkbox (if present)
-            let checkboxSelectors = getSelectors('tos_checkbox');
-            if (checkboxSelectors.length === 0) {
-                checkboxSelectors = ['input[type="checkbox"][name="tos_agree"]', 'input[type="checkbox"]', '.agree-checkbox'];
-            }
-            for (const selector of checkboxSelectors) {
-                try {
-                    if (await page.isVisible(selector)) {
-                        const isChecked = await page.isChecked(selector);
-                        if (!isChecked) {
-                            await humanClick(selector);
-                            console.log("✓ Menyetujui syarat dan ketentuan (TOS)");
-                            break;
-                        }
-                    }
-                } catch (e) { }
-            }
-
-            await page.waitForTimeout(1000);
-
-            // Highlight/Focus Agree and Sign Up button
-            let submitSelectors = getSelectors('submit_button');
-            if (submitSelectors.length === 0) {
-                submitSelectors = ['button._register-button_1k6no_4', 'button[type="submit"]'];
-            }
-            
-            const cssSubmitSelectors = getCSSSelectors(submitSelectors);
-
-            console.log("\nProses pengisian field selesai. Mencoba menekan tombol 'Agree and sign up'...");
-
-            let clickedSubmit = false;
-            for (const selector of cssSubmitSelectors) {
-                try {
-                    if (await page.isVisible(selector)) {
-                        await page.click(selector);
-                        clickedSubmit = true;
-                        console.log("✓ Berhasil mengklik tombol Daftar.");
-                        break;
-                    }
-                } catch (e) { }
-            }
-
-            if (!clickedSubmit) {
-                console.log("Mencoba mengirimkan form dengan menekan Enter...");
-                let enterPressed = false;
-                for (const selector of passwordSelectors) {
-                    try {
-                        if (await page.isVisible(selector)) {
-                            await page.locator(selector).press('Enter');
-                            enterPressed = true;
-                            break;
-                        }
-                    } catch (e) { }
-                }
-                if (!enterPressed) {
-                    await page.keyboard.press('Enter');
-                }
-                clickedSubmit = true;
-            }
-
-            console.log("\nTombol Daftar telah diklik secara otomatis.");
-            console.log("Catatan: Jika ada CAPTCHA yang muncul di layar browser, silakan selesaikan secara manual.");
-            console.log("Menunggu pendaftaran selesai (mendeteksi perubahan URL/trial_first)...");
-
-            // Loop to check if the user has successfully registered
-            console.log(`\n[Langkah 3] Menunggu redirect URL sukses pendaftaran (timeout ${globalTimeout} detik)...`);
-            const regDeadline = Date.now() + gtMs;
-            while (Date.now() < regDeadline) {
-                await page.waitForTimeout(2000);
-                await checkTooManyAttempts(page);
-                const currentUrl = page.url();
-
-                // Check for trial_first, verify_email, or general successful redirection strings
-                if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') || (!currentUrl.includes('/register') && !currentUrl.includes('/login') && (currentUrl.includes('/home') || currentUrl.includes('/personal') || currentUrl.includes('/dashboard') || currentUrl.includes('dropbox.com/h')))) {
-                    console.log(`\n✓ Pendaftaran/Verifikasi terdeteksi! URL saat ini: ${currentUrl}`);
-                    isRegistered = true;
-                    break;
-                }
-            }
-
-            if (!isRegistered) {
-                console.log(`\n⚠️ URL tidak berubah dalam ${globalTimeout} detik setelah menekan tombol daftar.`);
-                throw new Error("NO_URL_CHANGE");
-            }
-
-        } catch (innerError) {
-            const errMsg = (innerError.message || '').toLowerCase();
-
-            // ── BROWSER_KILL_REQUIRED pass-through ───────────────────────────
-            if (innerError.message && innerError.message.includes('BROWSER_KILL_REQUIRED')) {
-                throw innerError;
-            }
-
-            // ── NO_URL_CHANGE: browser must be killed and restarted ──────────
-            if (innerError.message === 'NO_URL_CHANGE') {
-                throw new Error(`BROWSER_KILL_REQUIRED: URL tidak berubah setelah ${globalTimeout} detik.`);
-            }
-
-            // ── Hard browser errors: session gone, context closed, etc ───────
-            const isBrowserCrash = errMsg.includes('target closed') || errMsg.includes('context') ||
-                errMsg.includes('ns_error') || errMsg.includes('session') ||
-                errMsg.includes('connection refused') || errMsg.includes('crashed');
-            if (isBrowserCrash) {
-                console.log(`\n💥 Error berat browser (Percobaan ${tabAttempt}): ${innerError.message.split('\n')[0]}`);
-                throw new Error(`BROWSER_KILL_REQUIRED: ${innerError.message}`);
-            }
-
-            // ── Timeout / soft error: reload tab, retry step ─────────────────
-            console.log(`\n⚠️ Timeout/error ringan (Percobaan ${tabAttempt}/${maxTabAttempts}): ${innerError.message.split('\n')[0]}`);
-            if (tabAttempt >= maxTabAttempts) {
-                throw new Error(`BROWSER_KILL_REQUIRED: Batas ${maxTabAttempts} percobaan tab tercapai. ${innerError.message}`);
-            }
-            console.log(`[Tab Reload] Memuat ulang URL dan mengulangi pendaftaran (timeout ${globalTimeout} detik)...`);
-            try { await page.reload({ waitUntil: 'domcontentloaded', timeout: gtMs }); } catch (_) {
-                try { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: gtMs }); } catch (__) { }
-            }
-            await page.waitForTimeout(2000);
-        }
-    }
-
-    try {
-        if (isRegistered) {
-            console.log('✅ Pendaftaran berhasil! Browser tetap terbuka — memulai menghubungkan perangkat...');
-            await page.waitForTimeout(1500);
-
-            console.log('\n[dropboxd] Memulai proses Dropbox daemon...');
-
-            // ── Spawn dropboxd via bash (avoids ELF header warning) ──────────────
-            const { spawn, execSync } = require('child_process');
-            const homeDir = process.env.HOME || '/root';
-            let dropboxProc = null;
-            let cliLinkUrl = null;
-            let isLinked = false;
-
-            const killDropbox = () => {
-                if (dropboxProc) {
-                    try { dropboxProc.kill('SIGTERM'); } catch (_) { }
-                }
-                try {
-                    execSync('pkill -9 -f dropbox-lnx.x86_64-256.4.3790', { stdio: 'ignore' });
-                    console.log('[dropboxd] ✓ Proses dropbox lama berhasil dihentikan (pkill).');
-                } catch (_) { }
-                try {
-                    execSync('docker kill $(docker ps -q --filter ancestor=ubuntu:24.04) 2>/dev/null', { stdio: 'ignore' });
-                } catch (_) { }
-            };
-
-            let finalStatus = 'VERIF';
-            try {
-                let runCmd = 'exec box64 ./.dropbox-dist/dropboxd';
-                if (process.arch === 'x64' && process.platform === 'linux' && fs.existsSync('/etc/os-release') && fs.readFileSync('/etc/os-release', 'utf8').toLowerCase().includes('ubuntu')) {
-                    console.log('[dropboxd] Lingkungan Ubuntu x86_64 terdeteksi, menjalankan via Docker...');
-                    runCmd = 'exec docker run -i --rm --init -v ~/Dropbox/app:/app -w /app -v /root/.dropbox -v /root/Dropbox --net=host ubuntu:24.04 /app/.dropbox-dist/dropboxd';
+                console.log(`Mengklik tombol 'Continue'...`);
+                let continueSelectors = getSelectors('continue_button');
+                if (continueSelectors.length === 0) continueSelectors = ['button.email-submit-button', 'button[type="submit"]'];
+                const clickedContinue = await cf.clickVisible(continueSelectors);
+                if (clickedContinue) {
+                    console.log(`✓ Mengklik Continue: ${clickedContinue}`);
                 } else {
-                    console.log(`[dropboxd] Menjalankan via bash: box64 ./.dropbox-dist/dropboxd (HOME=${homeDir})`);
+                    console.log('Peringatan: Tombol Continue tidak terdeteksi, menekan Enter di field email...');
+                    await cf.typeVisible([activeEmailSelector], '', { submit: true });
                 }
-                dropboxProc = spawn('bash', ['-c', runCmd], {
-                    cwd: homeDir,
-                    env: { ...process.env, HOME: homeDir },
+
+                await sleep(2000);
+                await checkTooManyAttempts(cf);
+
+                // ── STEP 2: name + password + TOS + submit ───────────────────
+                const step2Timeout = Math.max(Math.round(globalTimeout / 2), 10);
+                console.log(`\n[Langkah 2] Menunggu form nama dan password (timeout ${step2Timeout} detik)...`);
+                let firstNameSelectors = getSelectors('first_name');
+                if (firstNameSelectors.length === 0) {
+                    firstNameSelectors = ['input[id^="fname"]', 'input[name="fname"]', 'input[autocomplete="given-name"]', 'input[placeholder*="First name"]', 'input[placeholder*="Nama depan"]'];
+                }
+                const step2Selector = await cf.waitForVisible(firstNameSelectors, step2Timeout * 1000, {
+                    abortController,
+                    onPoll: ({ first }) => { if (!first) cf.scroll('down', 200); },
                 });
+                if (!step2Selector) {
+                    throw new Error(`BROWSER_KILL_REQUIRED: Form Langkah 2 tidak muncul dalam ${step2Timeout} detik.`);
+                }
+                console.log(`✓ Form Langkah 2 terdeteksi: ${step2Selector}`);
 
-                // Scan daemon output in real time for CLI link and linked confirmation
-                const daemonOutputHandler = (chunk) => {
-                    const text = chunk.toString();
-                    text.split('\n').forEach(line => {
-                        const trimmed = line.trim();
-                        if (trimmed) {
-                            if (trimmed.includes('Reading elf header of') && trimmed.includes('Try to launch using bash instead')) {
-                                return;
-                            }
-                            console.log(`[dropboxd] ${trimmed}`);
-                        }
-                    });
+                await cf.typeVisible([step2Selector], firstName);
+                console.log('✓ Mengisi First Name');
+                await humanPause(400, 1000);
 
-                    if (!cliLinkUrl) {
-                        const match = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
-                        if (match) {
-                            cliLinkUrl = match[0];
-                            console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
-                        }
-                    }
+                let lastNameSelectors = getSelectors('last_name');
+                if (lastNameSelectors.length === 0) {
+                    lastNameSelectors = ['input[id^="lname"]', 'input[name="lname"]', 'input[autocomplete="family-name"]', 'input[placeholder*="Last name"]', 'input[placeholder*="Nama belakang"]'];
+                }
+                if (await cf.typeVisible(lastNameSelectors, lastName)) console.log('✓ Mengisi Last Name');
+                await humanPause(400, 1000);
 
-                    if (text.includes("This computer is now linked to Dropbox")) {
-                        isLinked = true;
-                    }
-                };
+                let passwordSelectors = getSelectors('password');
+                if (passwordSelectors.length === 0) {
+                    passwordSelectors = ['input[id^="password"]', 'input[name="password"]', 'input[type="password"]', 'input[placeholder*="Password"]', 'input[placeholder*="Kata sandi"]'];
+                }
+                const pwSelector = await cf.typeVisible(passwordSelectors, password);
+                if (!pwSelector) throw new Error('BROWSER_KILL_REQUIRED: Field password tidak terisi.');
+                console.log('✓ Mengisi Password');
+                await humanPause(600, 1400);
 
-                dropboxProc.stdout.on('data', daemonOutputHandler);
-                dropboxProc.stderr.on('data', daemonOutputHandler);
+                let checkboxSelectors = getSelectors('tos_checkbox');
+                if (checkboxSelectors.length === 0) {
+                    checkboxSelectors = ['input[type="checkbox"][name="tos_agree"]', 'input[type="checkbox"]', '.agree-checkbox'];
+                }
+                const checked = await cf.isChecked(checkboxSelectors);
+                if (checked === false) {
+                    await cf.clickVisible(checkboxSelectors);
+                    console.log('✓ Menyetujui syarat dan ketentuan (TOS)');
+                } else if (checked === null) {
+                    console.log('Catatan: checkbox TOS tidak ditemukan (mungkin tidak diperlukan).');
+                }
+                await sleep(1000);
 
-                // Wait up to dtMs for a CLI link URL in the daemon output
-                const dtMs = daemonTimeout * 1000;
-                await new Promise((resolve, reject) => {
-                    const deadline = setTimeout(() => {
-                        killDropbox();
-                        reject(new Error(`[dropboxd] Timeout ${daemonTimeout} detik — URL cli_link tidak muncul`));
-                    }, dtMs);
+                let submitSelectors = getSelectors('submit_button');
+                if (submitSelectors.length === 0) submitSelectors = ['button[type="submit"]', 'button:has-text("Agree and sign up")', 'button:has-text("Daftar")'];
+                console.log(`\nMencoba menekan tombol 'Agree and sign up'...`);
+                const submitted = await cf.clickVisible(submitSelectors);
+                if (submitted) console.log(`✓ Berhasil mengklik tombol Daftar: ${submitted}`);
+                else {
+                    console.log('Tombol Daftar tidak ketemu, mengirim form dengan Enter...');
+                    await cf.typeVisible([pwSelector], '', { submit: true });
+                }
 
-                    const checkInterval = setInterval(() => {
-                        if (cliLinkUrl) {
-                            clearInterval(checkInterval);
-                            clearTimeout(deadline);
-                            resolve();
-                        }
-                    }, 100);
-
-                    dropboxProc.on('error', (err) => {
-                        clearInterval(checkInterval);
-                        clearTimeout(deadline);
-                        killDropbox();
-                        reject(err);
-                    });
-
-                    dropboxProc.on('close', (code) => {
-                        clearInterval(checkInterval);
-                        clearTimeout(deadline);
-                        if (!cliLinkUrl) {
-                            reject(new Error(`[dropboxd] Proses berhenti (kode ${code}) sebelum URL ditemukan`));
-                        }
-                    });
-                });
-
-                // ── Navigate browser to CLI link (retry loop, no browser kill) ────────
-                let connected = false;
-                let cliAttempt = 0;
-                const maxCliAttempts = 3;
-
-                while (!connected && cliAttempt < maxCliAttempts) {
-                    cliAttempt++;
-                    try {
-                        console.log(`[Browser] Navigasi ke URL CLI Link (Attempt ${cliAttempt}/${maxCliAttempts})...`);
-                        await page.goto(cliLinkUrl, { waitUntil: 'domcontentloaded', timeout: gtMs });
-
-                        const connectLocator = page.locator('button, input[type="submit"], a, [role="button"]')
-                            .filter({ hasText: /Connect|Hubungkan|Sambungkan/i });
-
-                        console.log(`[Browser] Menunggu tombol Connect (timeout ${globalTimeout} detik)...`);
-                        let connectBtnFound = false;
-                        try {
-                            await connectLocator.first().waitFor({ state: 'visible', timeout: gtMs });
-                            connectBtnFound = true;
-                        } catch (_) { }
-
-                        if (!connectBtnFound) {
-                            const errScreenshot = path.join(__dirname, 'data', `debug_error_cli_${email.split('@')[0]}.png`);
-                            await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => { });
-                            throw new Error(`Tombol Connect tidak ditemukan di halaman verifikasi. Cek screenshot: ${errScreenshot}`);
-                        }
-
-                        console.log(`[Browser] ✓ Tombol Connect terdeteksi.`);
-                        
-                        // Reset isLinked to false before clicking
-                        isLinked = false;
-
-                        await connectLocator.first().click();
-                        console.log(`[Browser] ✓ Tombol Connect berhasil ditekan!`);
-                        console.log(`[Browser] Menunggu konfirmasi 'This computer is now linked to Dropbox' dari daemon...`);
-
-                        // Wait up to globalTimeout seconds for isLinked to become true
-                        const linkDeadline = Date.now() + gtMs;
-                        while (Date.now() < linkDeadline && !isLinked) {
-                            await page.waitForTimeout(500);
-                        }
-
-                        if (!isLinked) {
-                            throw new Error(`Konfirmasi 'This computer is now linked to Dropbox' tidak muncul di daemon setelah ${globalTimeout} detik.`);
-                        }
-
-                        console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
-                        connected = true;
-                        killDropbox();
-
-                    } catch (err) {
-                        console.log(`[Browser] Error CLI Link (Attempt ${cliAttempt}): ${err.message}`);
-                        if (cliAttempt >= maxCliAttempts) throw new Error("Gagal verifikasi CLI Link.");
-                        await page.waitForTimeout(3000);
+                console.log('Catatan: jika muncul CAPTCHA di browser, selesaikan manual lewat noVNC.');
+                console.log(`\n[Langkah 3] Menunggu redirect URL sukses pendaftaran (timeout ${globalTimeout} detik)...`);
+                const regDeadline = Date.now() + gtMs;
+                while (Date.now() < regDeadline) {
+                    await sleep(2000);
+                    await checkTooManyAttempts(cf);
+                    const currentUrl = await cf.currentUrl();
+                    if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') ||
+                        (!currentUrl.includes('/register') && !currentUrl.includes('/login') &&
+                            (currentUrl.includes('/home') || currentUrl.includes('/personal') || currentUrl.includes('/dashboard') || currentUrl.includes('dropbox.com/h')))) {
+                        console.log(`\n✓ Pendaftaran/Verifikasi terdeteksi! URL saat ini: ${currentUrl}`);
+                        isRegistered = true;
+                        break;
                     }
                 }
 
-                // ── Verify email flow ──────
-                console.log('\n[Browser] Membuka halaman Settings untuk verifikasi email...');
-
-                let verifyClicked = false;
-                let emailSent = false;
-                let verifAttempt = 0;
-                const maxVerifAttempts = globalRetry || 3;
-
-                while (verifAttempt < maxVerifAttempts && !emailSent) {
-                    verifAttempt++;
-                    if (verifAttempt > 1) {
-                        console.log(`\n[Tab Reload] Mencoba ulang verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts})...`);
-                    }
-
-                    try {
-                        // Direct navigation to settings bypasses the need to click the account menu
-                        console.log(`[Navigasi] Ke halaman Settings/Account (timeout ${globalTimeout} detik)...`);
-                        await page.goto('https://www.dropbox.com/account', { waitUntil: 'domcontentloaded', timeout: gtMs });
-
-                        // Click Verify email button (aria-label="Verify email" or class contains account-key-value-block__link)
-                        let verifySelectors = getSelectors('verify_email');
-                        if (verifySelectors.length === 0) {
-                            verifySelectors = ['button[aria-label="Verify email"]', 'button.account-key-value-block__link', 'button[data-testid*="verify-email"]'];
-                        }
-
-                        let verifyBtnFound = false;
-                        const cssVerifySelectors = getCSSSelectors(verifySelectors);
-                        for (const sel of cssVerifySelectors) {
-                            try {
-                                await page.waitForSelector(sel, { state: 'visible', timeout: gtMs / 2 });
-                                verifyBtnFound = true;
-                                console.log(`[Browser] ✓ Tombol Verify terdeteksi via waitForSelector: ${sel}`);
-                                break;
-                            } catch (_) { }
-                        }
-
-                        if (!verifyBtnFound) {
-                            console.log(`[Browser] waitForSelector habis, scroll dan polling untuk Verify...`);
-                            try { await page.evaluate(() => window.scrollBy(0, 200)); } catch (_) { }
-                            await page.waitForTimeout(2000);
-
-                            const verifyDeadline = Date.now() + (gtMs / 2);
-                            while (Date.now() < verifyDeadline && !verifyBtnFound) {
-                                for (const sel of verifySelectors) {
-                                    try {
-                                        const isVisible = await page.locator(sel).first().isVisible();
-                                        if (isVisible) { verifyBtnFound = true; break; }
-                                    } catch (e) { }
-                                }
-                                if (!verifyBtnFound) await page.waitForTimeout(1000);
-                            }
-                        }
-
-                        if (!verifyBtnFound) {
-                            throw new Error("Tombol Verify email tidak ditemukan.");
-                        }
-
-                        verifyClicked = false;
-                        for (const sel of verifySelectors) {
-                            try {
-                                if (await page.isVisible(sel)) {
-                                    await page.click(sel);
-                                    console.log('[Browser] ✓ Tombol Verify email diklik, menunggu modal...');
-                                    verifyClicked = true;
-                                    break;
-                                }
-                            } catch (e) { }
-                        }
-
-                        if (!verifyClicked) {
-                            throw new Error("Gagal mengklik tombol Verify email.");
-                        }
-
-                        // Click Send email button inside the modal
-                        let sendEmailSelectors = getSelectors('send_email');
-                        if (sendEmailSelectors.length === 0) {
-                            sendEmailSelectors = [
-                                'button:has-text("Send email")',
-                                'button:has-text("Kirim email")',
-                                'button.js-email-modal-button.dig-Button--primary',
-                                'button[data-testid*="send-email"]',
-                                'button[type="submit"].js-email-modal-button'
-                            ];
-                        }
-
-                        // Wait for any send-email selector to be visible
-                        let sendBtnFound = await waitForSelectorVisible(page, sendEmailSelectors, 8000);
-                        if (!sendBtnFound) {
-                            throw new Error("Tombol Send email tidak ditemukan di modal.");
-                        }
-
-                        // Click using any selector (supports :has-text, CSS, XPath)
-                        let clickSuccess = await clickSelector(page, sendEmailSelectors);
-                        if (clickSuccess) {
-                            console.log(`[Browser] Tombol Send email diklik.`);
-                        } else {
-                            throw new Error("Gagal mengklik tombol Send email di modal.");
-                        }
-
-                        // Wait for modal to change — check for resend button AND confirm send button is gone
-                        console.log(`[Browser] Menunggu konfirmasi pengiriman (tombol Resend/Kirim ulang)...`);
-                        let resendSelectors = getSelectors('resend_email');
-                        if (resendSelectors.length === 0) {
-                            resendSelectors = [
-                                'button:has-text("Resend")',
-                                'button:has-text("Kirim ulang")',
-                                'button:has-text("Resend email")',
-                                'button:has-text("Resend verification")',
-                                'button[data-testid*="resend"]'
-                            ];
-                        }
-
-                        let resendBtnFound = false;
-                        const resendDeadline = Date.now() + 20000; // wait up to 20 seconds
-                        while (Date.now() < resendDeadline) {
-                            // Check for resend button
-                            if (await waitForSelectorVisible(page, resendSelectors, 500)) {
-                                resendBtnFound = true;
-                                break;
-                            }
-                            await page.waitForTimeout(1000);
-                        }
-
-                        if (!resendBtnFound) {
-                            throw new Error("Tombol Resend tidak muncul di modal (verifikasi gagal/tidak terkirim).");
-                        }
-
-                        console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email} (tombol Resend terdeteksi)!`);
-                        emailSent = true;
-
-                    } catch (err) {
-                        console.log(`\n⚠️ Error saat navigasi/verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts}): ${err.message}`);
-                        if (verifAttempt >= maxVerifAttempts) {
-                            console.log(`Batas maksimal percobaan verifikasi email tercapai.`);
-                        }
-                        await page.waitForTimeout(2000);
-                    }
+                if (!isRegistered) {
+                    console.log(`\n⚠️ URL tidak berubah dalam ${globalTimeout} detik setelah menekan tombol daftar.`);
+                    throw new Error('NO_URL_CHANGE');
                 }
-                const finalStatusVal = emailSent ? 'success' : 'VERIF';
-                finalStatus = finalStatusVal;
-            } catch (verifError) {
-                console.log(`[Info] Terjadi error saat menghubungkan daemon atau verifikasi email: ${verifError.message}`);
-                finalStatus = 'VERIF';
-            } finally {
-                // Kill daemon + any lingering dropbox processes
-                killDropbox();
+            } catch (innerError) {
+                if (innerError.message === 'Pendaftaran dihentikan oleh pengguna.') throw innerError;
+                const errMsg = (innerError.message || '').toLowerCase();
+
+                if (innerError.message && innerError.message.includes('BROWSER_KILL_REQUIRED')) throw innerError;
+                if (innerError.message === 'NO_URL_CHANGE') {
+                    throw new Error(`BROWSER_KILL_REQUIRED: URL tidak berubah setelah ${globalTimeout} detik.`);
+                }
+
+                const isBrowserError = ['target closed', 'context', 'ns_error', 'session', 'connection refused', 'crashed', 'http 40', 'http 50', 'timeout']
+                    .some((k) => errMsg.includes(k));
+                if (isBrowserError) {
+                    console.log(`\n💥 Error berat browser/sesi (Percobaan ${tabAttempt}): ${innerError.message.split('\n')[0]}`);
+                    throw new Error(`BROWSER_KILL_REQUIRED: ${innerError.message}`);
+                }
+
+                console.log(`\n⚠️ Error ringan (Percobaan ${tabAttempt}/${maxTabAttempts}): ${innerError.message.split('\n')[0]}`);
+                if (tabAttempt >= maxTabAttempts) {
+                    throw new Error(`BROWSER_KILL_REQUIRED: Batas ${maxTabAttempts} percobaan tab tercapai. ${innerError.message}`);
+                }
+                console.log('[Tab Reload] Memuat ulang URL dan mengulangi pendaftaran...');
+                await cf.refresh({ timeoutMs: Math.max(gtMs, 30000) }).catch(() => { });
+                await sleep(2000);
             }
-
-            // Wait 5 seconds before closing browser (before kill all)
-            if (finalStatus !== 'VERIF') {
-                console.log(`⏳ Jeda 5 detik setelah pendaftaran sukses untuk ${email}...`);
-                await page.waitForTimeout(5000);
-            }
-
-            return { success: true, status: finalStatus, password, ip: serverIp || '', ua: playwrightUA || '' };
-
-
-        } else {
-            throw new Error(`Pendaftaran gagal setelah mencoba ${maxTabAttempts} kali reload tab.`);
         }
 
+        if (!isRegistered) throw new Error(`Pendaftaran gagal setelah mencoba ${maxTabAttempts} kali reload tab.`);
+
+        // ── Registered: link the Dropbox daemon, then trigger the verification email ──
+        console.log('✅ Pendaftaran berhasil! Memulai menghubungkan perangkat...');
+        await sleep(1500);
+
+        try {
+            finalStatus = await linkDaemonAndVerifyEmail(cf, { email, password, url, gtMs, globalTimeout, daemonTimeout, maxCliAttempts: globalRetry || 3, maxVerifAttempts: globalRetry || 3, abortController });
+        } catch (verifError) {
+            console.log(`[Info] Terjadi error saat menghubungkan daemon atau verifikasi email: ${verifError.message}`);
+            finalStatus = 'VERIF';
+        } finally {
+            killDropboxDaemon({ log: false });
+        }
+
+        if (finalStatus !== 'VERIF') {
+            console.log(`⏳ Jeda 5 detik setelah pendaftaran sukses untuk ${email}...`);
+            await sleep(5000);
+        }
+
+        return { success: true, status: finalStatus, password, ip: serverIp || '', ua: userAgent || '' };
     } catch (error) {
-        console.error(`Terjadi error untuk email ${email}:`, error);
+        // console.* is hijacked into JSON, which turns an Error into {} — log the text.
+        console.error(`Terjadi error untuk email ${email}: ${error && error.message ? error.message : error}`);
         throw error;
     } finally {
-        if (abortController) {
+        if (abortController && typeof abortController.abort === 'function') {
+            try { await abortController.abort(); } catch (_) { }
             abortController.abort = null;
         }
-        // Always close the browser context to clear cookies, session data, and anti-fingerprinting details before the next iteration
-        console.log(`Menutup browser context untuk ${email}...`);
-        try { await context.close(); } catch (e) { }
-        if (browserObj) {
-            try { await browserObj.close(); } catch (e) { }
-        }
-        // Clear global page reference
-        global.page = null;
-        // Force-kill any lingering Firefox/playwright + box64 processes
-        killAllBrowsers();
-        killAllBox64();
+        console.log(`Menutup sesi camofox untuk ${email}...`);
+        await closeBrowserSession();
+        global.currentUserId = null;
+        global.camofoxTab = null;
+        killDropboxDaemon({ log: false });
     }
 }
 
+// ── Login recovery at the cli_link page ──────────────────────────────────────
+// Bukti (data/debug_error_cli_confirm_*.png): kadang halaman cli_link justru
+// menampilkan form login Dropbox ("Masuk" di kanan atas), bukan tombol Connect —
+// sesi browser yang dipakai mendaftar sudah tidak login (mis. IP keluar berubah di
+// tengah alur). Kalau begitu, login ulang dengan email + password akun yang baru
+// dibuat, lalu lanjut ke tombol Connect seperti biasa.
+async function ensureDropboxLogin(cf, { email, password, gtMs, abortController }) {
+    let emailSel = getSelectors('cli_login_email');
+    if (!Array.isArray(emailSel) || emailSel.length === 0) {
+        emailSel = ['input[id^="susi_email"]', 'input[id^="susi"][type="email"]', 'input[type="email"]', 'input[name*="email" i]'];
+    }
+    let passSel = getSelectors('cli_login_password');
+    if (!Array.isArray(passSel) || passSel.length === 0) {
+        passSel = ['input[type="password"]', 'input[id*="password" i]', 'input[name*="password" i]'];
+    }
+
+    const loginField = await cf.waitForVisible(emailSel, 5000, { pollMs: 700, abortController });
+    if (!loginField) return false;                       // sesi masih login
+    if (!password) throw new Error('Halaman cli_link meminta login, tapi password akun tidak diketahui.');
+
+    console.log(`[Browser] Sesi tidak login di halaman cli_link — login ulang sebagai ${email} (field: ${loginField})...`);
+    await cf.typeVisible([loginField], email, { submit: true });
+
+    const pwField = await cf.waitForVisible(passSel, Math.min(gtMs, 20000), { pollMs: 700, abortController });
+    if (!pwField) throw new Error('Form login Dropbox tidak menampilkan field password.');
+    await cf.typeVisible([pwField], password, { submit: true });
+
+    const deadline = Date.now() + Math.min(gtMs, 30000);
+    while (Date.now() < deadline) {
+        abortCheck(abortController);
+        await sleep(1000);
+        const stillForm = await cf.findVisible(passSel, { timeoutMs: 4000 }).catch(() => null)
+            || await cf.findVisible(emailSel, { timeoutMs: 4000 }).catch(() => null);
+        if (!stillForm) {
+            console.log('[Browser] ✓ Login ulang berhasil, halaman cli_link sekarang bertopeng akun.');
+            return true;
+        }
+    }
+    throw new Error('Login ulang di halaman cli_link tidak berhasil.');
+}
+
+// Daemon linking + verify-email. Returns 'success' | 'VERIF'.
+async function linkDaemonAndVerifyEmail(cf, { email, password, gtMs, globalTimeout, daemonTimeout, maxCliAttempts, maxVerifAttempts, abortController }) {
+    // ── Start the local Dropbox daemon (binary lives in ./dropbox-app) ───────
+    console.log('\n[dropboxd] Memulai proses Dropbox daemon...');
+    if (!fs.existsSync(DROPBOX_DAEMON)) throw new Error(`Dropbox daemon tidak ada: ${DROPBOX_DAEMON} — jalankan ./setup.sh`);
+
+    // Satu akun = satu identitas perangkat. State lama menyimpan host_id yang sudah
+    // ter-link ke akun sebelumnya; daemon yang sudah ter-link tidak pernah mencetak
+    // URL cli_link lagi, jadi langkah ini akan selalu timeout (akun berikutnya hanya
+    // jadi VERIF). Hapus state + folder sync akun sebelumnya; .dropbox-dist/ (biner)
+    // dan HOME pinning tetap utuh.
+    for (const stale of ['.dropbox', 'Dropbox']) {
+        const p = path.join(DAEMON_HOME, stale);
+        if (fs.existsSync(p)) {
+            fs.rmSync(p, { recursive: true, force: true });
+            console.log(`[dropboxd] State lama dihapus (${stale}/) — perangkat baru untuk akun ini.`);
+        }
+    }
+
+    let cliLinkUrl = null;
+    let isLinked = false;
+
+    // HOME is pinned inside dropbox-app/ so the daemon's own state (.dropbox/) and
+    // its synced folder (Dropbox/) never land outside the project.
+    const daemonEnv = { ...process.env, HOME: DAEMON_HOME };
+    // DISPLAY/DBus dihapus: dengan display, daemon 278.x membuka jendela GUI (Firefox
+    // bawaannya) dan tidak mencetak apa pun ke stdout; tanpa display ia masuk mode
+    // CLI headless dan mencetak "Please visit https://www.dropbox.com/cli_link_nonce?…".
+    ['DISPLAY', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'].forEach((v) => delete daemonEnv[v]);
+    fs.mkdirSync(DAEMON_HOME, { recursive: true });
+    dropboxProc = spawn(DROPBOX_DAEMON, [], { cwd: path.dirname(DROPBOX_DAEMON), env: daemonEnv });
+    const onDaemon = (chunk) => {
+        const text = chunk.toString();
+        text.split('\n').forEach((line) => {
+            const t = line.trim();
+            if (t && !t.includes('Try to launch using bash instead')) console.log(`[dropboxd] ${t}`);
+        });
+        // Nonce cli_link bersifat sekali-pakai. Daemon mencetak URL baru setiap kali
+        // ia masih belum ter-link, jadi selalu simpan URL terbaru — retry berikut wajib
+        // memakai nonce baru, bukan yang sudah dipakai.
+        const m = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
+        if (m && m[0] !== cliLinkUrl) {
+            cliLinkUrl = m[0];
+            console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);
+        }
+        if (text.includes('This computer is now linked to Dropbox')) isLinked = true;
+    };
+    dropboxProc.stdout.on('data', onDaemon);
+    dropboxProc.stderr.on('data', onDaemon);
+    dropboxProc.on('error', (err) => console.log(`[dropboxd] Gagal menjalankan daemon: ${err.message}`));
+    dropboxProc.on('exit', (code, signal) => console.log(`[dropboxd] Proses daemon berhenti (code=${code} signal=${signal}).`));
+
+    const startedAt = Date.now();
+    while (!cliLinkUrl && Date.now() - startedAt < daemonTimeout * 1000) {
+        abortCheck(abortController);
+        if (dropboxProc && dropboxProc.exitCode !== null && !cliLinkUrl) {
+            throw new Error(`[dropboxd] Proses berhenti (kode ${dropboxProc.exitCode}) sebelum URL ditemukan`);
+        }
+        await sleep(200);
+    }
+    if (!cliLinkUrl) {
+        killDropboxDaemon({ log: false });
+        throw new Error(`[dropboxd] Timeout ${daemonTimeout} detik — URL cli_link tidak muncul`);
+    }
+
+    // ── Click "Connect" on the cli_link page ─────────────────────────────────
+    let connectSelectors = getSelectors('cliLink');
+    if (!Array.isArray(connectSelectors) || connectSelectors.length === 0) {
+        connectSelectors = [
+            'input[type="submit"][value*="Hubungkan"]',
+            'input[type="submit"][value*="Connect"]',
+            'button:has-text("Hubungkan")',
+            'button:has-text("Connect")',
+            'a:has-text("Hubungkan")',
+            'a:has-text("Connect")',
+            'button[type="submit"]',
+            'input[type="submit"]'
+        ];
+    }
+
+    let connected = false;
+    let cliAttempt = 0;
+    while (!connected && cliAttempt < maxCliAttempts) {
+        cliAttempt++;
+        try {
+            // Nonce yang dicetak daemon tidak berubah-ubah selama ia belum ter-link
+            // (bukan sekali-pakai), jadi retry cukup membuka ulang URL yang sama.
+            console.log(`[Browser] Navigasi ke URL CLI Link (Attempt ${cliAttempt}/${maxCliAttempts})...`);
+            await cf.navigate(cliLinkUrl, { timeoutMs: Math.max(gtMs, 30000) });
+            await cf.settle({ timeoutMs: Math.min(gtMs, 15000) });
+
+            await ensureDropboxLogin(cf, { email, password, gtMs, abortController });
+
+            const found = await cf.waitForVisible(connectSelectors, Math.min(gtMs * 1000, 25000), { abortController });
+            if (isLinked) {
+                console.log('[Browser] ✓ Daemon melaporkan perangkat sudah ter-link (tanpa perlu klik).');
+                connected = true;
+                killDropboxDaemon({ log: false });
+                continue;
+            }
+            if (!found) {
+                await saveErrorScreenshot(cf, email, 'cli');
+                throw new Error('Tombol Connect tidak ditemukan di halaman verifikasi.');
+            }
+            console.log(`[Browser] ✓ Tombol Connect terdeteksi: ${found}`);
+
+            await cf.clickVisible([found]);
+            console.log('[Browser] ✓ Tombol Connect ditekan, menunggu konfirmasi daemon...');
+
+            const linkDeadline = Date.now() + gtMs;
+            while (Date.now() < linkDeadline && !isLinked) await sleep(500);
+            if (!isLinked) {
+                await saveErrorScreenshot(cf, email, 'cli_confirm');
+                let pageHint = '';
+                try {
+                    pageHint = (await cf.bodyText() || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+                } catch (_) { }
+                if (pageHint) console.log(`[Browser] Teks halaman cli_link setelah klik: ${pageHint}`);
+                throw new Error(`Konfirmasi 'This computer is now linked to Dropbox' tidak muncul setelah ${globalTimeout} detik.`);
+            }
+
+            console.log(`✅ [dropboxd] Akun ${email} berhasil dihubungkan ke Dropbox daemon!`);
+            connected = true;
+            killDropboxDaemon({ log: false });
+        } catch (err) {
+            if (err.message === 'Pendaftaran dihentikan oleh pengguna.') throw err;
+            console.log(`[Browser] Error CLI Link (Attempt ${cliAttempt}): ${err.message}`);
+            if (cliAttempt >= maxCliAttempts) throw new Error('Gagal verifikasi CLI Link.');
+            await sleep(3000);
+        }
+    }
+
+    // ── Ask Dropbox to send the verification email ───────────────────────────
+    console.log('\n[Browser] Membuka halaman Settings untuk verifikasi email...');
+    let emailSent = false;
+    let verifAttempt = 0;
+
+    while (verifAttempt < maxVerifAttempts && !emailSent) {
+        verifAttempt++;
+        if (verifAttempt > 1) console.log(`\n[Tab Reload] Mencoba ulang verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts})...`);
+        try {
+            abortCheck(abortController);
+            console.log('[Navigasi] Ke halaman Settings/Account...');
+            await cf.navigate('https://www.dropbox.com/account', { timeoutMs: Math.max(gtMs, 30000) });
+            await cf.settle({ timeoutMs: Math.min(gtMs, 15000) });
+
+            let verifySelectors = getSelectors('verify_email');
+            if (verifySelectors.length === 0) {
+                verifySelectors = ['button[aria-label="Verify email"]', 'button.account-key-value-block__link', 'button[data-testid*="verify-email"]'];
+            }
+            const verifyHit = await cf.waitForVisible(verifySelectors, gtMs * 1000, {
+                abortController,
+                onPoll: ({ first }) => { if (!first) cf.scroll('down', 200); },
+            });
+            if (!verifyHit) throw new Error('Tombol Verify email tidak ditemukan.');
+            console.log(`[Browser] ✓ Tombol Verify terdeteksi: ${verifyHit}`);
+            await cf.clickVisible([verifyHit]);
+            console.log('[Browser] ✓ Tombol Verify diklik, menunggu modal...');
+
+            let sendEmailSelectors = getSelectors('send_email');
+            if (sendEmailSelectors.length === 0) {
+                sendEmailSelectors = ['button:has-text("Send email")', 'button:has-text("Kirim email")', 'button.js-email-modal-button.dig-Button--primary', 'button[data-testid*="send-email"]', 'button[type="submit"].js-email-modal-button'];
+            }
+            const sendHit = await cf.waitForVisible(sendEmailSelectors, 15000, { abortController });
+            if (!sendHit) throw new Error('Tombol Send email tidak ditemukan di modal.');
+            await cf.clickVisible([sendHit]);
+            console.log('[Browser] ✓ Tombol Send email diklik.');
+
+            let resendSelectors = getSelectors('resend_email');
+            if (resendSelectors.length === 0) {
+                resendSelectors = ['button:has-text("Resend")', 'button:has-text("Kirim ulang")', 'button:has-text("Resend email")', 'button:has-text("Resend verification")', 'button[data-testid*="resend"]'];
+            }
+            const resendHit = await cf.waitForVisible(resendSelectors, 20000, { abortController });
+            if (!resendHit) throw new Error('Tombol Resend tidak muncul di modal (verifikasi gagal/tidak terkirim).');
+
+            console.log(`✅ [Browser] Email verifikasi berhasil dikirim untuk ${email} (tombol Resend terdeteksi)!`);
+            emailSent = true;
+        } catch (err) {
+            if (err.message === 'Pendaftaran dihentikan oleh pengguna.') throw err;
+            console.log(`\n⚠️ Error saat navigasi/verifikasi email (Percobaan ${verifAttempt}/${maxVerifAttempts}): ${err.message}`);
+            if (verifAttempt >= maxVerifAttempts) console.log('Batas maksimal percobaan verifikasi email tercapai.');
+            await sleep(2000);
+        }
+    }
+    return emailSent ? 'success' : 'VERIF';
+}
+
+async function saveErrorScreenshot(cf, email, tag) {
+    try {
+        fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        const file = path.join(SCREENSHOT_DIR, `debug_error_${tag}_${String(email).split('@')[0]}.png`);
+        const buf = await cf.screenshot({ fullPage: true });
+        fs.writeFileSync(file, buf);
+        console.log(`[Debug] Screenshot disimpan: ${file}`);
+    } catch (_) { }
+}
+
+// ── CLI mode ─────────────────────────────────────────────────────────────────
 async function run() {
-    console.log("=== Dropbox Automated Signup Script (Bulk Email) ===");
+    console.log('=== Dropbox Automated Signup Script (camofox) ===');
 
-    // Parse command line arguments
-    // Mencari argumen seperti -proxy=true atau --proxy=true
-    const useProxyArg = process.argv.find(arg => arg.startsWith('-proxy=') || arg.startsWith('--proxy='));
-    const useProxy = useProxyArg ? useProxyArg.split('=')[1] === 'true' : false;
+    const argValue = (name) => {
+        const a = process.argv.find((x) => x === `--${name}` || x.startsWith(`--${name}=`));
+        if (!a) return null;
+        return a.includes('=') ? a.split('=')[1] : 'true';
+    };
 
-    const useInitArg = process.argv.find(arg => arg.startsWith('-init=') || arg.startsWith('--init='));
-    const useInit = useInitArg ? useInitArg.split('=')[1] === 'true' : false;
+    const proxyArg = argValue('proxy') || 'false';
+    const proxyType = ['direct', 'warp', 'psiphon', 'socks5'].includes(proxyArg) ? proxyArg : (proxyArg === 'true' ? 'warp' : 'direct');
+    const headlessArg = argValue('headless');
+    const headless = headlessArg === null ? true : headlessArg !== 'false';
 
-    if (useInit) {
-        console.log("Status Inisialisasi: AKTIF");
-        await registerSingleEmail("https://www.dropbox.com/register", "init@init.com", null, true);
-        console.log("Inisialisasi selesai. Silakan jalankan script kembali tanpa parameter -init.");
-        return;
-    }
+    console.log(`Proxy: ${proxyType.toUpperCase()} | Browser: camofox (headless=${headless}${headless ? '' : ', noVNC http://localhost:' + camofox.NOVNC_PORT})`);
 
-    if (useProxy) {
-        console.log("Status Proxy: AKTIF (Menggunakan rotasi proxy SG dari Proxifly)");
-    } else {
-        console.log("Status Proxy: NON-AKTIF (Koneksi langsung tanpa proxy)");
-    }
+    let url = await askQuestion('Masukkan URL Dropbox (misal: https://www.dropbox.com/register): ');
+    if (!url) { url = 'https://www.dropbox.com/register'; console.log(`Menggunakan default URL: ${url}`); }
 
-    // 1. Get Dropbox URL
-    let url = await askQuestion("Masukkan URL Dropbox (misal: https://www.dropbox.com/register): ");
-    if (!url) {
-        url = "https://www.dropbox.com/register";
-        console.log(`Menggunakan default URL: ${url}`);
-    }
-
-    // 2. Get Bulk Emails input delimited by ";"
     const bulkEmailsInput = await askQuestion("Masukkan daftar Email (pisahkan dengan tanda ';' misal: email1@gmail.com;email2@gmail.com): ");
-    if (!bulkEmailsInput) {
-        console.error("Error: Alamat email wajib diisi!");
-        return;
-    }
-
-    // Parse and filter out empty email entries
-    const emails = bulkEmailsInput.split(';')
-        .map(e => e.trim())
-        .filter(e => e.length > 0);
-
-    if (emails.length === 0) {
-        console.error("Error: Tidak ada email valid yang ditemukan!");
-        return;
-    }
+    if (!bulkEmailsInput) { console.error('Error: Alamat email wajib diisi!'); return; }
+    const emails = bulkEmailsInput.split(';').map((e) => e.trim()).filter((e) => e.length > 0);
+    if (emails.length === 0) { console.error('Error: Tidak ada email valid yang ditemukan!'); return; }
 
     console.log(`\nDitemukan ${emails.length} email yang akan didaftarkan.`);
-    console.log("Memulai proses pendaftaran...");
 
-    // Run registration for each email sequentially
     for (let i = 0; i < emails.length; i++) {
         const email = emails[i];
-        console.log(`\n---------------------------------------------------------`);
-        console.log(`Memproses email ke-${i + 1} dari ${emails.length}`);
-        console.log(`---------------------------------------------------------`);
+        console.log(`\n--- Memproses email ke-${i + 1} dari ${emails.length} ---`);
 
-        // Proxy type
-        let proxyType = 'direct';
-        if (useProxy) {
-            proxyType = 'warp';
-        }
-
-        // Retry logic for proxy errors or "Too many attempts"
-        let registrationSuccess = false;
+        let ok = false;
         let attempts = 0;
         const maxAttempts = 3;
-        let currentProxyType = proxyType;
-
-        while (!registrationSuccess && attempts < maxAttempts) {
+        let current = proxyType;
+        while (!ok && attempts < maxAttempts) {
             attempts++;
-            if (attempts > 1) {
-                if (useProxy) {
-                    console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} dengan proxy baru (Percobaan ke-${attempts} dari ${maxAttempts})...`);
-                    currentProxyType = 'warp';
-                } else {
-                    console.log(`\n[Mencoba Kembali] Mencoba mendaftarkan ulang ${email} (Percobaan ke-${attempts} dari ${maxAttempts})...`);
-                }
+            if (attempts > 1 && proxyType !== 'direct') {
+                console.log(`\n[Mencoba Kembali] ${email} dengan IP keluar baru (Percobaan ${attempts}/${maxAttempts})...`);
+                if (proxyType === 'warp') global.warpRotateNext = true;
             }
-
             try {
-                const result = await registerSingleEmail(url, email, currentProxyType, false);
-                if (result) {
-                    registrationSuccess = true;
-                } else {
-                    console.log(`Pendaftaran untuk ${email} selesai dengan status tidak berhasil (mungkin halaman ditutup/timeout). Tidak mencoba ulang.`);
-                    break;
-                }
+                const result = await registerSingleEmail(url, email, current, '', null, headless, 'random', '', 60, 120, '', 3, attempts > 1, { warpPort: parseInt(process.env.WARP_PORT || '40000', 10) });
+                ok = !!result;
             } catch (error) {
-                console.log(`\n⚠️ Terjadi kesalahan saat registrasi: ${error.message}`);
-
-                const errorMsg = (error.message || '').toLowerCase();
-                const isConnectionError = [
-                    'net::err',
-                    'timeout',
-                    'connection',
-                    'proxy',
-                    'tunnel'
-                ].some(keyword => errorMsg.includes(keyword));
-
-                const isTooManyAttempts = errorMsg.includes('too many attempts') || errorMsg.includes('please try later') || errorMsg.includes('terlalu banyak percobaan') || errorMsg.includes('coba lagi nanti');
-
-                if (isTooManyAttempts && attempts < maxAttempts) {
-                    console.log(`Terdeteksi pesan "Too many attempts". Mencoba kembali...`);
-                } else if (useProxy && isConnectionError && attempts < maxAttempts) {
-                    console.log(`Terdeteksi masalah koneksi/proxy. Mengambil proxy baru dan mencoba kembali...`);
-                } else {
-                    console.log(`Sudah mencapai batas maksimal percobaan atau kesalahan permanen. Melewati email ini.`);
+                console.log(`\n⚠️ Kesalahan registrasi: ${error.message}`);
+                const msg = (error.message || '').toLowerCase();
+                const tooMany = ['too many attempts', 'please try later', 'terlalu banyak percobaan'].some((k) => msg.includes(k));
+                const connection = ['net::err', 'timeout', 'connection', 'proxy', 'tunnel'].some((k) => msg.includes(k));
+                if (!((tooMany || (proxyType !== 'direct' && connection)) && attempts < maxAttempts)) {
+                    console.log('Batas percobaan tercapai atau kesalahan permanen. Melewati email ini.');
                     break;
                 }
             }
         }
-
-
     }
 
-    console.log("\nSemua email dalam daftar telah diproses.");
-    console.log("Script selesai dijalankan.");
+    await stopEverything();
+    console.log('\nSemua email telah diproses. Script selesai.');
 }
 
 if (require.main === module) {
-    run();
+    run().catch((e) => { console.error(e); process.exitCode = 1; });
 } else {
     module.exports = {
         registerSingleEmail,
-        PROFILE_PATH,
-        getRandomName
+        getRandomName,
+        getSelectors,
+        loadSelectors,
+        stopEverything,
+        closeBrowserSession,
+        killDropboxDaemon,
     };
 }

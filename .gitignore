@@ -1,7 +1,11 @@
 node_modules/
-firefox-profile/
+.toolchain/
+camofox-browser/
+camofox-data/
+dropbox-app/
+psiphon/
+warp/
 data/
-app/
 history.json
 selector.json
 .agents

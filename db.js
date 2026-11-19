@@ -22,15 +22,14 @@ function loadDB() {
             // PASSWORD
             passwordMode: 'fixed',
             fixedPassword: '',
-            // TIMEOUT & RETRY
-            globalTimeout: 30000,
+            // TIMEOUT & RETRY (detik)
+            globalTimeout: 30,
             globalRetry: 2,
-            daemonTimeout: 240000,
+            daemonTimeout: 120,
             // BROWSER & KONEKSI
             useHeadless: true,
             socks5Host: '',
-            uaMode: 'extension',
-            deviceTypes: '[]',
+            warpPort: 40000,
             useDirect: true,
             useWarp: false,
             useSocks5: false,

@@ -90,9 +90,30 @@
         "input[type='submit']"
       ]
     },
-    "cliLink": {
-      "connectButton": "button, input[type=\"submit\"], a, [role=\"button\"]"
-    },
+    "cli_login_email": [
+      "input[id^=\"susi_email\"]",
+      "input[id^=\"susi\"][type=\"email\"]",
+      "input[type=\"email\"]",
+      "input[name*=\"email\" i]",
+      "input[name=\"login\"]"
+    ],
+    "cli_login_password": [
+      "input[type=\"password\"]",
+      "input[id*=\"password\" i]",
+      "input[name*=\"password\" i]"
+    ],
+    "cliLink": [
+      "input[type=\"submit\"][value*=\"Hubungkan\"]",
+      "input[type=\"submit\"][value*=\"Connect\"]",
+      "input[type=\"submit\"][value*=\"Sambungkan\"]",
+      "button:has-text(\"Hubungkan\")",
+      "button:has-text(\"Connect\")",
+      "button:has-text(\"Sambungkan\")",
+      "a:has-text(\"Hubungkan\")",
+      "a:has-text(\"Connect\")",
+      "button[type=\"submit\"]",
+      "input[type=\"submit\"]"
+    ],
     "settings": {
       "verifyEmail": [
         "button[aria-label=\"Verify email\"]",

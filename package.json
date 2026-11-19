@@ -1,10 +1,11 @@
 {
   "name": "dropbox",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "Dashboard + engine pendaftaran massal akun Dropbox (camofox browser, warp-go / psiphon / socks5 exit rotation)",
+  "main": "server.js",
   "scripts": {
-    "start": "node register.js",
+    "start": "node server.js",
+    "register": "node register.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,12 +13,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@playwright/test": "^1.61.0",
     "express": "^5.2.1",
-    "playwright": "^1.61.0",
-    "proxifly": "^3.0.1",
     "socks-proxy-agent": "^10.1.0",
-    "top-user-agents": "^2.1.118",
     "ws": "^8.21.0"
   }
 }
