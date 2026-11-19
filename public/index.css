@@ -330,6 +330,7 @@ label {
 
 input[type="text"],
 input[type="number"],
+select,
 textarea {
     background: rgba(8,8,12,0.75);
     border: 1px solid var(--border-2);
@@ -341,7 +342,7 @@ textarea {
     transition: border-color 0.2s, box-shadow 0.2s;
     width: 100%;
 }
-input:focus, textarea:focus {
+input:focus, select:focus, textarea:focus {
     outline: none;
     border-color: var(--indigo);
     box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
@@ -395,7 +396,9 @@ textarea { resize: vertical; min-height: 80px; max-height: 150px; line-height: 1
 /* -- Progress Tab Layout --------------------------- */
 .progress-layout {
     display: grid;
-    grid-template-columns: 260px 1fr;
+    /* Kolom kiri diperbesar: preview browser butuh lebar, bukan cuma 260px.
+       Dibatasi 34vw agar log console tetap punya tempat. */
+    grid-template-columns: minmax(300px, min(560px, 34vw)) minmax(0, 1fr);
 }
 
 .progress-sidebar {
@@ -726,14 +729,50 @@ textarea { resize: vertical; min-height: 80px; max-height: 150px; line-height: 1
     position: relative;
     margin-bottom: 0.75rem;
 }
+/* Pembungkus scroll: pada zoom > 1x gambar lebih besar dari kotak dan bisa
+   digeser; kontrol zoom berada di LUAR elemen ini supaya tidak ikut bergulir. */
+.preview-scroll {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+}
 .browser-preview img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
     display: none;
 }
 .browser-preview img.visible {
     display: block;
+    /* --preview-zoom = kelipatan dari "pas di kotak" (1x = seluruh halaman
+       terlihat sekaligus), dipasang oleh #preview-zoom di index.html. */
+    width: calc(var(--preview-zoom, 1) * 100%);
+    height: calc(var(--preview-zoom, 1) * 100%);
+    object-fit: contain;
+}
+.preview-zoom {
+    display: none;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    background: rgba(8,8,12,0.85);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-sm);
+    z-index: 2;
+}
+.browser-preview:has(img.visible) .preview-zoom {
+    display: flex;
+}
+.preview-zoom label {
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.preview-zoom select {
+    width: auto;
+    padding: 0.2rem 0.35rem;
+    font-size: 0.76rem;
+    cursor: pointer;
 }
 .preview-placeholder {
     position: absolute;

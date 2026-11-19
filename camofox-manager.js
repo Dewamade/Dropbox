@@ -23,6 +23,11 @@ const DATA_DIR = path.join(__dirname, 'camofox-data');
 const DEFAULT_PORT = 9379;
 const VNC_PORT = 5902;
 const NOVNC_PORT = 6082;
+// URL noVNC yang siap dipakai: autoconnect (tanpa klik Connect) + resize=scale
+// supaya desktop 1360x768 di-scale ke jendela browser, bukan digambar 1:1 —
+// tanpa param itu bagian bawah/kanan terpotong (layar user biasanya < 1360x768
+// setelah chrome browsernya sendiri).
+const novncUrl = () => `http://localhost:${NOVNC_PORT}/vnc.html?autoconnect=true&resize=scale`;
 // Ukuran layar browser: plugin `screen` di camofox-browser memakai nilai ini untuk
 // Xvfb sekaligus mengunci ukuran jendela/layar yang dilaporkan Camoufox, jadi
 // halaman selalu berukuran sama di mesin mana pun (VNC_RESOLUTION saat visible).
@@ -228,7 +233,7 @@ async function ensureRunning({ proxy = null, visible = false, port = DEFAULT_POR
             const j = await r.json().catch(() => ({}));
             if (r.ok && (j.status === 'ok' || j.ok === true || r.status === 200)) {
                 console.log(`[Camofox] ✓ Server siap di ${currentBaseUrl}`);
-                if (visible) console.log(`[Camofox] Browser terlihat lewat noVNC: http://localhost:${NOVNC_PORT}`);
+                if (visible) console.log(`[Camofox] Browser terlihat lewat noVNC: ${novncUrl()}`);
                 return currentBaseUrl;
             }
             lastErr = `HTTP ${r.status}`;
@@ -264,6 +269,8 @@ function status() {
         visible: isVisible(),
         vncPort: VNC_PORT,
         novncPort: NOVNC_PORT,
+        novncUrl: novncUrl(),
+        screen: SCREEN_RESOLUTION,
         installed: fs.existsSync(path.join(CAMOFOX_DIR, 'server.js')),
         browserInstalled: fs.existsSync(path.join(CAMOUFOX_DIR, 'browser')) || fs.existsSync(path.join(CAMOUFOX_DIR, '.camoufox', 'browser')),
         profileCount,
@@ -281,6 +288,7 @@ module.exports = {
     isVisible,
     cleanupProfile,
     profileDirFor,
+    novncUrl,
     CAMOFOX_DIR,
     CAMOUFOX_DIR,
     DATA_DIR,

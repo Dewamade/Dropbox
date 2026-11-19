@@ -91,7 +91,7 @@ node register.js       # mode CLI interaktif (alternatif)
 
 Isi URL referral Dropbox, daftar email (pisahkan dengan `;`) atau aktifkan mode otomatis, pilih jalur koneksi, lalu klik **Mulai Pendaftaran**.
 
-- **Mode browser terlihat** (untuk menyelesaikan CAPTCHA manual): centang **Tampilkan Browser** di Pengaturan, lalu buka noVNC di `http://localhost:6082`. Layar browser dikunci 1360x768 (halaman 1360x712 setelah UI Firefox), jadi tampilan noVNC sama di mesin mana pun.
+- **Mode browser terlihat** (untuk menyelesaikan CAPTCHA manual): centang **Tampilkan Browser** di Pengaturan, lalu klik link **noVNC** di bawahnya — link itu (dan yang dicetak log sebagai `[Camofox] Browser terlihat lewat noVNC: …`) sudah membawa `?autoconnect=true&resize=scale` sehingga desktop langsung tersambung dan di-scale pas dengan jendela browser Anda. Membuka `http://localhost:6082/vnc.html` tanpa param itu membuat noVNC menggambar desktop 1:1 (Scaling = None) sehingga bagian bawah/kanan jendela browser terpotong. Layar browser sendiri tetap dikunci 1360x768 (halaman 1360x712 setelah UI Firefox), jadi tampilan noVNC sama di mesin mana pun — jangan kecilkan resolusinya untuk mengatasi terpotong.
 - Port tetap: `3000` dashboard, `9379` camofox, `40000` WARP SOCKS5, `3080` Psiphon SOCKS, `5902`/`6082` VNC/noVNC.
 
 ---
