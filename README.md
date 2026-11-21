@@ -21,12 +21,12 @@ Browser yang dipakai adalah **[camofox-browser](https://github.com/jo-inc/camofo
 
 **curl:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/Dewamade/Dropbox/webui3/setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/Dewamade/Dropbox/webui4/setup.sh | bash
 ```
 
 **wget:**
 ```bash
-wget -qO- https://raw.githubusercontent.com/Dewamade/Dropbox/webui3/setup.sh | bash
+wget -qO- https://raw.githubusercontent.com/Dewamade/Dropbox/webui4/setup.sh | bash
 ```
 
 Setelah selesai, masuk ke direktori proyek:

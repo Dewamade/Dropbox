@@ -2,7 +2,7 @@
 
 # ==============================================================================
 # Setup Script - Dashboard UI Pendaftaran Massal Dropbox (camofox + warp-go)
-# Branch: webui3
+# Branch: webui4
 #
 # Semua biner dipasang DI DALAM folder proyek ini, tidak ada biner di luar:
 #   camofox-browser/   server REST camofox-browser + Camoufox di .camoufox/
@@ -34,7 +34,7 @@ echo -e "${GREEN}   Setup Dashboard Pendaftaran Massal Dropbox (camofox / warp-g
 echo -e "${GREEN}======================================================================${NC}"
 
 REPO_URL="https://github.com/Dewamade/Dropbox.git"
-BRANCH="webui3"
+BRANCH="webui4"
 CAMOFOX_REPO="https://github.com/jo-inc/camofox-browser"
 WARP_REPO="https://github.com/badafans/warp-go"
 PSIPHON_URL="https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/raw/master/linux/psiphon-tunnel-core-x86_64"

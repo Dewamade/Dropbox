@@ -8,7 +8,7 @@ Two run modes, same engine:
 - **Dashboard**: `node server.js` → `http://localhost:3000` (batch orchestration, live console, progress ring, settings, selector editor, engine status/rotation controls).
 - **Interactive CLI**: `node register.js` (prompts for referral URL + `;`-separated emails; `--proxy=true`, `--init=true` flags).
 
-All UI text, log messages, and comments are **Bahasa Indonesia**; identifiers are English-ish camelCase. Branch: `webui3` (remote `https://github.com/Dewamade/Dropbox`).
+All UI text, log messages, and comments are **Bahasa Indonesia**; identifiers are English-ish camelCase. Branch: `webui4` (remote `https://github.com/Dewamade/Dropbox`); `setup.sh: BRANCH` pins the same name — a deploy that checks out another branch is switched back by step 3, so bump both together.
 
 **x86_64 Linux only.** The vendored Dropbox and Psiphon binaries are x86_64-only; `setup.sh` exits early on any other platform. No Playwright, no system browser, no `warp-ctl`, no Docker, no box64: every executed binary lives in this project directory.
 
