@@ -10,6 +10,7 @@
 #   warp/              warp-go (source + binary 'warp' + reg.json)
 #   psiphon/           psiphon-tunnel-core-x86_64 + psiphon.config per region
 #   dropbox-app/       daemon Dropbox resmi (.dropbox-dist/dropboxd)
+#   app/               cloudflared (Cloudflare Tunnel, biner resmi dari GitHub release)
 #
 # Satu-satunya biner di luar folder proyek adalah docker engine (service sistem):
 # daemon Dropbox justru dijalankan DI DALAM container ubuntu:24.04 supaya setiap akun
@@ -23,7 +24,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-# Proyek ini x86_64 Linux only (daemon Dropbox + psiphon yang diunduh x86_64-only).
+# Proyek ini x86_64 Linux only (daemon Dropbox, psiphon, cloudflared yang diunduh x86_64-only).
 if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
     echo -e "${RED}Error: setup ini hanya untuk Linux x86_64 (deteksi: $(uname -s) $(uname -m)).${NC}"
     exit 1
@@ -38,6 +39,7 @@ BRANCH="webui4"
 CAMOFOX_REPO="https://github.com/jo-inc/camofox-browser"
 WARP_REPO="https://github.com/badafans/warp-go"
 PSIPHON_URL="https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/raw/master/linux/psiphon-tunnel-core-x86_64"
+CLOUDFLARED_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
 DOCKER_IMAGE="ubuntu:24.04"   # image tempat daemon Dropbox berjalan (lihat langkah 8)
 
 # Unduh image daemon sekali, di langkah 8 — docker.io sudah terpasang di langkah 2,
@@ -70,7 +72,7 @@ camoufox_lengkap() {
 }
 
 # 1. Deteksi Lingkungan
-echo -e "\n${GREEN}[1/9] Memeriksa lingkungan sistem...${NC}"
+echo -e "\n${GREEN}[1/10] Memeriksa lingkungan sistem...${NC}"
 
 echo -e "Sistem: $(uname -s) $(uname -m)"
 
@@ -94,7 +96,7 @@ echo -e "Node.js: $(node -v), NPM: $(npm -v)"
 
 # Bagian yang gagal dipasang. Yang WAJIB (npm proyek, camofox + Camoufox) langsung
 # keluar — tanpa itu tidak ada yang bisa dijalankan. Sisanya (warp, psiphon, daemon
-# Dropbox) dicatat dan dilaporkan di langkah 9 dengan exit code bukan nol, supaya
+# Dropbox, cloudflared) dicatat dan dilaporkan di langkah 10 dengan exit code bukan nol, supaya
 # "Setup Berhasil Selesai" tidak pernah tercetak padahal ada yang kurang.
 GAGAL=()
 catatan_gagal() { GAGAL+=("$1"); echo -e "${YELLOW}Dilewati — dicatat di ringkasan:${NC} $1"; }
@@ -106,7 +108,7 @@ catatan_gagal() { GAGAL+=("$1"); echo -e "${YELLOW}Dilewati — dicatat di ringk
 #    (butuh build-essential + python3 + g++), dan langkah 5-8 memakai git/curl/wget.
 #    Kalau langkah ini ditaruh di akhir, mesin bersih gagal di npm install lebih
 #    dulu dan tidak pernah sampai ke apt.
-echo -e "\n${GREEN}[2/9] Memeriksa dependensi sistem (Camoufox, Xvfb, noVNC, build tools)...${NC}"
+echo -e "\n${GREEN}[2/10] Memeriksa dependensi sistem (Camoufox, Xvfb, noVNC, build tools)...${NC}"
 SYSDEPS="git procps libgtk-3-0 libdbus-glib-1-2 libxt6 libasound2 libx11-xcb1 libxcomposite1 \
 libxcursor1 libxdamage1 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
 libegl1 libgl1-mesa-dri libgbm1 xvfb x11vnc novnc websockify \
@@ -132,7 +134,7 @@ else
 fi
 
 # 3. Status Repositori
-echo -e "\n${GREEN}[3/9] Memeriksa status repositori Git...${NC}"
+echo -e "\n${GREEN}[3/10] Memeriksa status repositori Git...${NC}"
 
 if ! command -v git &> /dev/null; then
     echo -e "${RED}Error: Git belum terinstal (lihat langkah 2). Tanpa git camofox-browser dan warp-go tidak bisa dipasang.${NC}"
@@ -172,10 +174,10 @@ else
 fi
 
 # Direktori tujuan instalasi biner selalu ada, meskipun clone baru
-mkdir -p camofox-browser warp psiphon dropbox-app
+mkdir -p camofox-browser warp psiphon dropbox-app app
 
 # 4. Dependensi NPM Proyek
-echo -e "\n${GREEN}[4/9] Menginstal dependensi NPM proyek...${NC}"
+echo -e "\n${GREEN}[4/10] Menginstal dependensi NPM proyek...${NC}"
 if ! npm install; then
     echo -e "${RED}Error: Gagal menginstal dependensi NPM.${NC}"
     exit 1
@@ -184,7 +186,7 @@ echo -e "${GREEN}Dependensi NPM proyek terpasang (express, ws, socks-proxy-agent
 
 # 5. camofox-browser + Camoufox (browser anti-detect, dipakai sebagai pengganti
 #    Playwright Firefox) — dipasang di ./camofox-browser
-echo -e "\n${GREEN}[5/9] Memasang camofox-browser + Camoufox di ./camofox-browser...${NC}"
+echo -e "\n${GREEN}[5/10] Memasang camofox-browser + Camoufox di ./camofox-browser...${NC}"
 
 if [ ! -f "camofox-browser/server.js" ]; then
     if [ -n "$(ls -A camofox-browser 2>/dev/null)" ]; then
@@ -260,7 +262,7 @@ fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
 fi
 
 # 6. warp-go (Cloudflare WARP rootless, SOCKS5 127.0.0.1:40000)
-echo -e "\n${GREEN}[6/9] Memasang warp-go di ./warp...${NC}"
+echo -e "\n${GREEN}[6/10] Memasang warp-go di ./warp...${NC}"
 
 if [ -x "warp/warp" ]; then
     echo -e "Binary warp sudah ada: ./warp/warp"
@@ -302,7 +304,7 @@ else
 fi
 
 # 7. Psiphon (fallback exit) — binary x86_64 di ./psiphon
-echo -e "\n${GREEN}[7/9] Memasang psiphon-tunnel-core di ./psiphon...${NC}"
+echo -e "\n${GREEN}[7/10] Memasang psiphon-tunnel-core di ./psiphon...${NC}"
 if [ -f "psiphon/psiphon-tunnel-core-x86_64" ]; then
     echo -e "Psiphon binary sudah ada."
 else
@@ -329,7 +331,7 @@ fi
 #    sync di tmpfs, hostname + machine-id acak -> Dropbox melihat perangkat baru setiap
 #    kali, jadi URL cli_link selalu muncul. Tanpa docker, register.js fallback ke
 #    eksekusi langsung dan menghapus state lama di ./dropbox-app untuk efek yang sama.
-echo -e "\n${GREEN}[8/9] Memasang daemon Dropbox di ./dropbox-app...${NC}"
+echo -e "\n${GREEN}[8/10] Memasang daemon Dropbox di ./dropbox-app...${NC}"
 if [ -d "dropbox-app/.dropbox-dist" ]; then
     echo -e "Daemon Dropbox sudah ada."
 else
@@ -357,12 +359,34 @@ else
     echo -e "Untuk mode container: pasang docker (paket docker.io, lihat langkah 2) dan pastikan user ada di grup docker."
 fi
 
-# 9. Ringkasan — daftar periksa nyata terhadap isi folder.
-#    Ini bagian yang menjawab "apakah deployment di mesin ini benar-benar jalan?":
-#    setiap baris dibaca dari filesystem, bukan dari keberhasilan langkah di atas,
-#    jadi hasil setup yang parsial (tanpa internet / tanpa root / tanpa docker)
-#    terlihat jelas dan tidak disamarkan oleh "Setup Berhasil".
-echo -e "\n${GREEN}[9/9] Ringkasan hasil instalasi...${NC}"
+# 9. Cloudflare Tunnel (cloudflared) — biner resmi dari GitHub release, ke ./app
+#    Diunduh ke folder ini supaya deployment baru tidak butuh biner dari luar; belum
+#    ada kode proyek yang memanggilnya (lihat AGENTS.md) — dipasang di sini supaya
+#    tunnel tinggal dipakai tanpa menambah sumber unduhan lain nanti.
+echo -e "\n${GREEN}[9/10] Memasang cloudflared (Cloudflare Tunnel) di ./app...${NC}"
+if [ -x "app/cloudflared" ]; then
+    echo -e "cloudflared sudah ada: $(app/cloudflared --version 2>/dev/null | head -1)"
+else
+    echo -e "Mengunduh cloudflared-linux-amd64..."
+    wget -q -O app/cloudflared "$CLOUDFLARED_URL" \
+        || curl -fL -o app/cloudflared "$CLOUDFLARED_URL"
+    chmod +x app/cloudflared 2>/dev/null
+    # Yang diuji adalah binernya benar-benar jalan, bukan ukuran file: halaman error
+    # (redirect yang tidak diikuti / 404 HTML) juga "berhasil diunduh".
+    if app/cloudflared --version >/dev/null 2>&1; then
+        echo -e "${GREEN}cloudflared terpasang: $(app/cloudflared --version 2>/dev/null | head -1)${NC}"
+    else
+        rm -f app/cloudflared
+        catatan_gagal "biner cloudflared belum terunduh (./app/cloudflared) — perlu internet, atau unduh manual cloudflared-linux-amd64 dari https://github.com/cloudflare/cloudflared/releases/latest ke ./app/."
+    fi
+fi
+
+# 10. Ringkasan — daftar periksa nyata terhadap isi folder.
+#     Ini bagian yang menjawab "apakah deployment di mesin ini benar-benar jalan?":
+#     setiap baris dibaca dari filesystem, bukan dari keberhasilan langkah di atas,
+#     jadi hasil setup yang parsial (tanpa internet / tanpa root / tanpa docker)
+#     terlihat jelas dan tidak disamarkan oleh "Setup Berhasil".
+echo -e "\n${GREEN}[10/10] Ringkasan hasil instalasi...${NC}"
 periksa() {
     if eval "$2" >/dev/null 2>&1; then
         echo -e "  ${GREEN}v${NC} $1"
@@ -377,6 +401,7 @@ periksa "warp-go (./warp/warp)" "[ -x warp/warp ]"
 periksa "WARP terdaftar (./warp/reg.json); kalau x jalankan './warp/warp -reg' sekali" "[ -f warp/reg.json ]"
 periksa "psiphon-tunnel-core + psiphon.config" "[ -x psiphon/psiphon-tunnel-core-x86_64 ] && [ -f psiphon.config ]"
 periksa "daemon Dropbox (./dropbox-app/.dropbox-dist/dropboxd)" "[ -f dropbox-app/.dropbox-dist/dropboxd ]"
+periksa "cloudflared (./app/cloudflared)" "[ -x app/cloudflared ]"
 periksa "image container ${DOCKER_IMAGE} (opsional)" "docker image inspect ${DOCKER_IMAGE}"
 echo -e "Waktu: $(date)"
 
@@ -399,7 +424,7 @@ echo -e "Langkah berikutnya:"
 echo -e "  1) Registrasi WARP sekali saja:  ${YELLOW}./warp/warp -reg${NC}"
 echo -e "  2) Jalankan dashboard:          ${YELLOW}node server.js${NC}"
 echo -e "  3) Buka:                        ${YELLOW}http://localhost:3000${NC}"
-echo -e "Biner: camofox-browser/ (Camoufox di .camoufox/), warp/, psiphon/, dropbox-app/ — semua di folder ini."
+echo -e "Biner: camofox-browser/ (Camoufox di .camoufox/), warp/, psiphon/, dropbox-app/, app/ (cloudflared) — semua di folder ini."
 echo -e "Daemon Dropbox: container ${DOCKER_IMAGE} baru setiap akun (state di tmpfs). Tanpa docker = mode langsung + state dihapus tiap run."
 echo -e "Mode browser terlihat (CAPTCHA manual): centang 'Tampilkan Browser' di Pengaturan, noVNC di http://localhost:6082"
 echo -e "${GREEN}======================================================================${NC}"

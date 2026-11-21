@@ -43,11 +43,12 @@ Script `setup.sh` memasang semuanya di dalam folder ini:
 |`warp/`|warp-go (source + binary `warp` + `reg.json` hasil registrasi)|
 |`psiphon/`|`psiphon-tunnel-core-x86_64` + `psiphon.config` per region (dibuat saat runtime)|
 |`dropbox-app/`|Daemon Dropbox resmi (`.dropbox-dist/dropboxd`). Normalnya **tidak dijalankan di host**: hanya `.dropbox-dist/` di-mount (read-only) ke container `ubuntu:24.04` yang selalu baru, jadi state perangkat (`.dropbox/`) + folder sync hidup di tmpfs dan ikut hilang bersama container — satu akun = satu identitas perangkat. Tanpa docker, daemon dijalankan langsung dari folder ini dan state `.dropbox/` dihapus otomatis setiap akun (kalau tidak, daemon tidak pernah memberi URL `cli_link` lagi)|
+|`app/`|`cloudflared` — biner Cloudflare Tunnel yang diunduh `setup.sh` (langkah 9) dari GitHub release ke folder ini. **Belum dipakai kode mana pun**; dipasang di sini supaya tunnel tidak butuh biner di luar folder|
 |`camofox-data/`|Profil/cookie browser per akun (dibuat saat runtime)|
 
-Urutan `setup.sh` (9 langkah) penting, jadi jangan ditukar: **paket sistem dipasang di langkah 2, sebelum `npm install` apa pun** — `camofox-browser` punya runtime-dependency `better-sqlite3` yang dikompilasi saat install (butuh `build-essential` + `python3`), dan langkah download memakai `git`/`curl`/`wget`. Kalau host tidak punya Go, `setup.sh` mengunduh toolchain Go resmi ke `.toolchain/` untuk membangun warp-go. Sebagai root, `apt-get install -y` dijalankan otomatis; kalau bukan root, daftarnya dicetak.
+Urutan `setup.sh` (10 langkah) penting, jadi jangan ditukar: **paket sistem dipasang di langkah 2, sebelum `npm install` apa pun** — `camofox-browser` punya runtime-dependency `better-sqlite3` yang dikompilasi saat install (butuh `build-essential` + `python3`), dan langkah download memakai `git`/`curl`/`wget`. Kalau host tidak punya Go, `setup.sh` mengunduh toolchain Go resmi ke `.toolchain/` untuk membangun warp-go. Sebagai root, `apt-get install -y` dijalankan otomatis; kalau bukan root, daftarnya dicetak.
 
-Node **22+** dibutuhkan (syarat `engines.node` `camofox-browser` dibaca ulang dari hasil clone di langkah 5, jadi kalau upstream menaikkan versinya setup ini berhenti dengan pesan yang jelas). Langkah 9 mencetak daftar periksa nyata terhadap isi folder dan **berhenti dengan exit code 1** bila ada bagian yang belum beres (warp / psiphon / daemon Dropbox tanpa internet) — `Setup Berhasil` tidak pernah tercetak padahal ada yang kurang; jalankan ulang setelah itu, langkah yang sudah beres dilewati.
+Node **22+** dibutuhkan (syarat `engines.node` `camofox-browser` dibaca ulang dari hasil clone di langkah 5, jadi kalau upstream menaikkan versinya setup ini berhenti dengan pesan yang jelas). Langkah 10 mencetak daftar periksa nyata terhadap isi folder dan **berhenti dengan exit code 1** bila ada bagian yang belum beres (warp / psiphon / cloudflared / daemon Dropbox tanpa internet) — `Setup Berhasil` tidak pernah tercetak padahal ada yang kurang; jalankan ulang setelah itu, langkah yang sudah beres dilewati.
 
 ### Metode B: Setup Manual
 
@@ -69,7 +70,8 @@ Node **22+** dibutuhkan (syarat `engines.node` `camofox-browser` dibaca ulang da
    wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C dropbox-app -xzf -
    docker pull ubuntu:24.04   # opsional; tanpa docker daemon dijalankan langsung (mode fallback)
    ```
-6. Plugin camofox buatan sendiri (yang dilakukan `setup.sh` di langkah 5 — semua plugin di `camofox-plugins/`):
+6. Cloudflare Tunnel (dipasang saja, belum dipakai kode): unduh `cloudflared-linux-amd64` dari <https://github.com/cloudflare/cloudflared/releases/latest> ke `app/cloudflared`, lalu `chmod +x app/cloudflared`.
+7. Plugin camofox buatan sendiri (yang dilakukan `setup.sh` di langkah 5 — semua plugin di `camofox-plugins/`):
    ```bash
    for d in camofox-plugins/*/; do p=$(basename "$d")
      mkdir -p camofox-browser/plugins/$p
@@ -114,4 +116,4 @@ Isi URL referral Dropbox, daftar email (pisahkan dengan `;`) atau aktifkan mode 
 * [db.js](db.js): Penyimpanan `history.json` (riwayat, pengaturan, selector).
 * [selector.json](selector.json): Katalog selector form Dropbox + batas waktu tiap langkah.
 * [setup.sh](setup.sh): Script penyiapan lingkungan (memasang semua biner di folder ini).
-* [.gitignore](.gitignore): Yang diabaikan Git — `node_modules/`, `camofox-browser/`, `camofox-data/`, `warp/`, `psiphon/`, `dropbox-app/`, `.toolchain/`, `data/`, `history.json`. `selector.json` sengaja TIDAK diabaikan: katalog itu seed yang disalin ke `history.json` di mesin baru, jadi harus ikut ter-commit.
+* [.gitignore](.gitignore): Yang diabaikan Git — `node_modules/`, `camofox-browser/`, `camofox-data/`, `warp/`, `psiphon/`, `dropbox-app/`, `app/`, `.toolchain/`, `data/`, `history.json`. `selector.json` sengaja TIDAK diabaikan: katalog itu seed yang disalin ke `history.json` di mesin baru, jadi harus ikut ter-commit.
