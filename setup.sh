@@ -264,12 +264,41 @@ fi
 # 6. warp-go (Cloudflare WARP rootless, SOCKS5 127.0.0.1:40000)
 echo -e "\n${GREEN}[6/10] Memasang warp-go di ./warp...${NC}"
 
-if [ -x "warp/warp" ]; then
+# Biner yang sudah ada boleh dipakai, KECUALI sumbernya belum tertambal: mesin yang
+# men-build warp-go sebelum tambalan ini ada punya biner yang SIGSEGV begitu browser
+# minta nama domain, dan hanya build ulang yang memperbaikinya. Sumbernya ada di
+# sana, jadi keadaan itu bisa dideteksi dan dipulihkan sendiri oleh setup ini.
+WARP_PATCH="patches/warp-go-dns-http2-init.patch"
+WARP_PERLU_TAMBAL=""
+if [ -f "$WARP_PATCH" ] && [ -f "warp/tunnel/masque.go" ] && ! grep -q 'h2t := &http2.Transport{DisableCompression: true}' warp/tunnel/masque.go; then
+    WARP_PERLU_TAMBAL=yes
+fi
+
+if [ -x "warp/warp" ] && [ -z "$WARP_PERLU_TAMBAL" ]; then
     echo -e "Binary warp sudah ada: ./warp/warp"
 else
+    if [ -n "$WARP_PERLU_TAMBAL" ] && [ -x "warp/warp" ]; then
+        echo -e "Biner lama dibangun dari sumber TANPA tambalan DNS — menambal sumber lalu membangun ulang."
+    fi
     if [ ! -f "warp/main.go" ]; then
         echo -e "Mengkloning ${WARP_REPO}..."
         git clone --depth 1 "$WARP_REPO" warp
+    fi
+    # Tambalan lokal (ter-track di patches/). Tanpa ini biner hasil build SIGSEGV di
+    # dnsQuery() begitu browser minta NAMA DOMAIN diselesaikan lewat tunnel — lihat
+    # kepala berkas patch untuk sebab + gejalanya. Sumber warp/ tidak ter-track git,
+    # jadi tambalan inilah yang membawanya ke mesin baru.
+    WARP_BUILT=""
+    if [ -f "warp/tunnel/masque.go" ] && [ -f "$WARP_PATCH" ]; then
+        if grep -q 'h2t := &http2.Transport{DisableCompression: true}' warp/tunnel/masque.go; then
+            echo -e "Tambalan DNS warp-go sudah ada di sumber ini."
+        elif git -C "warp" apply --check "$PWD/$WARP_PATCH" 2>/dev/null && git -C "warp" apply "$PWD/$WARP_PATCH"; then
+            echo -e "Tambalan DNS warp-go diterapkan (inisialisasi transport http2)."
+        else
+            # Sumber upstream sudah berubah; bukan salah setup, tapi tanpa tambalan ini
+            # jalur WARP bisa mati saat browser mencari domain. Uji di bawah yang membuktikan.
+            echo -e "${YELLOW}Tambalan ${WARP_PATCH} tidak bisa diterapkan — sumber upstream sudah berbeda. Lanjut build; kalau WARP nanti mati saat mencari nama domain, periksa tambalan itu.${NC}"
+        fi
     fi
     if [ -f "warp/main.go" ]; then
         GO_BIN=""
@@ -289,7 +318,7 @@ else
             [ -x ".toolchain/go/bin/go" ] && GO_BIN="$(pwd)/.toolchain/go/bin/go"
         fi
         if [ -x "$GO_BIN" ]; then
-            (cd warp && "$GO_BIN" build -o warp .) && chmod +x warp/warp
+            (cd warp && "$GO_BIN" build -o warp .) && chmod +x warp/warp && WARP_BUILT=yes
         else
             echo -e "${YELLOW}Go tidak tersedia dan unduhan ./.toolchain gagal — build warp dilewati.${NC}"
         fi
@@ -297,9 +326,43 @@ else
     if [ -x "warp/warp" ]; then
         echo -e "${GREEN}warp-go terpasang: ./warp/warp${NC}"
         echo -e "${YELLOW}Registrasi pertama kali (sekali per mesin): ./warp/warp -reg${NC}"
+        # Uji perilaku pada biner BARU hasil build: biner harus MAMPU menyelesaikan
+        # nama domain lewat tunnel. Inilah yang membedakan "berhasil dibangun" dari
+        # "bekerja dengan browser" — Firefox/Camoufox mengirim nama, pre-flight
+        # socks-proxy-agent di sisi host mengirim IP. Hanya saat reg.json ada
+        # (tanpa itu warp-go tidak punya tunnel untuk diuji).
+        if [ -n "$WARP_BUILT" ] && [ -f "warp/reg.json" ]; then
+            mkdir -p data
+            PROBE_PORT=40099
+            PROBE_LOG="$PWD/data/warp-dns-probe.log"
+            # cwd = warp/ seperti proxy-manager.js:219, karena warp-go membaca
+            # reg.json relatif ke direktori kerjanya.
+            ( cd warp && exec ./warp -l "127.0.0.1:${PROBE_PORT}" ) > "$PROBE_LOG" 2>&1 &
+            PROBE_PID=$!
+            PROBE_OK=""
+            for _ in $(seq 1 25); do
+                if curl -s --max-time 8 --proxy "socks5h://127.0.0.1:${PROBE_PORT}" https://www.cloudflare.com/cdn-cgi/trace | grep -q '^ip='; then
+                    PROBE_OK=yes
+                    break
+                fi
+                sleep 1
+            done
+            kill "$PROBE_PID" 2>/dev/null
+            wait "$PROBE_PID" 2>/dev/null
+            if [ -n "$PROBE_OK" ]; then
+                echo -e "${GREEN}Uji lewat tunnel OK: nama domain diselesaikan oleh warp-go (bukan oleh host).${NC}"
+            else
+                grep -iE 'panic|SIGSEGV|error|gagal' "$PROBE_LOG" | head -4 | sed 's/^/  [warp-go] /'
+                catatan_gagal "warp-go hasil build tidak bisa menyelesaikan nama domain lewat tunnel (port uji ${PROBE_PORT}, log: ${PROBE_LOG}) — browser selalu minta nama, jadi jalur WARP akan mati di tengah pendaftaran. Penyebab paling mungkin: tambalan ${WARP_PATCH} tidak pas dengan sumber upstream ini."
+            fi
+        fi
     else
         # Bukan fatal: batch Direct / Psiphon tetap jalan. WARP tinggal diurus nanti.
-        catatan_gagal "warp-go tidak terbuild — jalur keluar WARP belum bisa dipakai. Instal Go ('sudo apt install -y golang-go') lalu jalankan setup ini lagi."
+        if [ -x "warp/warp" ]; then
+            catatan_gagal "sumber warp-go butuh tambalan DNS tapi build ulang gagal (Go tidak tersedia?) — biner lama tetap dipakai dan akan mati (SIGSEGV) saat browser meminta nama domain lewat tunnel. Instal Go ('sudo apt install -y golang-go') lalu jalankan setup ini lagi."
+        else
+            catatan_gagal "warp-go tidak terbuild — jalur keluar WARP belum bisa dipakai. Instal Go ('sudo apt install -y golang-go') lalu jalankan setup ini lagi."
+        fi
     fi
 fi
 

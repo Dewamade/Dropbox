@@ -44,7 +44,15 @@ function vpnLog(line) {
 // the "MASQUE connected" line is), so none of it goes to the log console — only to
 // the debugProxy channel. The last lines stay in memory so a failed start can still
 // be explained by the real reason instead of a generic timeout message.
-const WARP_TAIL_MAX = 12;
+//
+// The buffer has to survive a whole Go panic: a crash is 20-40 lines and the CAUSE
+// is the first line ("panic: runtime error: invalid memory address ..." / "[signal
+// SIGSEGV]"), the interesting frames right below it. A 12-line ring kept only the
+// bottom of the stack — enough to name the file, useless for diagnosing (this cost
+// a real debugging session on a remote machine). So: keep plenty, and dump from the
+// panic onward.
+const WARP_TAIL_MAX = 120;
+const WARP_DUMP_MAX = 45;
 let warpTail = [];
 
 function warpRaw(stream, line) {
@@ -55,8 +63,12 @@ function warpRaw(stream, line) {
 
 function dumpWarpTail(reason) {
     if (!warpTail.length) return;
-    console.log(`[Warp] log warp-go (${reason}):`);
-    warpTail.forEach((l) => console.log(l));
+    const panicAt = warpTail.findIndex((l) => l.includes('panic:') || l.includes('SIGSEGV'));
+    const lines = panicAt >= 0
+        ? warpTail.slice(panicAt, panicAt + WARP_DUMP_MAX)
+        : warpTail.slice(-WARP_DUMP_MAX);
+    console.log(`[Warp] log warp-go (${reason}${panicAt >= 0 ? ' — mulai dari panic' : ''}):`);
+    lines.forEach((l) => console.log(l));
     warpTail = [];
 }
 

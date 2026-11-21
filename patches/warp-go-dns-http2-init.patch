@@ -1,0 +1,34 @@
+# Tambalan untuk warp-go — diterapkan setup.sh langkah 6 sebelum `go build`.
+#
+# Kenapa diperlukan: http2.Transport.NewClientConn() pada x/net v0.56 tidak
+# memanggil Transport.init(), sehingga transport internal net/http tetap nil.
+# Yang menabraknya adalah dnsQuery(): begitu ada klien yang meminta NAMA DOMAIN
+# diselesaikan lewat tunnel, warp-go SIGSEGV dan prosesnya mati (kode 2).
+# Pre-flight di sisi host tidak pernah menabraknya karena socks-proxy-agent
+# menyelesaikan nama sendiri di host (yang dikirim ke proxy berupa IP), sedangkan
+# Firefox/Camoufox mengirim nama — jadi gejalanya: "✓ WARP aktif — exit IP …"
+# lalu biner mati tepat saat browser membuka halaman pertama.
+#
+# Sumber warp/ TIDAK ter-track git (diunduh + dibangun setup.sh), jadi berkas
+# inilah yang membawa perbaikan ke mesin baru. Diuji terhadap badafans/warp-go
+# ca2f0cc. Kalau upstream sudah memperbaiki bug ini, `git apply --check` gagal
+# dan langkah 6 mencetak peringatan — hapus berkas ini saat itu terjadi.
+#
+diff --git a/tunnel/masque.go b/tunnel/masque.go
+index 1b9f7dd..4585bd1 100644
+--- a/tunnel/masque.go
++++ b/tunnel/masque.go
+@@ -1466,7 +1466,12 @@ func (c *MasqueClient) dialDoH(ctx context.Context, addr string) (*dohConn, erro
+ 
+ 	// DisableCompression stops x/net/http2 from adding "accept-encoding: gzip",
+ 	// which warp-svc does not send; DNS wire-format responses are tiny anyway.
+-	h2Conn, err := (&http2.Transport{DisableCompression: true}).NewClientConn(tlsConn)
++	h2t := &http2.Transport{DisableCompression: true}
++	// x/net v0.56 regression: the exported NewClientConn does not call
++	// Transport.init(), leaving the internal net/http transport nil (SIGSEGV).
++	// CloseIdleConnections initializes it and is otherwise a no-op here.
++	h2t.CloseIdleConnections()
++	h2Conn, err := h2t.NewClientConn(tlsConn)
+ 	if err != nil {
+ 		tlsConn.Close()
+ 		releaseStream(reqStream)
