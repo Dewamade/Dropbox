@@ -305,6 +305,20 @@ async function checkTooManyAttempts(cf) {
     if (hit) throw new Error('BROWSER_KILL_REQUIRED: Too many attempts. Please try later.');
 }
 
+// Satu pemeriksaan "batas" Dropbox: rate-limit halaman atau CAPTCHA yang muncul.
+// Keduanya bukan kegagalan teknis (timeout/proxy/daemon) — yang memulihkannya
+// IP keluar + profil baru, atau manusia yang menyelesaikan CAPTCHA lewat noVNC.
+// Karena itu keduanya dilaporkan sebagai LIMIT: di pesan error, dan server.js
+// memisahkan penghitungnya dari Error.
+async function checkPageLimit(cf, { headless }) {
+    await checkTooManyAttempts(cf);
+    // Mode terlihat = ada manusia di noVNC yang bisa menyelesaikannya; di situ
+    // CAPTCHA bukan alasan untuk membatalkan percobaan.
+    if (headless && await reportCaptcha(cf)) {
+        throw new Error('BROWSER_KILL_REQUIRED: CAPTCHA_DETECTED: CAPTCHA terlihat di halaman — tidak ada yang menyelesaikannya (mode headless).');
+    }
+}
+
 async function reportCaptcha(cf) {
     let captchaSelectors = getSelectors('captcha');
     if (captchaSelectors.length === 0) {
@@ -380,7 +394,7 @@ async function registerSingleEmail(
 
     console.log(`\n==========================================`);
     console.log(`Memulai pendaftaran untuk email: ${email}`);
-    console.log(`Proxy: ${proxyType === 'psiphon' ? 'Psiphon' : proxyType === 'socks5' ? 'Socks5 Only' : proxyType === 'warp' ? 'Warp+Socks5' : 'TIDAK ADA (Direct Connection)'}`);
+    console.log(`Proxy: ${proxyType === 'psiphon' ? 'Psiphon (SOCKS5)' : proxyType === 'socks5' ? 'SOCKS5 manual' : proxyType === 'warp' ? 'WARP (Cloudflare SOCKS5)' : 'TIDAK ADA (Direct Connection)'}`);
     console.log(`==========================================`);
 
     const { first: firstName, last: lastName } = getNameFromEmail(email);
@@ -400,6 +414,10 @@ async function registerSingleEmail(
     global.camofoxTab = null;
 
     let serverIp = exitIp || 'Unknown';
+    // IP keluar percobaan ini untuk server (global.currentExitIp = jembatan modul yang
+    // sudah ada): record riwayat Blocked/Error harus menyebut IP yang benar-benar
+    // dipakai. Kosong = belum terukur, dan server menuliskannya sebagai '-'.
+    global.currentExitIp = serverIp === 'Unknown' ? '' : serverIp;
     let userAgent = 'Unknown';
     let finalStatus = 'VERIF';
     let keepSessionAlive = false;
@@ -427,6 +445,7 @@ async function registerSingleEmail(
             const parsed = ep.parse(body);
             if (parsed) {
                 serverIp = parsed.ip;
+                global.currentExitIp = serverIp;
                 if (parsed.warp) console.log(`[Camofox] cdn-cgi/trace: warp=${parsed.warp}`);
                 break;
             } else if (body.trim()) {
@@ -459,7 +478,7 @@ async function registerSingleEmail(
                 console.log(`[Navigasi] Ke: ${url}`);
                 await cf.navigate(url, { timeoutMs: Math.max(gtMs, 30000) });
                 await cf.settle({ timeoutMs: Math.min(gtMs, 20000) });
-                await checkTooManyAttempts(cf);
+                await checkPageLimit(cf, { headless });
 
                 console.log('Mencari form input pendaftaran...');
                 await humanPause(2000, 4000);
@@ -508,7 +527,7 @@ async function registerSingleEmail(
                 }
 
                 await sleep(2000);
-                await checkTooManyAttempts(cf);
+                await checkPageLimit(cf, { headless });
 
                 // ── STEP 2: name + password + TOS + submit ───────────────────
                 const step2Timeout = Math.max(Math.round(globalTimeout / 2), 10);
@@ -574,7 +593,7 @@ async function registerSingleEmail(
                 const regDeadline = Date.now() + gtMs;
                 while (Date.now() < regDeadline) {
                     await sleep(2000);
-                    await checkTooManyAttempts(cf);
+                    await checkPageLimit(cf, { headless });
                     const currentUrl = await cf.currentUrl();
                     if (currentUrl.includes('trial_first') || currentUrl.includes('verify_email') ||
                         (!currentUrl.includes('/register') && !currentUrl.includes('/login') &&
@@ -729,6 +748,11 @@ async function ensureDropboxLogin(cf, { email, password, gtMs, abortController }
     throw new Error('Login ulang di halaman cli_link tidak berhasil.');
 }
 
+// URL cli_link: satu pola untuk log DAN untuk halaman yang dibuka browser.
+// Dipisah sebagai konstanta supaya filter log dan pencarian URL tidak pernah
+// berbeda paham tentang bentuk URL-nya.
+const CLI_LINK_URL_RE = /https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i;
+
 // Daemon linking + verify-email. Returns 'success' | 'VERIF'.
 async function linkDaemonAndVerifyEmail(cf, { email, password, gtMs, globalTimeout, daemonTimeout, maxCliAttempts, maxVerifAttempts, abortController }) {
     // ── Start the local Dropbox daemon (binary lives in ./dropbox-app) ───────
@@ -738,16 +762,28 @@ async function linkDaemonAndVerifyEmail(cf, { email, password, gtMs, globalTimeo
     let cliLinkUrl = null;
     let isLinked = false;
 
+    // Satu pendengar per stream: retryDeviceConnect() memanggil fungsi ini lagi
+    // pada daemon yang SAMA, dan listener lama masih menempel di process yang
+    // sama -> tanpa pembersihan ini baris output (termasuk URL-nya) tercetak
+    // dua kali.
+    dropboxProc.stdout.removeAllListeners('data');
+    dropboxProc.stderr.removeAllListeners('data');
+
     const onDaemon = (chunk) => {
         const text = chunk.toString();
         text.split('\n').forEach((line) => {
             const t = line.trim();
-            if (t && !t.includes('Try to launch using bash instead')) console.log(`[dropboxd] ${t}`);
+            if (!t || t.includes('Try to launch using bash instead')) return;
+            // Baris "To link this computer: type this url … https://…cli_link_nonce?…"
+            // dicetak ulang daemon terus-menerus selama belum ter-link. URL-nya cuma
+            // boleh muncul satu kali di konsol — yaitu lewat baris ✓ di bawah.
+            if (CLI_LINK_URL_RE.test(t)) return;
+            console.log(`[dropboxd] ${t}`);
         });
-        // Nonce cli_link bersifat sekali-pakai. Daemon mencetak URL baru setiap kali
-        // ia masih belum ter-link, jadi selalu simpan URL terbaru — retry berikut wajib
-        // memakai nonce baru, bukan yang sudah dipakai.
-        const m = text.match(/https:\/\/www\.dropbox\.com\/cli_link[^\s"'<]*/i);
+        // Nonce TIDAK sekali-pakai: selama belum ter-link daemon mencetak ulang URL
+        // yang SAMA, jadi hanya URL yang benar-benar BERBEDA yang dilaporkan
+        // (retry membuka nonce yang sudah ada, bukan yang baru).
+        const m = text.match(CLI_LINK_URL_RE);
         if (m && m[0] !== cliLinkUrl) {
             cliLinkUrl = m[0];
             console.log(`[dropboxd] ✓ URL CLI Link ditemukan: ${cliLinkUrl}`);

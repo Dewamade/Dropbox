@@ -38,10 +38,10 @@ BRANCH="webui3"
 CAMOFOX_REPO="https://github.com/jo-inc/camofox-browser"
 WARP_REPO="https://github.com/badafans/warp-go"
 PSIPHON_URL="https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/raw/master/linux/psiphon-tunnel-core-x86_64"
-DOCKER_IMAGE="ubuntu:24.04"   # image tempat daemon Dropbox berjalan (lihat langkah 7)
+DOCKER_IMAGE="ubuntu:24.04"   # image tempat daemon Dropbox berjalan (lihat langkah 8)
 
-# Unduh image daemon sekali; dipanggil di langkah 7 dan lagi setelah apt di langkah 8
-# (untuk mesin yang docker-nya baru saja dipasang). Idempotent.
+# Unduh image daemon sekali, di langkah 8 — docker.io sudah terpasang di langkah 2,
+# jadi tidak perlu dipanggil dua kali lagi. Idempotent.
 prepare_daemon_image() {
     if ! command -v docker >/dev/null 2>&1 || ! docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
         return 1
@@ -59,27 +59,86 @@ prepare_daemon_image() {
     return 1
 }
 
+# Biner Camoufox dikenali dari launcher 'camoufox-bin' di dalam .camoufox. Menguji
+# direktori .camoufox/browser saja TIDAK cukup: unduhan yang terpotong di tengah juga
+# meninggalkan direktori itu, lalu semuanya gagal saat tab pertama dibuat. Kedua letak
+# yang diketahui (root .camoufox/ dan browser/) diterima karena nama folder ini adalah
+# internals camoufox-js, bukan API.
+camoufox_lengkap() {
+    local dir="${1:-$(pwd)/camofox-browser/.camoufox}"
+    [ -x "$dir/camoufox-bin" ] || [ -x "$dir/browser/camoufox-bin" ]
+}
+
 # 1. Deteksi Lingkungan
-echo -e "\n${GREEN}[1/8] Memeriksa lingkungan sistem...${NC}"
+echo -e "\n${GREEN}[1/9] Memeriksa lingkungan sistem...${NC}"
 
 echo -e "Sistem: $(uname -s) $(uname -m)"
 
-# Git
-if ! command -v git &> /dev/null; then
-    echo -e "${RED}Error: Git belum terinstal. Silakan instal Git terlebih dahulu.${NC}"
+# Node.js & NPM. ./camofox-browser mensyaratkan Node 22+ (engines.node). Angka di
+# sini hanya pemeriksaan kasar supaya mesin dengan Node 16 tidak memasang setengah
+# proyek dulu; syarat yang sebenarnya dibaca dari package.json hasil clone di
+# langkah 5, jadi kalau upstream menaikkan versinya setup ini tetap jujur.
+if ! command -v node &> /dev/null || ! command -v npm &> /dev/null; then
+    echo -e "${RED}Error: Node.js/NPM belum terinstal. Instal Node.js 22+ lebih dahulu.${NC}"
     exit 1
 fi
-echo -e "Git terdeteksi: $(git --version)"
-
-# Node.js & NPM
-if ! command -v node &> /dev/null || ! command -v npm &> /dev/null; then
-    echo -e "${RED}Error: Node.js/NPM belum terinstal. Silakan instal Node.js terlebih dahulu.${NC}"
+MIN_NODE=22
+NODE_MAJOR=$(node -v | sed 's/^v//' | cut -d. -f1)
+case "$NODE_MAJOR" in '' | *[!0-9]*) NODE_MAJOR=0 ;; esac
+if [ "$NODE_MAJOR" -lt "$MIN_NODE" ]; then
+    echo -e "${RED}Error: Node.js $(node -v) terlalu lama — camofox-browser butuh Node >= ${MIN_NODE}.${NC}"
+    echo -e "${YELLOW}Instal Node 22+ dulu (mis. 'nvm install 22 && nvm use 22'), lalu ulangi setup ini.${NC}"
     exit 1
 fi
 echo -e "Node.js: $(node -v), NPM: $(npm -v)"
 
-# 2. Status Repositori
-echo -e "\n${GREEN}[2/8] Memeriksa status repositori Git...${NC}"
+# Bagian yang gagal dipasang. Yang WAJIB (npm proyek, camofox + Camoufox) langsung
+# keluar — tanpa itu tidak ada yang bisa dijalankan. Sisanya (warp, psiphon, daemon
+# Dropbox) dicatat dan dilaporkan di langkah 9 dengan exit code bukan nol, supaya
+# "Setup Berhasil Selesai" tidak pernah tercetak padahal ada yang kurang.
+GAGAL=()
+catatan_gagal() { GAGAL+=("$1"); echo -e "${YELLOW}Dilewati — dicatat di ringkasan:${NC} $1"; }
+
+# 2. Dependensi sistem (Camoufox butuh pustaka Firefox; mode terlihat butuh
+#    Xvfb/x11vnc/noVNC; build warp-go + kompilasi better-sqlite3 butuh toolchain).
+#    SENGAJA dijalankan SEBELUM npm install dan download: camofox-browser punya
+#    runtime-dependency 'better-sqlite3' yang DIKOMPILASI saat npm install
+#    (butuh build-essential + python3 + g++), dan langkah 5-8 memakai git/curl/wget.
+#    Kalau langkah ini ditaruh di akhir, mesin bersih gagal di npm install lebih
+#    dulu dan tidak pernah sampai ke apt.
+echo -e "\n${GREEN}[2/9] Memeriksa dependensi sistem (Camoufox, Xvfb, noVNC, build tools)...${NC}"
+SYSDEPS="git procps libgtk-3-0 libdbus-glib-1-2 libxt6 libasound2 libx11-xcb1 libxcomposite1 \
+libxcursor1 libxdamage1 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
+libegl1 libgl1-mesa-dri libgbm1 xvfb x11vnc novnc websockify \
+fonts-liberation fonts-noto-color-emoji fontconfig ca-certificates curl wget unzip \
+build-essential python3 docker.io"
+if [ -f /etc/debian_version ] || [ -f /etc/lsb-release ]; then
+    if [ "$EUID" -eq 0 ]; then
+        apt-get update
+        # apt membatalkan SELURUH transaksi kalau satu nama tidak ada; di beberapa
+        # rilis Debian/Ubuntu nama lama berubah (t64), jadi coba lagi dengan nama itu
+        # sebelum menyerah.
+        if apt-get install -y $SYSDEPS || apt-get install -y $(echo "$SYSDEPS" | sed 's/\blibxt6\b/libxt6t64/; s/\blibasound2\b/libasound2t64/'); then
+            echo -e "${GREEN}Dependensi sistem terpasang (termasuk docker.io — image daemon disiapkan di langkah 8).${NC}"
+        else
+            echo -e "${YELLOW}Peringatan: apt install gagal — lanjut dengan paket yang sudah ada di mesin ini.${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Bukan root — jika Camoufox gagal start atau better-sqlite3 gagal dikompilasi, jalankan:${NC}"
+        echo -e "sudo apt update && sudo apt install -y $SYSDEPS"
+    fi
+else
+    echo -e "${YELLOW}Bukan Debian/Ubuntu — pastikan paket untuk Firefox/Xvfb/noVNC, git, curl/wget, unzip, dan build-essential+python3 (kompilasi better-sqlite3) sudah ada.${NC}"
+fi
+
+# 3. Status Repositori
+echo -e "\n${GREEN}[3/9] Memeriksa status repositori Git...${NC}"
+
+if ! command -v git &> /dev/null; then
+    echo -e "${RED}Error: Git belum terinstal (lihat langkah 2). Tanpa git camofox-browser dan warp-go tidak bisa dipasang.${NC}"
+    exit 1
+fi
+echo -e "Git terdeteksi: $(git --version)"
 
 IN_REPO=false
 if [ -d .git ]; then
@@ -94,7 +153,13 @@ if [ "$IN_REPO" = true ]; then
     CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
     if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
         echo -e "Berpindah ke branch ${BRANCH}..."
-        git checkout "$BRANCH" || git checkout -b "$BRANCH" "origin/$BRANCH"
+        # Kode lama = behaviour lama; lebih baik berhenti daripada diam-diam memasang
+        # biner untuk branch yang salah.
+        git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" "origin/$BRANCH" 2>/dev/null || {
+            echo -e "${RED}Error: pindah ke branch ${BRANCH} gagal (working tree kotor?). Simpan/discard perubahan Anda, lalu ulangi.${NC}"
+            exit 1
+        }
+        echo -e "Branch sekarang: $(git branch --show-current)"
     else
         echo -e "Sudah berada di branch ${BRANCH}."
     fi
@@ -109,17 +174,17 @@ fi
 # Direktori tujuan instalasi biner selalu ada, meskipun clone baru
 mkdir -p camofox-browser warp psiphon dropbox-app
 
-# 3. Dependensi NPM Proyek
-echo -e "\n${GREEN}[3/8] Menginstal dependensi NPM proyek...${NC}"
+# 4. Dependensi NPM Proyek
+echo -e "\n${GREEN}[4/9] Menginstal dependensi NPM proyek...${NC}"
 if ! npm install; then
     echo -e "${RED}Error: Gagal menginstal dependensi NPM.${NC}"
     exit 1
 fi
 echo -e "${GREEN}Dependensi NPM proyek terpasang (express, ws, socks-proxy-agent).${NC}"
 
-# 4. camofox-browser + Camoufox (browser anti-detect, dipakai sebagai pengganti
+# 5. camofox-browser + Camoufox (browser anti-detect, dipakai sebagai pengganti
 #    Playwright Firefox) — dipasang di ./camofox-browser
-echo -e "\n${GREEN}[4/8] Memasang camofox-browser + Camoufox di ./camofox-browser...${NC}"
+echo -e "\n${GREEN}[5/9] Memasang camofox-browser + Camoufox di ./camofox-browser...${NC}"
 
 if [ ! -f "camofox-browser/server.js" ]; then
     if [ -n "$(ls -A camofox-browser 2>/dev/null)" ]; then
@@ -127,29 +192,46 @@ if [ ! -f "camofox-browser/server.js" ]; then
         exit 1
     fi
     echo -e "Mengkloning ${CAMOFOX_REPO}..."
-    git clone --depth 1 "$CAMOFOX_REPO" camofox-browser
+    git clone --depth 1 "$CAMOFOX_REPO" camofox-browser || {
+        echo -e "${RED}Error: mengkloning camofox-browser gagal (butuh internet).${NC}"
+        exit 1
+    }
 fi
 
 if [ -f "camofox-browser/package.json" ]; then
+    # Syarat versi dibaca dari clone, bukan dari angka yang hardcoded di langkah 1:
+    # kalau upstream menaikkan engines.node, setup ini berhenti dengan pesan yang
+    # jelas, bukan menyerah di runtime dengan error server REST yang aneh.
+    BUTA_NODE=$(cd camofox-browser && node -e 'const e=require("./package.json").engines||{};const m=/(\d+)/.exec(e.node||"");console.log(m?m[1]:0)' 2>/dev/null)
+    VERSI_CAMOFOX=$(cd camofox-browser && node -p 'require("./package.json").version' 2>/dev/null)
+    if [ "${NODE_MAJOR:-0}" -lt "${BUTA_NODE:-0}" ]; then
+        echo -e "${RED}Error: camofox-browser v${VERSI_CAMOFOX} butuh Node >= ${BUTA_NODE} (engines.node di package.json-nya), sekarang $(node -v).${NC}"
+        echo -e "${YELLOW}Instal Node ${BUTA_NODE}+ (mis. 'nvm install ${BUTA_NODE} && nvm use ${BUTA_NODE}'), lalu ulangi setup ini.${NC}"
+        exit 1
+    fi
     # Camoufox diunduh ke dalam folder proyek, bukan ke ~/.cache
     export CAMOUFOX_INSTALL_DIR="$(pwd)/camofox-browser/.camoufox"
     # --omit=dev: server REST hanya butuh deps runtime (sama seperti Dockerfile
     # upstream). Dev-dep 'openclaw' menolak Node < 24.16 dan menggagalkan install.
+    # Di sana ada 'better-sqlite3' yang dikompilasi — karena itu langkah 2 dulu.
     (cd camofox-browser && npm install --omit=dev) || {
-        echo -e "${RED}Error: npm install di camofox-browser gagal.${NC}"
+        echo -e "${RED}Error: npm install di camofox-browser gagal (butuh internet + build-essential/python3, lihat langkah 2).${NC}"
         exit 1
     }
-    if [ ! -d "$CAMOUFOX_INSTALL_DIR/browser" ]; then
+    if ! camoufox_lengkap "$CAMOUFOX_INSTALL_DIR"; then
         echo -e "postinstall tidak mengunduh Camoufox — menjalankan fetch manual..."
         (cd camofox-browser && npm run fetch-bin)
     fi
-    if [ -d "$CAMOUFOX_INSTALL_DIR/browser" ]; then
-        echo -e "${GREEN}camofox-browser + Camoufox siap di ./camofox-browser (.camoufox/browser).${NC}"
+    if camoufox_lengkap "$CAMOUFOX_INSTALL_DIR"; then
+        echo -e "${GREEN}camofox-browser + Camoufox siap di ./camofox-browser (.camoufox/).${NC}"
     else
-        echo -e "${RED}Error: Camoufox belum terunduh. Ulangi: (cd camofox-browser && npm run fetch-bin)${NC}"
+        # Tanpa biner Camoufox tidak ada satu pun pendaftaran yang bisa jalan.
+        echo -e "${RED}Error: biner Camoufox belum ada (camofox-browser/.camoufox/camoufox-bin). Ulangi: (cd camofox-browser && CAMOUFOX_INSTALL_DIR=$(pwd)/camofox-browser/.camoufox npm run fetch-bin)${NC}"
+        exit 1
     fi
 else
     echo -e "${RED}Error: kloning camofox-browser gagal.${NC}"
+    exit 1
 fi
 
 # Plugin kami (sumbernya di camofox-plugins/, ter-track git) dipasang ke kloning
@@ -177,8 +259,8 @@ fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
     done
 fi
 
-# 5. warp-go (Cloudflare WARP rootless, SOCKS5 127.0.0.1:40000)
-echo -e "\n${GREEN}[5/8] Memasang warp-go di ./warp...${NC}"
+# 6. warp-go (Cloudflare WARP rootless, SOCKS5 127.0.0.1:40000)
+echo -e "\n${GREEN}[6/9] Memasang warp-go di ./warp...${NC}"
 
 if [ -x "warp/warp" ]; then
     echo -e "Binary warp sudah ada: ./warp/warp"
@@ -196,27 +278,31 @@ else
         else
             echo -e "Toolchain Go tidak ditemukan — mengunduh Go resmi ke ./.toolchain..."
             GOVER=$(curl -sL "https://go.dev/VERSION?m=text" | head -1)
-            GOVER=${GOVER:-go1.26.5}
-            mkdir -p .toolchain
-            echo -e "Mengunduh ${GOVER}.linux-amd64.tar.gz ..."
-            curl -sL -o .toolchain/go.tgz "https://go.dev/dl/${GOVER}.linux-amd64.tar.gz"
-            tar -C .toolchain -xzf .toolchain/go.tgz && rm -f .toolchain/go.tgz
-            GO_BIN="$(pwd)/.toolchain/go/bin/go"
+            if [ -n "$GOVER" ]; then
+                mkdir -p .toolchain
+                echo -e "Mengunduh ${GOVER}.linux-amd64.tar.gz ..."
+                curl -sL -o .toolchain/go.tgz "https://go.dev/dl/${GOVER}.linux-amd64.tar.gz"
+                tar -C .toolchain -xzf .toolchain/go.tgz && rm -f .toolchain/go.tgz
+            fi
+            [ -x ".toolchain/go/bin/go" ] && GO_BIN="$(pwd)/.toolchain/go/bin/go"
         fi
-        if [ -x "$GO_BIN" ] || [ "$GO_BIN" = "$(command -v go)" ]; then
+        if [ -x "$GO_BIN" ]; then
             (cd warp && "$GO_BIN" build -o warp .) && chmod +x warp/warp
+        else
+            echo -e "${YELLOW}Go tidak tersedia dan unduhan ./.toolchain gagal — build warp dilewati.${NC}"
         fi
     fi
     if [ -x "warp/warp" ]; then
         echo -e "${GREEN}warp-go terpasang: ./warp/warp${NC}"
         echo -e "${YELLOW}Registrasi pertama kali (sekali per mesin): ./warp/warp -reg${NC}"
     else
-        echo -e "${RED}Error: build warp-go gagal. Instal Go (pkg install golang / apt install golang-go) lalu ulangi.${NC}"
+        # Bukan fatal: batch Direct / Psiphon tetap jalan. WARP tinggal diurus nanti.
+        catatan_gagal "warp-go tidak terbuild — jalur keluar WARP belum bisa dipakai. Instal Go ('sudo apt install -y golang-go') lalu jalankan setup ini lagi."
     fi
 fi
 
-# 6. Psiphon (fallback exit) — binary x86_64 di ./psiphon
-echo -e "\n${GREEN}[6/8] Memasang psiphon-tunnel-core di ./psiphon...${NC}"
+# 7. Psiphon (fallback exit) — binary x86_64 di ./psiphon
+echo -e "\n${GREEN}[7/9] Memasang psiphon-tunnel-core di ./psiphon...${NC}"
 if [ -f "psiphon/psiphon-tunnel-core-x86_64" ]; then
     echo -e "Psiphon binary sudah ada."
 else
@@ -228,32 +314,39 @@ else
         echo -e "${GREEN}Psiphon binary terpasang.${NC}"
     else
         rm -f psiphon/psiphon-tunnel-core-x86_64
-        echo -e "${RED}Error: gagal mengunduh Psiphon binary.${NC}"
+        catatan_gagal "biner psiphon-tunnel-core belum terunduh — jalur keluar Psiphon belum bisa dipakai (Direct/WARP tetap jalan)."
     fi
 fi
 if [ -f "psiphon.config" ]; then
     echo -e "Template psiphon.config ditemukan (config per region ditulis ke ./psiphon/ saat runtime)."
 else
-    echo -e "${YELLOW}Peringatan: psiphon.config tidak ditemukan di folder proyek — fase Psiphon tidak akan jalan.${NC}"
+    catatan_gagal "psiphon.config tidak ada di folder proyek — Berkas itu ter-track git, jadi clone/checkout tidak lengkap; fase Psiphon tidak akan jalan."
 fi
 
-# 7. Daemon Dropbox resmi (dipakai untuk menautkan perangkat + kirim email verifikasi)
+# 8. Daemon Dropbox resmi (dipakai untuk menautkan perangkat + kirim email verifikasi)
 #    Biner di ./dropbox-app, tapi normalnya dijalankan DI DALAM container docker yang
 #    selalu baru: hanya .dropbox-dist yang di-mount (ro), state (.dropbox/) + folder
 #    sync di tmpfs, hostname + machine-id acak -> Dropbox melihat perangkat baru setiap
 #    kali, jadi URL cli_link selalu muncul. Tanpa docker, register.js fallback ke
 #    eksekusi langsung dan menghapus state lama di ./dropbox-app untuk efek yang sama.
-echo -e "\n${GREEN}[7/8] Memasang daemon Dropbox di ./dropbox-app...${NC}"
+echo -e "\n${GREEN}[8/9] Memasang daemon Dropbox di ./dropbox-app...${NC}"
 if [ -d "dropbox-app/.dropbox-dist" ]; then
     echo -e "Daemon Dropbox sudah ada."
 else
     echo -e "Mengunduh dan mengekstrak Dropbox daemon..."
-    wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C dropbox-app -xzf - \
-        || curl -sL "https://www.dropbox.com/download?plat=lnx.x86_64" | tar -C dropbox-app -xzf -
+    DROPBOX_TGZ="dropbox-app/.dropbox-download.tgz"
+    rm -f "$DROPBOX_TGZ"
+    if wget -O "$DROPBOX_TGZ" "https://www.dropbox.com/download?plat=lnx.x86_64" \
+        || curl -sL -o "$DROPBOX_TGZ" "https://www.dropbox.com/download?plat=lnx.x86_64"; then
+        tar -C dropbox-app -xzf "$DROPBOX_TGZ"
+    fi
+    rm -f "$DROPBOX_TGZ"
     if [ -f "dropbox-app/.dropbox-dist/dropboxd" ]; then
         echo -e "${GREEN}Daemon Dropbox terpasang di ./dropbox-app/.dropbox-dist.${NC}"
     else
-        echo -e "${RED}Error: gagal mengunduh/mengekstrak daemon Dropbox.${NC}"
+        # Tanpa daemon tidak ada device linking / email verifikasi -> semua run
+        # berhenti sebagai VERIF. Bukan fatal: setup yang lain tetap terpakai.
+        catatan_gagal "daemon Dropbox belum terunduh/terekstrak (./dropbox-app/.dropbox-dist/dropboxd) — device linking + email verifikasi tidak akan jalan. Jalankan setup ini lagi (butuh internet)."
     fi
 fi
 
@@ -261,28 +354,42 @@ if prepare_daemon_image; then
     echo -e "Docker terdeteksi — daemon akan dijalankan di container ${DOCKER_IMAGE} (perangkat baru setiap run)."
 else
     echo -e "${YELLOW}Docker tidak tersedia/tidak jalan — daemon Dropbox akan dijalankan langsung dari ./dropbox-app (state perangkat dihapus tiap run).${NC}"
-    echo -e "Untuk mode container: pasang docker (paket docker.io, lihat langkah 8) dan pastikan user ada di grup docker."
+    echo -e "Untuk mode container: pasang docker (paket docker.io, lihat langkah 2) dan pastikan user ada di grup docker."
 fi
 
-# 8. Dependensi sistem untuk Camoufox + VNC (opsional; hanya Debian/Ubuntu)
-echo -e "\n${GREEN}[8/8] Memeriksa dependensi sistem (Camoufox, Xvfb, noVNC)...${NC}"
-SYSDEPS="libgtk-3-0 libdbus-glib-1-2 libxt6 libasound2 libx11-xcb1 libxcomposite1 \
-libxcursor1 libxdamage1 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
-libegl1 libgl1-mesa-dri libgbm1 xvfb x11vnc novnc websockify \
-fonts-liberation fonts-noto-color-emoji fontconfig ca-certificates curl wget unzip \
-build-essential python3 docker.io"
-if [ -f /etc/debian_version ] || [ -f /etc/lsb-release ]; then
-    if [ "$EUID" -eq 0 ]; then
-        apt-get update
-        apt-get install -y $SYSDEPS || apt-get install -y $(echo "$SYSDEPS" | sed 's/\blibxt6\b/libxt6t64/; s/\blibasound2\b/libasound2t64/')
-        echo -e "${GREEN}Dependensi sistem terpasang.${NC}"
-        prepare_daemon_image   # docker mungkin baru saja terpasang
+# 9. Ringkasan — daftar periksa nyata terhadap isi folder.
+#    Ini bagian yang menjawab "apakah deployment di mesin ini benar-benar jalan?":
+#    setiap baris dibaca dari filesystem, bukan dari keberhasilan langkah di atas,
+#    jadi hasil setup yang parsial (tanpa internet / tanpa root / tanpa docker)
+#    terlihat jelas dan tidak disamarkan oleh "Setup Berhasil".
+echo -e "\n${GREEN}[9/9] Ringkasan hasil instalasi...${NC}"
+periksa() {
+    if eval "$2" >/dev/null 2>&1; then
+        echo -e "  ${GREEN}v${NC} $1"
     else
-        echo -e "${YELLOW}Bukan root — jika Camoufox gagal start karena pustaka hilang, jalankan:${NC}"
-        echo -e "sudo apt update && sudo apt install -y $SYSDEPS"
+        echo -e "  ${RED}x${NC} $1"
     fi
-else
-    echo -e "${YELLOW}Bukan Debian/Ubuntu — pastikan paket untuk Firefox/Xvfb/noVNC dan build-essential+python3 (better-sqlite3) sudah ada.${NC}"
+}
+periksa "biner Camoufox (./camofox-browser/.camoufox/camoufox-bin)" "camoufox_lengkap"
+periksa "server REST camofox + plugin kami aktif (screen, locale)" "[ -f camofox-browser/server.js ] && [ -f camofox-browser/plugins/screen/index.js ] && [ -f camofox-browser/plugins/locale/index.js ]"
+periksa "GeoIP DB Camoufox (kalau x: diunduh sendiri saat start, tidak fatal)" "[ -s camofox-browser/.camoufox/GeoLite2-City.mmdb ]"
+periksa "warp-go (./warp/warp)" "[ -x warp/warp ]"
+periksa "WARP terdaftar (./warp/reg.json); kalau x jalankan './warp/warp -reg' sekali" "[ -f warp/reg.json ]"
+periksa "psiphon-tunnel-core + psiphon.config" "[ -x psiphon/psiphon-tunnel-core-x86_64 ] && [ -f psiphon.config ]"
+periksa "daemon Dropbox (./dropbox-app/.dropbox-dist/dropboxd)" "[ -f dropbox-app/.dropbox-dist/dropboxd ]"
+periksa "image container ${DOCKER_IMAGE} (opsional)" "docker image inspect ${DOCKER_IMAGE}"
+echo -e "Waktu: $(date)"
+
+if [ ${#GAGAL[@]} -gt 0 ]; then
+    echo -e "\n${RED}======================================================================${NC}"
+    echo -e "${RED}               Setup SELESAI dengan catatan — perbaiki ini:              ${NC}"
+    echo -e "${RED}======================================================================${NC}"
+    for g in "${GAGAL[@]}"; do
+        echo -e "  ${RED}-${NC} $g"
+    done
+    echo -e "Jalankan ./setup.sh lagi setelah itu; langkah yang sudah beres dilewati."
+    echo -e "Tanpa itu, dashboard tetap jalan untuk jalur keluar yang tersedia (lihat daftar periksa di atas)."
+    exit 1
 fi
 
 echo -e "\n${GREEN}======================================================================${NC}"

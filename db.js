@@ -8,6 +8,23 @@ const fs = require('fs');
 const DB_PATH = path.join(__dirname, 'history.json');
 const SELECTOR_PATH = path.join(__dirname, 'selector.json');
 
+// Isi awal katalog selector, dibaca langsung dari selector.json (TIDAK lewat
+// getSelectors/saveSelectors supaya tidak rekursif lewat loadDB).
+// Tanpa seed ini, history.json pertama berisi "selectors": {} dan register.js diam-diam
+// memakai daftar fallback yang hardcoded di dalam kode: katalog — satu-satunya tempat
+// DOM Dropbox bisa diperbaiki tanpa mengubah kode — baru terisi setelah seseorang
+// menekan Reset di tab Selector. Persis itu yang terjadi pada deployment pertama.
+function selectorsSeed() {
+    try {
+        if (fs.existsSync(SELECTOR_PATH)) {
+            return JSON.parse(fs.readFileSync(SELECTOR_PATH, 'utf8'));
+        }
+    } catch (e) {
+        // Katalog rusak: kosong berarti fallback in-code yang bekerja, jangan mati total.
+    }
+    return {};
+}
+
 function loadDB() {
     const defaults = {
         registrations: [],
@@ -28,27 +45,45 @@ function loadDB() {
             daemonTimeout: 120,
             // BROWSER & KONEKSI
             useHeadless: true,
-            socks5Host: '',
             warpPort: 40000,
+            // Satu jalur proxy saja: 'none' | 'warp' | 'psiphon'.
+            // useDirect true  -> percobaan 1 selalu Direct, sisanya jalur ini.
+            // useDirect false -> semua percobaan (termasuk pertama) lewat proxy;
+            //                    tidak berlaku kalau proxyMode 'none'.
+            proxyMode: 'warp',
             useDirect: true,
-            useWarp: false,
-            useSocks5: false,
-            usePsiphon: false,
             psiphonRegions: [],
             // LAIN-LAIN
             idleTimeout: 600,
-            debugProxy: false
+            debugProxy: false,
+            // Live preview: default mati, sama dengan checkbox di UI (tanpa field ini
+            // GET /api/settings mengembalikan undefined, jadi kontraknya tidak lengkap).
+            enablePreview: false
         },
         selectors: {}
     };
     if (!fs.existsSync(DB_PATH)) {
+        defaults.selectors = selectorsSeed();
         fs.writeFileSync(DB_PATH, JSON.stringify(defaults, null, 2));
         return defaults;
     }
     try {
         const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
-        return { ...defaults, ...data };
+        const db = { ...defaults, ...data };
+        // history.json lama atau buatan tangan tanpa katalog: isi dari selector.json
+        // dan tulis sekali ke disk, supaya register.js (yang membaca katalog dari file
+        // ini) melihat catalog yang sama dengan tab Selector.
+        if (!db.selectors || Object.keys(db.selectors).length === 0) {
+            const seed = selectorsSeed();
+            if (Object.keys(seed).length > 0) {
+                db.selectors = seed;
+                fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+            }
+        }
+        return db;
     } catch (e) {
+        // File rusak: jangan ditimpa (data user), tapi katalog tetap ikut di-seed.
+        defaults.selectors = selectorsSeed();
         return defaults;
     }
 }
@@ -58,28 +93,27 @@ function saveDB(db) {
 }
 
 /**
- * Save a registration record
- * @param {string} email
- * @param {string} password
- * @param {string} status - 'success' | 'failed'
- * @param {string} alias - Target alias
- * @param {string} ip - Public IP used
- * @param {string} ua - User Agent used
- * @param {number} timeouts - Number of timeouts
- * @param {number} errors - Number of errors
+ * Save a registration record (satu record = satu percobaan penuh atas satu email)
+ * @param {object} rec
+ * @param {string} rec.email
+ * @param {string} rec.password
+ * @param {string} rec.status - 'success' | 'VERIF' (akun jadi) | 'failed'
+ * @param {string} rec.alias - Target alias
+ * @param {string} rec.ip - IP keluar yang berhasil dipakai (kosong saat gagal)
+ * @param {string} rec.connection - jalur keluar percobaan itu: 'direct' | 'warp' | 'psiphon'
+ * @param {string} [rec.failClass] - untuk status 'failed': 'limit' | 'error'
  */
-function saveRegistration(email, password, status, alias, ip, ua, timeouts = 0, errors = 0) {
+function saveRegistration({ email, password, status, alias = '', ip = '', connection = '', failClass = '' }) {
     const db = loadDB();
     db.registrations.push({
         id: Date.now(),
         email,
         password,
         status,
-        alias: alias || '',
-        ip: ip || '',
-        ua: ua || '',
-        timeouts: timeouts || 0,
-        errors: errors || 0,
+        alias,
+        ip,
+        connection,
+        ...(status === 'failed' ? { failClass: failClass || 'error' } : {}),
         timestamp: new Date().toISOString()
     });
     saveDB(db);

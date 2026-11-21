@@ -145,6 +145,15 @@ async function ensureRunning({ proxy = null, visible = false, port = DEFAULT_POR
         fs.mkdirSync(dir, { recursive: true });
     }
 
+    // Server baru = tidak ada sesi hidup (tab mati bersama servernya), jadi apa
+    // pun yang masih tersimpan di camofox-data/ adalah state sesi lama: plugin
+    // `persistence` camofox menulis profiles/<hash>/storage-state.json (cookies +
+    // localStorage) saat sesi ditutup DAN saat server shutdown, termasuk sesi yang
+    // tidak sempat ditutup (proses di-KILL, batch crashed). Sesi memang selalu
+    // memakai userId baru (register.js) sehingga state itu tidak akan dibaca lagi,
+    // tapi dibuang di sini supaya tiap start mulai benar-benar dari nol.
+    wipeSessionState();
+
     // A camofox server left running by an earlier run (another node process) is
     // invisible to our own state but still holds the port: spawning on top of it
     // dies with EADDRINUSE while the readiness probe below "succeeds" against that
@@ -244,8 +253,34 @@ async function ensureRunning({ proxy = null, visible = false, port = DEFAULT_POR
     throw new Error(`Server camofox tidak siap dalam ${timeoutMs / 1000} detik (${lastErr || 'health timeout'})`);
 }
 
-// Remove the persisted profile of a farmed user so the next email never inherits
-// cookies/storage (fresh identity per account).
+// Hapus SEMUA state sesi camofox yang tertinggal: profiles/ (storage-state.json =
+// cookies + localStorage per userId), cookies/, uploads/, traces/. Dipanggil dari
+// ensureRunning() sebelum server baru spawn — pada titik itu tidak ada sesi hidup,
+// jadi semuanya milik run sebelumnya (sesi yang tidak sempat ditutup, proses
+// di-KILL, batch crashed). Nama direktori tidak perlu diketahui: yang bersih
+// adalah seluruh isinya.
+const SESSION_STATE_DIRS = ['profiles', 'cookies', 'uploads', 'traces'];
+
+function wipeSessionState() {
+    const cleared = [];
+    for (const name of SESSION_STATE_DIRS) {
+        const dir = path.join(DATA_DIR, name);
+        let entries = [];
+        try { entries = fs.readdirSync(dir); } catch (_) { continue; }
+        if (!entries.length) continue;
+        for (const entry of entries) {
+            try { fs.rmSync(path.join(dir, entry), { recursive: true, force: true }); } catch (_) { }
+        }
+        cleared.push(`${entries.length} ${name}`);
+    }
+    if (cleared.length) console.log(`[Camofox] State sesi lama dibersihkan (${cleared.join(', ')}).`);
+    return cleared;
+}
+
+// Separuhnya yang per-sesi: profil user yang baru selesai. `DELETE
+// /sessions/:userId` hanya menutup tab; plugin persistence justru MENULIS
+// storage-state.json saat sesi ditutup, jadi direktorinya harus dihapus dari sisi
+// kita. Dipanggil register.js lewat closeBrowserSession().
 function cleanupProfile(userId) {
     const dir = profileDirFor(userId);
     try {
@@ -287,6 +322,7 @@ module.exports = {
     getPort,
     isVisible,
     cleanupProfile,
+    wipeSessionState,
     profileDirFor,
     novncUrl,
     CAMOFOX_DIR,

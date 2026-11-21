@@ -104,12 +104,18 @@ const EXIT_IP_ENDPOINTS = [
     },
 ];
 
-function fetchViaSocks(url, proxyHost, proxyPort, timeoutMs) {
+// Ambil satu URL exit-IP lewat jalur yang diminta: `proxy = null` = rute host
+// biasa (sama dengan yang dipakai camofox saat di-pin tanpa proxy), `{host,port}`
+// = SOCKS5 yang sama yang dipakai browser.
+function fetchExitUrl(url, proxy, timeoutMs) {
     return new Promise((resolve) => {
-        let SocksProxyAgent;
-        try { ({ SocksProxyAgent } = require('socks-proxy-agent')); }
-        catch (_) { return resolve(null); }
-        const agent = new SocksProxyAgent(`socks5://${proxyHost}:${proxyPort}`);
+        let agent;
+        if (proxy) {
+            let SocksProxyAgent;
+            try { ({ SocksProxyAgent } = require('socks-proxy-agent')); }
+            catch (_) { return resolve(null); }
+            agent = new SocksProxyAgent(`socks5://${proxy.host}:${proxy.port}`);
+        }
         const req = https.get(url, { agent, timeout: timeoutMs }, (res) => {
             let data = '';
             res.on('data', (c) => { data += c; });
@@ -120,15 +126,27 @@ function fetchViaSocks(url, proxyHost, proxyPort, timeoutMs) {
     });
 }
 
-// Resolves { ip, warp? } through the proxy, or null if no endpoint answered.
-async function socksExitIp(proxyHost, proxyPort, timeoutMs = 12000) {
+// Resolves { ip, warp?, endpoint, via } — endpoint host yang menjawab + jalur yang
+// dipakai ikut dikembalikan, karena satu mesin bisa punya lebih dari satu jalur
+// keluar (lihat AGENTS.md: exit IP bersifat per-tujuan). null = tidak ada yang menjawab.
+async function walkExitEndpoints(proxy, timeoutMs) {
     for (const ep of EXIT_IP_ENDPOINTS) {
-        const r = await fetchViaSocks(ep.url, proxyHost, proxyPort, timeoutMs);
+        const r = await fetchExitUrl(ep.url, proxy, timeoutMs);
         if (!r || r.status !== 200) continue;
         const parsed = ep.parse(r.body || '');
-        if (parsed) return parsed;
+        if (parsed) return { ...parsed, endpoint: new URL(ep.url).hostname, via: proxy ? `socks5://${proxy.host}:${proxy.port}` : 'direct' };
     }
     return null;
+}
+
+async function socksExitIp(proxyHost, proxyPort, timeoutMs = 12000) {
+    return walkExitEndpoints({ host: proxyHost, port: proxyPort }, timeoutMs);
+}
+
+// Exit IP lewat rute host (tanpa proxy): itu exit camofox kalau engine di-pin
+// direct. Dipakai dashboard untuk baris "Exit IP Camoufox" tanpa menyalakan browser.
+async function directExitIp(timeoutMs = 12000) {
+    return walkExitEndpoints(null, timeoutMs);
 }
 
 // ── WARP (warp-go) ────────────────────────────────────────────────────────────
@@ -366,6 +384,7 @@ module.exports = {
     stopAll,
     checkPort,
     socksExitIp,
+    directExitIp,
     EXIT_IP_ENDPOINTS,
     DEFAULT_WARP_PORT,
     PSIPHON_PORT,

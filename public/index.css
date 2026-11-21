@@ -494,13 +494,13 @@ textarea { resize: vertical; min-height: 80px; max-height: 150px; line-height: 1
     transition: border-color 0.3s;
 }
 .stat-card.stat-success { border-color: rgba(52,211,153,0.15); }
-.stat-card.stat-failed  { border-color: rgba(248,113,113,0.15); }
-.stat-card.stat-verif   { border-color: rgba(251,191,36,0.15); }
+.stat-card.stat-limit   { border-color: rgba(251,191,36,0.15); }
+.stat-card.stat-error   { border-color: rgba(248,113,113,0.15); }
 
 .stat-value { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; }
 .stat-card.stat-success .stat-value { color: var(--green); }
-.stat-card.stat-failed  .stat-value { color: var(--red); }
-.stat-card.stat-verif   .stat-value { color: var(--amber); }
+.stat-card.stat-limit   .stat-value { color: var(--amber); }
+.stat-card.stat-error   .stat-value { color: var(--red); }
 .stat-label { font-size: 0.64rem; color: var(--text-dim); margin-top: 0.15rem; text-transform: uppercase; letter-spacing: 0.07em; }
 
 /* Sidebar action area */
@@ -663,10 +663,12 @@ textarea { resize: vertical; min-height: 80px; max-height: 150px; line-height: 1
 .history-table td { padding: 0.48rem 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.04); color: #d4d4d8; font-family: 'Fira Code', monospace; white-space: nowrap; }
 .history-table tr:last-child td { border-bottom: none; }
 
-/* -- Badges ---------------------------------------- */
-.badge-success { color: #34d399; background: rgba(52,211,153,0.1);  border: 1px solid rgba(52,211,153,0.2);  border-radius: 9px; padding: 0.1rem 0.5rem; font-size: 0.7rem; font-weight: 700; }
-.badge-failed  { color: #f87171; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2); border-radius: 9px; padding: 0.1rem 0.5rem; font-size: 0.7rem; font-weight: 700; }
-.badge-VERIF   { color: #fbbf24; background: rgba(251,191,36,0.1);  border: 1px solid rgba(251,191,36,0.2);  border-radius: 9px; padding: 0.1rem 0.5rem; font-size: 0.7rem; font-weight: 700; }
+/* -- Badges: status satu percobaan di riwayat. Kata + warna SAMA dengan kartu live
+      di dashboard (Sukses hijau / Blocked amber / Error merah), supaya modal Riwayat
+      tidak memakai kosakata lain daripada layar Progress. -------------------------- */
+.badge-sukses { color: #34d399; background: rgba(52,211,153,0.1);  border: 1px solid rgba(52,211,153,0.2);  border-radius: 9px; padding: 0.1rem 0.5rem; font-size: 0.7rem; font-weight: 700; }
+.badge-limit  { color: #fbbf24; background: rgba(251,191,36,0.1);  border: 1px solid rgba(251,191,36,0.2);  border-radius: 9px; padding: 0.1rem 0.5rem; font-size: 0.7rem; font-weight: 700; }
+.badge-error  { color: #f87171; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2); border-radius: 9px; padding: 0.1rem 0.5rem; font-size: 0.7rem; font-weight: 700; }
 
 /* -- Pagination ------------------------------------ */
 .pagination-container { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 0 0.25rem; border-top: 1px solid var(--border); margin-top: 0.5rem; }

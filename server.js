@@ -66,6 +66,44 @@ app.get('/api/proxy/status', (_req, res) => {
     }
 });
 
+// Exit IP CAMOUFOX, bukan IP browser yang membuka dashboard. Jalur yang dipakai =
+// pin server browser yang sedang hidup (camofox.status().proxy; null = direct),
+// atau jalur yang dipilih di pengaturan kalau engine belum jalan. Diukur dari sisi
+// host lewat jalur yang sama (direct = rute host, proxy = SOCKS5 yang sama), jadi
+// baris log ini tidak menyalakan browser. Angka yang diukur DI DALAM tab tetap
+// dicetak engine sendiri sebagai `[Server] Public IP (via browser/<mode>)`.
+app.get('/api/exit-ip', async (_req, res) => {
+    try {
+        const cs = camofox.status();
+        const engineRunning = cs.running;
+        let proxy = null;
+        if (engineRunning) {
+            if (cs.proxy) {
+                const u = new URL(cs.proxy);
+                proxy = { host: u.hostname, port: Number(u.port) };
+            }
+        } else {
+            const st = proxyManager.status();
+            if (proxyMode === 'warp') {
+                if (!st.warp) return res.json({ ok: false, reason: 'engine belum jalan dan WARP belum aktif' });
+                proxy = { host: '127.0.0.1', port: warpPort };
+            } else if (proxyMode === 'psiphon') {
+                if (!st.psiphon) return res.json({ ok: false, reason: 'engine belum jalan dan Psiphon belum aktif' });
+                proxy = { host: '127.0.0.1', port: st.psiphonPort };
+            }
+        }
+        const found = proxy
+            ? await proxyManager.socksExitIp(proxy.host, proxy.port)
+            : await proxyManager.directExitIp();
+        if (!found) return res.json({ ok: false, reason: 'tidak ada endpoint exit-IP yang menjawab' });
+        const port = proxy ? proxy.port : null;
+        const exitPath = !port ? 'direct' : port === warpPort ? 'warp' : port === proxyManager.PSIPHON_PORT ? 'psiphon' : 'socks5';
+        res.json({ ok: true, ip: found.ip, warp: found.warp, endpoint: found.endpoint, via: found.via, exitPath, engineRunning });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Force a new exit IP: WARP gets a fresh key (reg.json regenerated), Psiphon
 // restarts the tunnel and picks a new country. Refused while a batch runs —
 // rotating mid-registration would pull the proxy out from under the open tab.
@@ -89,10 +127,37 @@ const originalLog = console.log;
 const originalError = console.error;
 const originalWarn = console.warn;
 
+// Satu bentuk payload penghitung untuk UI — setiap cabang yang mengubah angka
+// WAJIB mengirim progress dengan field ini (kalau tidak, kartunya basi):
+//   successCount = akun jadi dan terverifikasi
+//   limitCount   = percobaan mentok di "batas" Dropbox (rate-limit atau CAPTCHA);
+//                  kartunya di UI bernama Blocked
+//   errorCount   = percobaan gagal karena masalah teknis (timeout, proxy/daemon
+//                  tidak bisa start, field/tombol tidak muncul, dst.)
+//   verifCount   = akun jadi tapi belum terverifikasi. Tidak punya kartu di UI
+//                  (kartu ketiga = Blocked), tapi tetap dikirim karena
+//                  cincin progress menghitung VERIF sebagai selesai.
+const counterFields = (successCount = 0, limitCount = 0, errorCount = 0, verifCount = 0) =>
+    ({ successCount, limitCount, errorCount, verifCount });
+
+// Kontrak klasifikasi kegagalan lintas modul (register.js → server.js):
+// kondisi batas ditandai di pesan error-nya — 'Too many attempts…' dari
+// checkTooManyAttempts dan 'CAPTCHA_DETECTED: …' dari checkPageLimit. Yang
+// memulihkan keduanya adalah IP keluar + profil browser baru (atau manusia
+// yang menyelesaikan CAPTCHA di noVNC), bukan perbaikan teknis, jadi masuk
+// Blocked ('limit'). Selain itu = Error.
+const LIMIT_ERROR_PATTERN = /too many attempts|please try later|terlalu banyak percobaan|coba lagi nanti|captcha/i;
+const isLimitFailure = (message) => LIMIT_ERROR_PATTERN.test(String(message || ''));
+
 let globalState = {
-    progress: { current: 0, total: 0, status: 'Standby', successCount: 0, failedCount: 0, verifCount: 0 },
+    progress: { current: 0, total: 0, status: 'Standby', ...counterFields() },
     stats: { timeouts: 0, errors: 0 },
     info: { alias: '-', mode: '-', email: '-', ip: '-', ua: '-' },
+    // Batch terakhir berhenti karena tombol Hentikan / anggaran rentetan habis (bukan
+    // target tercapai). label worker (pill + badge) membacanya untuk menampilkan
+    // TERHENTI alih-alih FINISH — ikut terkirim lewat sync_state di `state`, jadi
+    // halaman yang dimuat ulang menampilkan label yang sama dengan halaman yang terbuka.
+    lastBatchStopped: false,
     logs: []
 };
 
@@ -112,8 +177,27 @@ let idleDurationMs = (savedSettings.idleTimeout || 600) * 1000; // Configurable 
 let globalTimeout = savedSettings.globalTimeout || 30;
 let daemonTimeout = savedSettings.daemonTimeout || 120;
 let useHeadless = savedSettings.useHeadless !== false;
-let socks5Host = savedSettings.socks5Host || '';
 let warpPort = savedSettings.warpPort || proxyManager.DEFAULT_WARP_PORT;
+// Satu jalur proxy saja ('none' | 'warp' | 'psiphon'). Field boolean lama
+// (useWarp/useSocks5/usePsiphon) hanya dibaca sekali untuk memigrasi
+// history.json yang dibuat sebelum pengaturan ini ada.
+const normalizeProxyMode = (v, legacy) => {
+    if (v === 'none' || v === 'warp' || v === 'psiphon') return v;
+    if (legacy) {
+        if (legacy.useWarp) return 'warp';
+        if (legacy.usePsiphon) return 'psiphon';
+    }
+    return 'none';
+};
+let proxyMode = normalizeProxyMode(savedSettings.proxyMode, savedSettings);
+// Direct adalah jalur yang bisa dipilih sendiri, boleh bersama satu jalur proxy:
+//   Direct + proxy  -> percobaan 1 Direct, percobaan 2..N lewat proxy
+//   hanya proxy     -> SEMUA percobaan (mulai dari yang pertama) lewat proxy
+//   Direct saja     -> semua percobaan Direct
+// Tanpa proxy dipilih, Direct tidak boleh dilepas: tidak ada jalur lain yang bisa
+// dijalankan. Default true = perilaku lama (Direct selalu pertama).
+const normalizeUseDirect = (v, mode) => (mode === 'none' ? true : (v === undefined ? true : !!v));
+let useDirect = normalizeUseDirect(savedSettings.useDirect, proxyMode);
 let debugProxy = savedSettings.debugProxy || false;
 
 // New settings fields (persisted but not used as in-memory globals yet)
@@ -125,10 +209,6 @@ let count = savedSettings.count || 8;
 let passwordMode = savedSettings.passwordMode || 'fixed';
 let fixedPassword = savedSettings.fixedPassword || '';
 let globalRetry = savedSettings.globalRetry || 2;
-let useDirect = savedSettings.useDirect !== false;
-let useWarp = savedSettings.useWarp || false;
-let useSocks5 = savedSettings.useSocks5 || false;
-let usePsiphon = savedSettings.usePsiphon || false;
 let psiphonRegions = savedSettings.psiphonRegions || [];
 global.psiphonRegions = psiphonRegions;
 let enablePreview = savedSettings.enablePreview || false;
@@ -138,8 +218,9 @@ function setWorkerStatus(newStatus) {
     workerStatus = newStatus;
     console.log(`[Worker] Status berubah ke: ${workerStatus}`);
     
-    // Broadcast status update
-    safeSend({ type: 'worker_status', status: workerStatus });
+    // Broadcast status update. `stopped` = batch terakhir dihentikan (bukan target
+    // tercapai); UI memakai itu untuk melabeli FINISH sebagai TERHENTI.
+    safeSend({ type: 'worker_status', status: workerStatus, stopped: !!globalState.lastBatchStopped });
 }
 
 function startIdleTimer() {
@@ -221,8 +302,9 @@ app.get('/api/settings', (_req, res) => {
         globalTimeout,
         daemonTimeout,
         useHeadless,
-        socks5Host,
         warpPort,
+        proxyMode,
+        useDirect,
         debugProxy,
         aliasWorker,
         urlDropbox,
@@ -232,10 +314,6 @@ app.get('/api/settings', (_req, res) => {
         passwordMode,
         fixedPassword,
         globalRetry,
-        useDirect,
-        useWarp,
-        useSocks5,
-        usePsiphon,
         enablePreview
     });
 });
@@ -245,6 +323,12 @@ app.post('/api/settings/apply', (req, res) => {
     
     // 1. Get current settings to use as base (preventing data loss)
     const currentSettings = getSettingsFull();
+
+    // Jalur keluar selalu divalidasi sepasang: proxy tunggal + apakah Direct
+    // dipakai. proxyMode 'none' memaksa useDirect true (tanpa itu tidak ada
+    // jalur yang bisa dijalankan).
+    const mergedProxyMode = normalizeProxyMode(body.proxyMode !== undefined ? body.proxyMode : currentSettings.proxyMode, currentSettings);
+    const mergedUseDirect = normalizeUseDirect(body.useDirect !== undefined ? body.useDirect : currentSettings.useDirect, mergedProxyMode);
     
     // 2. Create the merged settings object — capture EVERY field from the UI form
     const mergedSettings = {
@@ -268,14 +352,11 @@ app.post('/api/settings/apply', (req, res) => {
 
         // ── BROWSER & KONEKSI ───────────────────
         useHeadless: typeof body.useHeadless === 'boolean' ? body.useHeadless : (body.useHeadless !== undefined ? !!body.useHeadless : currentSettings.useHeadless),
-        socks5Host: body.socks5Host !== undefined ? body.socks5Host : currentSettings.socks5Host,
         warpPort: (typeof body.warpPort === 'number' ? body.warpPort : parseInt(body.warpPort)) || currentSettings.warpPort || proxyManager.DEFAULT_WARP_PORT,
 
-        // Proxy type booleans
-        useDirect:  body.useDirect  !== undefined ? !!body.useDirect  : (currentSettings.useDirect  !== false),
-        useWarp:    body.useWarp    !== undefined ? !!body.useWarp    : (currentSettings.useWarp    || false),
-        useSocks5:  body.useSocks5  !== undefined ? !!body.useSocks5  : (currentSettings.useSocks5  || false),
-        usePsiphon: body.usePsiphon !== undefined ? !!body.usePsiphon : (currentSettings.usePsiphon || false),
+        // Jalur keluar: satu proxy maksimum + Direct boleh dipilih/dilepas.
+        proxyMode: mergedProxyMode,
+        useDirect: mergedUseDirect,
         psiphonRegions: body.psiphonRegions !== undefined ? (Array.isArray(body.psiphonRegions) ? body.psiphonRegions : []) : (currentSettings.psiphonRegions || []),
 
         // ── LAIN-LAIN ───────────────────────────
@@ -291,8 +372,9 @@ app.post('/api/settings/apply', (req, res) => {
     globalTimeout = mergedSettings.globalTimeout;
     daemonTimeout = mergedSettings.daemonTimeout;
     useHeadless = mergedSettings.useHeadless;
-    socks5Host = mergedSettings.socks5Host;
     warpPort = mergedSettings.warpPort;
+    proxyMode = mergedSettings.proxyMode;
+    useDirect = mergedSettings.useDirect;
     debugProxy = mergedSettings.debugProxy;
 
     // New settings fields — update in-memory globals too
@@ -304,10 +386,6 @@ app.post('/api/settings/apply', (req, res) => {
     passwordMode = mergedSettings.passwordMode;
     fixedPassword = mergedSettings.fixedPassword;
     globalRetry = mergedSettings.globalRetry;
-    useDirect = mergedSettings.useDirect;
-    useWarp = mergedSettings.useWarp;
-    useSocks5 = mergedSettings.useSocks5;
-    usePsiphon = mergedSettings.usePsiphon;
     psiphonRegions = mergedSettings.psiphonRegions;
     global.psiphonRegions = psiphonRegions;
     enablePreview = mergedSettings.enablePreview;
@@ -478,10 +556,10 @@ wss.on('connection', (ws) => {
                 if (global.closeBrowserSession) await global.closeBrowserSession();
                 if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
                 if (global.killAllVpnProxy) await global.killAllVpnProxy();
-                // Reset progress state so refresh doesn't show stale data
-                globalState.progress = { current: 0, total: 0, status: 'Dihentikan', successCount: 0, failedCount: 0, verifCount: 0 };
-                globalState.stats = { timeouts: 0, errors: 0 };
-                globalState.info = { alias: '-', mode: '-', email: '-', ip: '-', ua: '-' };
+                // Hentikan TIDAK mereset penghitung/status: hasil batch terakhir tetap
+                // terbaca (juga setelah refresh, lewat sync_state). Yang mereset semua
+                // state hanyalah action 'start' (tombol Mulai Pendaftaran).
+                globalState.progress = { ...globalState.progress, status: 'Dihentikan' };
                 safeSend(ws, { type: 'status', status: 'stopped' });
                 return;
             }
@@ -500,10 +578,12 @@ wss.on('connection', (ws) => {
                 activeWs = ws;
                 global.activeWs = ws;
                 
-                // Reset state on new run
-                globalState.progress = { current: 0, total: 0, status: 'Memulai...', successCount: 0, failedCount: 0, verifCount: 0 };
+                // Reset state on new run — SATU-satunya tempat penghitung dan info
+                // di-nol-kan (Hentikan dan akhir batch sengaja mempertahankannya).
+                globalState.progress = { current: 0, total: 0, status: 'Memulai...', ...counterFields() };
                 globalState.stats = { timeouts: 0, errors: 0 };
                 globalState.info = { alias: '-', mode: '-', email: '-', ip: '-', ua: '-' };
+                globalState.lastBatchStopped = false;
                 globalState.logs = [];
 
                 safeSend(ws, { type: 'status', status: 'running' });
@@ -524,12 +604,16 @@ wss.on('connection', (ws) => {
                 const { 
                     action, alias, url, emails: emailsRaw, emailMode, domain, count, 
                     globalTimeout, globalRetry, daemonTimeout,
-                    useDirect, useWarp, useSocks5, usePsiphon, socks5Host, warpPort: clientWarpPort, useHeadless, passwordMode, fixedPassword, debugProxy,
+                    proxyMode: clientProxyMode, useDirect: clientUseDirect, warpPort: clientWarpPort, useHeadless, passwordMode, fixedPassword, debugProxy,
                     psiphonRegions: clientPsiphonRegions
                 } = data;
 
                 global.debugProxy = !!debugProxy;
                 const activeWarpPort = parseInt(clientWarpPort, 10) || warpPort || proxyManager.DEFAULT_WARP_PORT;
+                // Payload start dari UI menang atas state tersimpan; kalau tidak dikirim,
+                // pakai pengaturan yang aktif.
+                const activeProxyMode = ['none', 'warp', 'psiphon'].includes(clientProxyMode) ? clientProxyMode : proxyMode;
+                const activeUseDirect = normalizeUseDirect(clientUseDirect !== undefined ? clientUseDirect : useDirect, activeProxyMode);
                 global.psiphonRegions = Array.isArray(clientPsiphonRegions) ? clientPsiphonRegions : [];
                 global.psiphonUsedRegions = [];
                 
@@ -561,216 +645,317 @@ wss.on('connection', (ws) => {
                 console.log(`[Server] Mode Password: ${passwordMode === 'fixed' ? `Fixed (${fixedPassword})` : 'Random'}`);
 
                 let successCount = 0;
-                let failedCount = 0;
+                let limitCount = 0;
+                let errorCount = 0;
                 let verifCount = 0;
-                let processedCount = 0;
+                let accountsDone = 0;
+
+                // ── Anggaran percobaan = globalRetry, TAPI bukan per email: ──────────
+                //    globalRetry = berapa percobaan BERURUTAN yang boleh gagal; setiap
+                //    keberhasilan me-reset hitungan ini. Tiap percobaan selalu
+                //    IDENTITAS BARU: nama + email baru, profil camofox baru (register.js
+                //    membuat userId unik per panggilan + profil lama dihapus) dan IP
+                //    keluar baru (isRetry=true -> WARP reg.json baru / region Psiphon
+                //    baru). 'Too many attempts' / CAPTCHA menempel pada identitas + IP
+                //    keluar, jadi mengulang email yang sama tidak pernah menolong.
+                //    Percobaan pertama dalam satu rentetan = Direct HANYA kalau
+                //    jalur Direct dipilih di UI (useDirect) DAN belum ada jalur yang
+                //    terbukti berhasil; begitu satu akun jadi lewat sebuah jalur,
+                //    percobaan pertama akun berikutnya MELANJUTKAN jalur itu (IP-nya
+                //    terbukti jalan, memulainya lagi dari Direct cuma membakar satu
+                //    percobaan). Sisanya selalu jalur proxy tunggal yang dipilih
+                //    ('none' = tidak ada proxy, jadi Direct terus). Direct dilepas +
+                //    satu proxy dipilih = batch berjalan lewat proxy itu dari
+                //    percobaan pertama, retry sampai anggaran rentetan habis
+                //    (globalRetry). workingPath hidup hanya selama batch ini:
+                //    'Mulai Pendaftaran' baru = mulai lagi dari Direct.
+                const maxAttempts = Math.max(1, globalRetry || 3);
+                const wantedAccounts = emails.length;
+                const pathLabelOf = (type) => {
+                    if (type === 'warp') return `WARP (SOCKS5 127.0.0.1:${activeWarpPort})`;
+                    if (type === 'psiphon') return `Psiphon (SOCKS5 127.0.0.1:${proxyManager.PSIPHON_PORT})`;
+                    return 'Direct (IP asli, tanpa proxy)';
+                };
+                let workingPath = null;
+                const firstPathOfBatch = () => (activeUseDirect ? 'direct' : activeProxyMode);
+                const pathFor = (attemptNo) => {
+                    if (activeProxyMode === 'none') return 'direct';
+                    if (attemptNo > 1) return activeProxyMode;
+                    return workingPath || firstPathOfBatch();
+                };
+                // Percobaan pertama yang TIDAK lagi memakai aturan Direct-dulu,
+                // supaya log bisa menjelaskan alasannya.
+                const isContinuedPath = (attemptNo, type) =>
+                    attemptNo === 1 && !!workingPath && type !== firstPathOfBatch();
+                // Cara jalur dipakai, untuk satu baris rencana di log: hanya dipakai
+                // untuk menjelaskan apa yang akan dijalankan, tidak untuk alur.
+                const pathPlanText = () => {
+                    if (activeProxyMode === 'none') return 'Semua percobaan lewat Direct (tidak ada proxy dipilih)';
+                    if (!activeUseDirect) return `Semua percobaan lewat ${activeProxyMode.toUpperCase()} (Direct tidak dipilih)`;
+                    return 'Percobaan 1 lewat Direct, sisanya lewat ' + activeProxyMode.toUpperCase()
+                        + `; begitu satu akun jadi lewat ${activeProxyMode.toUpperCase()}, akun berikutnya mulai dari jalur itu lagi`;
+                };
+
+                // Sumber identitas: email dari daftar dipakai sekali (mode manual),
+                // sesudah itu nama + email baru di domain yang sama — generator yang
+                // sama dengan mode 'auto'.
+                let poolIndex = 0;
+                let lastDomain = String(emails[0]).split('@')[1] || domain || '';
+                const nextIdentity = () => {
+                    if (poolIndex < emails.length) {
+                        const e = emails[poolIndex++];
+                        lastDomain = String(e).split('@')[1] || lastDomain;
+                        return e;
+                    }
+                    const { first, last } = getRandomName();
+                    const digits = Math.floor(10 + Math.random() * 90);
+                    return `${first.toLowerCase()}.${last.toLowerCase()}${digits}@${lastDomain}`;
+                };
+
+                console.log(`[Server] Target ${wantedAccounts} akun; maksimum ${maxAttempts} percobaan berturut-turut tanpa keberhasilan — tiap percobaan memakai email + nama + profil + IP keluar baru, keberhasilan me-reset hitungan. ${pathPlanText()}.`);
+
+                // Kelas kegagalan percobaan TERAKHIR dalam rentetan ini ('limit' |
+                // 'error') — dari pesan error TERAKHIR percobaan itu, karena itulah
+                // yang menahannya. Dipakai hanya untuk memilih kata di log batch.
+                let lastFailClass = null;
+                let emailTimeouts = 0;
+                let emailErrors = 0;
 
                 try {
-                    for (let i = 0; i < emails.length; i++) {
-                        if (shouldStop) {
-                            break;
-                        }
-                        processedCount = i + 1;
-                        const email = emails[i];
-                        let emailTimeouts = 0;
-                        let emailErrors = 0;
-                        
-                        // Send initial stats to UI for the new email
-                        safeSend(ws, { type: 'email_stats', timeouts: emailTimeouts, errors: emailErrors });
-                        safeSend(ws, {
-                            type: 'progress',
-                            current: i + 1,
-                            total: emails.length,
-                            status: `Memproses email ke-${i+1} dari ${emails.length} (${email})`,
-                            successCount,
-                            failedCount,
-                            verifCount,
-                            success: false
-                        });
-
+                    // ── Satu percobaan = satu identitas. Mengembalikan true kalau
+                    //    akun jadi (success/VERIF). GAGAL: penghitung Blocked/Error dan
+                    //    record riwayat ditulis di sini juga, SEKETIKA setelah kegagalan
+                    //    terlihat — bukan setelah anggaran retry habis.
+                    async function runAttempt({ proxyType, phaseLabel, email, attempt, isRetry }) {
                         let registrationSuccess = false;
-                        const maxAttempts = globalRetry || 3;
 
-                        // ── Helper: run inner browser retry loop for a given proxyType ───
-                        const runBrowserLoop = async (proxyType, proxyHost, phaseLabel, isPhaseRetry) => {
-                            // Any hard reset between attempts: drop the browser session
-                            // (camofox profile + tab) and the daemon, keep the server up.
-                            const resetSession = async () => {
-                                if (global.closeBrowserSession) await global.closeBrowserSession();
-                                if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
-                            };
+                        // IP keluar percobaan INI saja. Engine (register.js) mengisinya
+                        // begitu jalur keluar benar-benar terukur; record riwayat gagal
+                        // harus menyebut IP yang dipakai percobaan itu, dan '-' kalau
+                        // kematian terjadi sebelum ada IP terukur (proxy mati, tab gagal).
+                        global.currentExitIp = '';
 
-                            // Pencatatan hasil sukses — dipakai jalur normal maupun
-                            // jalur pengulangan device connect dengan sesi yang sama.
-                            const handleSuccess = (result) => {
-                                registrationSuccess = true;
-                                const finalStatus = result.status || 'success';
-                                if (finalStatus === 'VERIF') {
-                                    verifCount++;
-                                } else {
-                                    successCount++;
-                                }
-                                console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
-                                safeSend(ws, { type: 'email_success', email: email });
-                                // Update progress ring for this successful email
-                                safeSend(ws, {
-                                    type: 'progress',
-                                    current: processedCount,
-                                    total: emails.length,
-                                    status: `Berhasil: ${email}`,
-                                    successCount,
-                                    failedCount,
-                                    verifCount,
-                                    success: true
-                                });
-                                try {
-                                    saveRegistration(email, result.password, finalStatus, alias, result.ip, result.ua, emailTimeouts, emailErrors);
-                                } catch (dbErr) {
-                                    originalError('DB save error:', dbErr.message);
-                                }
-                            };
+                        // Any hard reset between attempts: drop the browser session
+                        // (camofox profile + tab) and the daemon, keep the server up.
+                        const resetSession = async () => {
+                            if (global.closeBrowserSession) await global.closeBrowserSession();
+                            if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
+                        };
 
-                            let attempts = 0;
-                            while (!registrationSuccess && attempts < maxAttempts) {
-                                if (shouldStop) break;
-                                attempts++;
-
-                                const isRetry = isPhaseRetry || attempts > 1;
-                                if (attempts > 1 || isPhaseRetry) {
-                                    console.log(`\n[Mencoba Kembali] ${phaseLabel} — Attempt ${attempts}/${maxAttempts} untuk ${email}`);
-                                }
-
-                                try {
-                                    currentAbortController = { shouldStop: false, abort: null };
-                                    const result = await _registerSingleEmail(
-                                        url, email, proxyType, proxyHost,
-                                        currentAbortController, useHeadless,
-                                        passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry,
-                                        { warpPort: activeWarpPort }
-                                    );
-
-                                    if (result && result.success) {
-                                        handleSuccess(result);
-                                    } else {
-                                        console.log(`⚠️ Pendaftaran ${email} mengembalikan hasil tidak valid (Attempt ${attempts}).`);
-                                        await resetSession();
-                                    }
-
-                                } catch (error) {
-                                    if (shouldStop) break;
-                                    const errMsg = (error.message || '');
-                                    
-                                    if (errMsg.toLowerCase().includes('timeout')) {
-                                        emailTimeouts++;
-                                    } else {
-                                        emailErrors++;
-                                    }
-                                    safeSend(ws, { type: 'email_stats', timeouts: emailTimeouts, errors: emailErrors });
-                                    
-                                    console.log(`\n❌ Error attempt ${attempts}/${maxAttempts} [${phaseLabel}]: ${errMsg.replace(/^(BROWSER_KILL_REQUIRED|DEVICE_CONNECT_FAILED): /, '').split('\n')[0]}`);
-
-                                    // Kegagalan di langkah menghubungkan perangkat: akun
-                                    // sudah dibuat dan tab masih login, jadi sesi TIDAK
-                                    // dimatikan — cukup ulangi langkah itu dengan sesi yang
-                                    // sama. Sesi baru dilepas untuk kegagalan yang memang
-                                    // mengharuskan mulai dari awal.
-                                    if (errMsg.startsWith('DEVICE_CONNECT_FAILED') && global.retryDeviceConnect) {
-                                        console.log(`🔌 Sesi dipertahankan — mengulang langkah menghubungkan perangkat tanpa login ulang...`);
-                                        currentAbortController = { shouldStop, abort: null };
-                                        try {
-                                            const resumed = await global.retryDeviceConnect({ abortController: currentAbortController });
-                                            if (resumed && resumed.success) handleSuccess(resumed);
-                                        } catch (resumeError) {
-                                            console.log(`❌ Pengulangan device connect gagal: ${(resumeError.message || '').split('\n')[0]}`);
-                                        }
-                                        // retryDeviceConnect menutup sesi sendiri saat langkah
-                                        // selesai; kalau masih gagal, loop fase di bawah yang memutuskan.
-                                        if (registrationSuccess) continue;
-                                        await resetSession();
-                                    } else {
-                                        await resetSession();
-                                    }
-
-                                    if (errMsg.toLowerCase().includes('too many attempts')) {
-                                        console.log(`🔄 Deteksi 'Too many attempts'. Langsung memicu rotasi IP / Fase berikutnya...`);
-                                        break;
-                                    }
-
-                                    if (attempts < maxAttempts) {
-                                        console.log(`🔄 Sesi direset, memulai percobaan ${attempts + 1}/${maxAttempts} dengan sesi (dan IP) baru...`);
-                                        await new Promise(r => setTimeout(r, 2000));
-                                    } else {
-                                        console.log(`🛑 Batas ${maxAttempts} percobaan browser tercapai untuk fase ${phaseLabel}.`);
-                                    }
-                                } finally {
-                                    currentAbortController = null;
-                                }
+                        // Pencatatan hasil sukses — dipakai jalur normal maupun jalur
+                        // pengulangan device connect dengan sesi yang sama.
+                        const handleSuccess = (result) => {
+                            registrationSuccess = true;
+                            const finalStatus = result.status || 'success';
+                            if (finalStatus === 'VERIF') {
+                                verifCount++;
+                            } else {
+                                successCount++;
+                            }
+                            console.log(`✓ Pendaftaran ${finalStatus} untuk ${email} (password: ${result.password})`);
+                            safeSend(ws, { type: 'email_success', email: email });
+                            // Update progress ring: akun ini sudah jadi.
+                            safeSend(ws, {
+                                type: 'progress',
+                                current: accountsDone + 1,
+                                total: wantedAccounts,
+                                status: `Berhasil: ${email}`,
+                                ...counterFields(successCount, limitCount, errorCount, verifCount),
+                                success: true
+                            });
+                            try {
+                                saveRegistration({ email, password: result.password, status: finalStatus, alias, ip: result.ip, connection: proxyType });
+                            } catch (dbErr) {
+                                originalError('DB save error:', dbErr.message);
                             }
                         };
 
-                        // ── Build phase list: Direct first, then Warp, then Psiphon, then Socks5 ───────────────
-                        const phases = [];
-                        if (useDirect)  phases.push({ type: 'direct', host: null });
-                        if (useWarp)    phases.push({ type: 'warp', host: null });
-                        if (usePsiphon) phases.push({ type: 'psiphon', host: null });
-                        if (useSocks5)  phases.push({ type: 'socks5', host: socks5Host });
-                        if (phases.length === 0) phases.push({ type: 'direct', host: null }); // safety fallback
-
-                        let globalDone = false;
-
-                        for (let phaseIdx = 0; phaseIdx < phases.length && !globalDone; phaseIdx++) {
-                            if (shouldStop) break;
-
-                            const currentPhase = phases[phaseIdx].type;
-                            const currentHost = phases[phaseIdx].host;
-                            const phaseLabel = currentPhase === 'warp' ? 'Warp+Socks5' : (currentPhase === 'psiphon' ? 'Psiphon' : (currentPhase === 'socks5' ? `Socks5 Only (${currentHost})` : 'Direct Connection'));
-                            console.log(`\n[Phase ${phaseIdx + 1}/${phases.length}] Memulai dengan mode: ${phaseLabel}`);
-
-                            // Rotasi IP keluar (restart WARP/reg.json, region Psiphon) dan
-                            // sesi browser baru sudah ditangani registerSingleEmail saat
-                            // isRetry=true, jadi satu loop percobaan per fase sudah cukup.
-                            await runBrowserLoop(currentPhase, currentHost, phaseLabel, phaseIdx > 0);
-
-                            if (registrationSuccess) { globalDone = true; break; }
-
-                            if (phaseIdx < phases.length - 1) {
-                                console.log(`\n⚠️ Fase ${phaseLabel} habis. Beralih ke fase berikutnya...`);
-                            }
-                        }
-
-                        // ── Handle total failure ──────────────────────────────────────────
-                        if (!registrationSuccess && !shouldStop) {
-                            const phaseSummary = phases.map(p => p.type === 'warp' ? 'Warp+Socks5' : (p.type === 'psiphon' ? 'Psiphon' : (p.type === 'socks5' ? 'Socks5 Only' : 'Direct Connection'))).join(' → ');
-                            console.log(`\n❌ GAGAL TOTAL [${phaseSummary}]: Semua percobaan untuk ${email} sudah habis.`);
-                            console.log(`🛠️ Mereset sesi browser dan menghentikan daemon...`);
-                            if (global.closeBrowserSession) await global.closeBrowserSession();
-                            if (global.killDropboxDaemon) global.killDropboxDaemon({ log: false });
-
-                            failedCount++;
+                        // Hasil akhir sebuah percobaan yang GAGAL: kartu Blocked/Error naik
+                        // dan record riwayat ditulis SEKARANG, tidak menunggu anggaran
+                        // retry habis. Blocked ('limit') = 'too many attempts' / CAPTCHA
+                        // (kelas dari pesan error terakhir); Error ('error') = sisanya
+                        // (timeout, proxy/daemon tidak jalan, tombol tidak ketemu, dst).
+                        const failAttempt = (failClass) => {
+                            lastFailClass = failClass;
+                            // IP keluar yang TERUKUR pada percobaan inilah yang dicatat,
+                            // supaya "kenapa blocked ini terjadi" bisa ditelusuri ke satu
+                            // IP/profil. '' (→ '-' di tabel) berarti belum ada IP terukur.
+                            const failIp = global.currentExitIp || '';
+                            // Satu baris yang menyebut SEMUA yang perlu diketahui soal
+                            // kegagalan ini: kelas, percobaan ke-N, jalur keluar, dan
+                            // identitas yang dipakai. Baris `❌ Error percobaan …` hanya
+                            // punya pesan; emailnya baru terlihat di sini.
+                            console.log(`[FAIL] ${failClass === 'limit' ? 'Blocked (batas Dropbox / CAPTCHA)' : 'Error (kegagalan teknis)'} — percobaan ${attempt}/${maxAttempts} via ${phaseLabel} → ${email}`);
+                            if (failClass === 'limit') limitCount++; else errorCount++;
                             try {
-                                saveRegistration(email, passwordMode === 'fixed' ? fixedPassword : '(random)', 'failed', alias, '', '', emailTimeouts, emailErrors);
+                                saveRegistration({
+                                    email,
+                                    password: passwordMode === 'fixed' ? fixedPassword : '(random)',
+                                    status: 'failed',
+                                    alias,
+                                    ip: failIp,
+                                    connection: proxyType,
+                                    failClass
+                                });
                             } catch (_) {}
+                            safeSend(ws, {
+                                type: 'progress',
+                                current: accountsDone + 1,
+                                total: wantedAccounts,
+                                status: `Gagal ${failClass === 'limit' ? 'Blocked' : 'Error'}: ${email}`,
+                                ...counterFields(successCount, limitCount, errorCount, verifCount),
+                                success: false
+                            });
+                        };
 
-                            console.log(`🚫 Menghentikan semua proses pendaftaran dan masuk ke mode IDLE.`);
-                            shouldStop = true;  // stop entire batch → idle
+                        if (isRetry) {
+                            console.log(`\n[Mencoba Kembali] Percobaan ${attempt}/${maxAttempts} via ${phaseLabel} — email + nama BARU: ${email} (profil browser baru, IP keluar baru)`);
                         }
 
-                    } // End of email loop
+                        try {
+                            currentAbortController = { shouldStop: false, abort: null };
+                            const result = await _registerSingleEmail(
+                                url, email, proxyType, null, // WARP/Psiphon = SOCKS5 lokal di register.js
+                                currentAbortController, useHeadless,
+                                passwordMode, fixedPassword, globalTimeout, daemonTimeout, alias, maxAttempts, isRetry,
+                                { warpPort: activeWarpPort }
+                            );
+
+                            if (result && result.success) {
+                                handleSuccess(result);
+                                return true;
+                            }
+
+                            // Objek tanpa hasil = kegagalan teknis, jadi dihitung sebagai
+                            // ERROR dan percobaan berikutnya sudah pasti email yang baru.
+                            console.log(`⚠️ Pendaftaran ${email} mengembalikan hasil tidak valid (Percobaan ${attempt}/${maxAttempts}).`);
+                            await resetSession();
+                            emailErrors++;
+                            safeSend(ws, { type: 'email_stats', timeouts: emailTimeouts, errors: emailErrors });
+                            failAttempt('error');
+                            return false;
+
+                        } catch (error) {
+                            if (shouldStop) return false;
+                            const errMsg = (error.message || '');
+                            let failClass = isLimitFailure(errMsg) ? 'limit' : 'error';
+
+                            if (errMsg.toLowerCase().includes('timeout')) {
+                                emailTimeouts++;
+                            } else {
+                                emailErrors++;
+                            }
+                            safeSend(ws, { type: 'email_stats', timeouts: emailTimeouts, errors: emailErrors });
+
+                            console.log(`\n❌ Error percobaan ${attempt}/${maxAttempts} [${phaseLabel}]: ${errMsg.replace(/^(BROWSER_KILL_REQUIRED|DEVICE_CONNECT_FAILED): /, '').split('\n')[0]}`);
+
+                            // Kegagalan di langkah menghubungkan perangkat: akun
+                            // sudah dibuat dan tab masih login, jadi sesi TIDAK
+                            // dimatikan — cukup ulangi langkah itu dengan sesi yang
+                            // sama. Sesi baru dilepas untuk kegagalan yang memang
+                            // mengharuskan mulai dari awal.
+                            if (errMsg.startsWith('DEVICE_CONNECT_FAILED') && global.retryDeviceConnect) {
+                                console.log(`🔌 Sesi dipertahankan — mengulang langkah menghubungkan perangkat tanpa login ulang...`);
+                                currentAbortController = { shouldStop, abort: null };
+                                try {
+                                    const resumed = await global.retryDeviceConnect({ abortController: currentAbortController });
+                                    if (resumed && resumed.success) {
+                                        handleSuccess(resumed);
+                                        return true;
+                                    }
+                                } catch (resumeError) {
+                                    // Kelas diambil dari pesan TERAKHIR — kalau yang
+                                    // gagal adalah pengulangannya, itulah yang menahan
+                                    // akun ini, bukan kegagalan pertama.
+                                    const resumeMsg = (resumeError.message || '');
+                                    failClass = isLimitFailure(resumeMsg) ? 'limit' : 'error';
+                                    console.log(`❌ Pengulangan device connect gagal: ${resumeMsg.split('\n')[0]}`);
+                                }
+                                // retryDeviceConnect menutup sesi sendiri saat langkah selesai.
+                                await resetSession();
+                            } else {
+                                await resetSession();
+                            }
+
+                            failAttempt(failClass);
+                            return false;
+                        } finally {
+                            currentAbortController = null;
+                        }
+                    }
+
+                    // ── Satu percobaan = satu identitas. Anggaran = maxAttempts
+                    //    kegagalan BERURUTAN; keberhasilan me-reset hitungan dan
+                    //    menghitung satu akun. Email dari daftar hanya kolam awal:
+                    //    begitu terpakai, identitas berikutnya nama + email baru di
+                    //    domain yang sama.
+                    let attemptsWithoutSuccess = 0;
+                    while (accountsDone < wantedAccounts && !shouldStop) {
+                        const attempt = ++attemptsWithoutSuccess;
+                        const isRetry = attempt > 1;
+                        const proxyType = pathFor(attempt);
+                        const phaseLabel = pathLabelOf(proxyType);
+                        const email = nextIdentity();
+                        // Kartu timeout/error adalah milik SATU identitas: reset tiap
+                        // percobaan, karena tiap percobaan identitas baru.
+                        emailTimeouts = 0;
+                        emailErrors = 0;
+                        lastFailClass = null;
+
+                        console.log(`\n[Jalur keluar] ${phaseLabel} — percobaan ${attempt} dari ${maxAttempts} (rentetan tanpa keberhasilan)${
+                            isContinuedPath(attempt, proxyType) ? ' — melanjutkan jalur yang sudah berhasil' : ''}`);
+                        safeSend(ws, { type: 'email_stats', timeouts: 0, errors: 0 });
+                        safeSend(ws, {
+                            type: 'progress',
+                            current: accountsDone + 1,
+                            total: wantedAccounts,
+                            status: `Mencoba ${email} — percobaan ${attempt}/${maxAttempts} via ${phaseLabel}`,
+                            ...counterFields(successCount, limitCount, errorCount, verifCount),
+                            success: false
+                        });
+
+                        const ok = await runAttempt({ proxyType, phaseLabel, email, attempt, isRetry });
+                        // Hentikan ditekan di tengah percobaan: tidak ada yang dihitung.
+                        if (shouldStop) break;
+
+                        if (ok) {
+                            // Jalur yang menghasilkan akun ini dipakai lagi oleh
+                            // percobaan pertama akun berikutnya (IP-nya terbukti
+                            // jalan); baru batch berikutnya kembali ke Direct.
+                            workingPath = proxyType;
+                            accountsDone++;
+                            attemptsWithoutSuccess = 0;   // keberhasilan me-reset anggaran
+                            continue;
+                        }
+
+                        if (attempt >= maxAttempts) {
+                            console.log(`\n🛑 Batas ${maxAttempts} percobaan berturut-turut tanpa keberhasilan tercapai (percobaan terakhir via ${phaseLabel}).`);
+                            console.log(`🚫 Menghentikan semua proses pendaftaran dan masuk ke mode IDLE.`);
+                            shouldStop = true;
+                            break;
+                        }
+
+                        console.log(`🔄 ${lastFailClass === 'limit'
+                            ? 'Batas Dropbox terdeteksi (rate-limit / CAPTCHA)'
+                            : 'Kegagalan teknis'} — lanjut percobaan ${attempt + 1}/${maxAttempts} dengan email + nama + profil + IP keluar baru...`);
+                        await new Promise((r) => setTimeout(r, 2000));
+                    }
 
                     const finalStatus = shouldStop ? 'stopped' : 'success';
                     safeSend({ type: 'status', status: finalStatus });
-                    // Only send progress summary when completed (not when stopped) —
-                    // to avoid overwriting the stop handler's globalState reset
-                    if (!shouldStop) {
-                        safeSend({
-                            type: 'progress',
-                            current: processedCount,
-                            total: emails.length,
-                            status: 'Semua email selesai diproses.',
-                            successCount,
-                            failedCount
-                        });
-                    }
+                    // Ringkasan akhir selalu dikirim (juga saat berhenti): penghitung
+                    // sengaja dipertahankan sampai Mulai Pendaftaran berikutnya, jadi
+                    // halaman yang terbuka TIDAK boleh menampilkan angka basi/nol.
+                    safeSend({
+                        type: 'progress',
+                        current: accountsDone,
+                        total: wantedAccounts,
+                        status: shouldStop
+                            ? 'Batch dihentikan.'
+                            : `Target ${wantedAccounts} akun tercapai.`,
+                        ...counterFields(successCount, limitCount, errorCount, verifCount)
+                    });
+                    console.log(`📊 Ringkasan batch: ${accountsDone} dari ${wantedAccounts} akun jadi — ${successCount} sukses, ${verifCount} VERIF (akun jadi, belum terverifikasi), ${limitCount} BLOCKED (batas Dropbox), ${errorCount} ERROR tercatat.`);
                 } catch (err) {
                     console.error('Error saat menjalankan proses pendaftaran:', err);
                     safeSend({ type: 'status', status: 'error' });
@@ -784,10 +969,12 @@ wss.on('connection', (ws) => {
                     // Stop live preview interval
                     if (screenshotInterval) clearInterval(screenshotInterval);
                     global.livePreview = false;
-                    // Reset progress so refresh shows 0% after finish
-                    globalState.progress = { current: 0, total: 0, status: 'Selesai', successCount: 0, failedCount: 0, verifCount: 0 };
-                    globalState.stats = { timeouts: 0, errors: 0 };
-                    globalState.info = { alias: '-', mode: '-', email: '-', ip: '-', ua: '-' };
+                    // Penghitung batch TETAP di sini (hanya 'start' yang mereset), supaya
+                    // refresh halaman menampilkan hasil batch terakhir. Yang diganti hanya
+                    // label statusnya — 'Dihentikan' kalau berhenti di tengah, 'Selesai'
+                    // kalau semua email diproses.
+                    globalState.progress = { ...globalState.progress, status: shouldStop ? 'Dihentikan' : 'Selesai' };
+                    globalState.lastBatchStopped = !!shouldStop;
 
                     setWorkerStatus('FINISH');
                     startIdleTimer();

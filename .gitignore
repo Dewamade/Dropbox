@@ -7,5 +7,4 @@ psiphon/
 warp/
 data/
 history.json
-selector.json
 .agents

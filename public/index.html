@@ -129,13 +129,13 @@
                                     <div class="stat-value" id="stat-success-count">0</div>
                                     <div class="stat-label">Sukses</div>
                                 </div>
-                                <div class="stat-card stat-failed">
-                                    <div class="stat-value" id="stat-failed-count">0</div>
-                                    <div class="stat-label">Gagal</div>
+                                <div class="stat-card stat-limit">
+                                    <div class="stat-value" id="stat-limit-count">0</div>
+                                    <div class="stat-label">Blocked</div>
                                 </div>
-                                <div class="stat-card stat-verif">
-                                    <div class="stat-value" id="stat-verif-count">0</div>
-                                    <div class="stat-label">Verif</div>
+                                <div class="stat-card stat-error">
+                                    <div class="stat-value" id="stat-error-count">0</div>
+                                    <div class="stat-label">Error</div>
                                 </div>
                             </div>
 
@@ -328,13 +328,27 @@
                             </div>
                             <div class="settings-section-body">
                                 <div class="form-group" id="connection-type-group">
-                                    <label>Tipe Koneksi</label>
+                                    <label>Jalur Keluar</label>
                                     <div class="check-group">
-                                        <label class="check-option"><input type="checkbox" id="use-direct"> 🌐 Direct</label>
-                                        <label class="check-option"><input type="checkbox" id="use-warp"> 🔒 Warp+Socks5</label>
-                                        <label class="check-option"><input type="checkbox" id="use-socks5"> 🧦 Socks5 Only</label>
-                                        <label class="check-option"><input type="checkbox" id="use-psiphon" checked> 🛡 Psiphon</label>
+                                        <label class="check-option"><input type="checkbox" id="use-direct"> 🖥️ Direct (IP asli host)</label>
+                                        <label class="check-option"><input type="radio" name="proxy-mode" value="none"> 🚫 Tanpa proxy</label>
+                                        <label class="check-option"><input type="radio" name="proxy-mode" value="warp"> 🔒 WARP (Cloudflare, SOCKS5 dari ./warp)</label>
+                                        <label class="check-option"><input type="radio" name="proxy-mode" value="psiphon"> 🛡 Psiphon</label>
                                     </div>
+                                    <p style="font-size:0.78rem; color:#a1a1aa; margin:0.4rem 0 0;" id="path-plan-hint">
+                                        Direct dan <b>satu</b> proxy boleh dipilih bersamaan: percobaan pertama lewat
+                                        Direct, percobaan berikutnya lewat proxy itu. <b>Sekali satu akun jadi lewat
+                                        proxy itu, akun berikutnya langsung mulai dari jalur itu lagi</b> (IP-nya sudah
+                                        terbukti jalan) — kembali ke Direct hanya setelah <b>Mulai Pendaftaran</b> yang
+                                        baru. <b>Lepas centang Direct</b> bersama
+                                        satu proxy = semua percobaan, mulai dari yang pertama, lewat proxy itu. Tanpa proxy
+                                        dipilih, Direct tidak bisa dilepas. <b>Global Retry</b> = jumlah
+                                        percobaan <b>berturut-turut tanpa keberhasilan</b>: tiap percobaan selalu memakai
+                                        email + nama + profil browser + IP keluar <b>baru</b> (batas Dropbox menempel pada
+                                        identitas + IP, jadi email yang sama tidak pernah diulang), dan satu keberhasilan
+                                        me-reset hitungan. Batch berhenti kalau batas itu tercapai.
+                                    </p>
+                                    <p style="font-size:0.78rem; margin:0.4rem 0 0;" id="path-plan-now"></p>
                                 </div>
 
                                 <div class="form-group">
@@ -382,11 +396,6 @@
                                         <label class="psiphon-cb"><input type="checkbox" value="SG"> 🇸🇬 Singapura</label>
                                         <label class="psiphon-cb"><input type="checkbox" value="US"> 🇺🇸 Amerika</label>
                                     </div>
-                                </div>
-
-                                <div class="form-group" id="socks5-input-group" style="display:none;">
-                                    <label for="socks5-host">Socks5 Host:Port</label>
-                                    <input type="text" id="socks5-host" placeholder="127.0.0.1:1080">
                                 </div>
 
                                 <div class="form-group" id="warp-port-group" style="display:none;">
@@ -532,9 +541,24 @@
         const globalRetryInput    = document.getElementById('global-retry');
         const daemonTimeoutInput  = document.getElementById('daemon-timeout');
         
-        const useDirectCheckbox   = document.getElementById('use-direct');
-        const useWarpCheckbox     = document.getElementById('use-warp');
-        const usePsiphonCheckbox  = document.getElementById('use-psiphon');
+        const proxyModeInputs   = () => Array.from(document.querySelectorAll('input[name="proxy-mode"]'));
+        const getProxyMode      = () => { const c = proxyModeInputs().find(r => r.checked); return c ? c.value : 'none'; };
+        const useDirectInput    = document.getElementById('use-direct');
+        const pathPlanNow       = document.getElementById('path-plan-now');
+        // Direct adalah jalur sendiri: boleh dicentang bersama satu proxy (pakai
+        // Direct untuk percobaan pertama) atau dilepas (semua percobaan lewat
+        // proxy). Tanpa proxy dipilih, Direct tidak bisa dilepas — sama seperti
+        // normalizeUseDirect() di server.js.
+        const getUseDirect      = () => (getProxyMode() === 'none') ? true : !!useDirectInput.checked;
+        const setProxyMode      = (mode) => {
+            const m = ['none', 'warp', 'psiphon'].includes(mode) ? mode : 'none';
+            proxyModeInputs().forEach(r => { r.checked = (r.value === m); });
+            updateProxyPathUI();
+        };
+        const setUseDirect      = (v) => { useDirectInput.checked = v !== false; updateProxyPathUI(); };
+        // Batch yang sedang berjalan mengunci seluruh form; dipakai juga untuk
+        // mengunci centang Direct (lihat updateProxyPathUI).
+        let formLocked = false;
         
         const pwRandomRadio       = document.getElementById('pw-random');
         const pwFixedRadio        = document.getElementById('pw-fixed');
@@ -557,10 +581,6 @@
         const infoTimeout = document.getElementById('info-timeout');
         const infoError   = document.getElementById('info-error');
         
-        const useSocks5Checkbox = document.getElementById('use-socks5');
-        const socks5InputGroup = document.getElementById('socks5-input-group');
-        const socks5HostInput = document.getElementById('socks5-host');
-
         const psiphonRegionGroup = document.getElementById('psiphon-region-group');
 
         function getSelectedPsiphonRegions() {
@@ -572,10 +592,6 @@
                 cb.checked = regions.includes(cb.value);
             });
         }
-
-        usePsiphonCheckbox.addEventListener('change', (e) => {
-            psiphonRegionGroup.style.display = e.target.checked ? 'flex' : 'none';
-        });
 
         const debugProxyCheckbox  = document.getElementById('debug-proxy');
         const vpnLogContainer     = document.getElementById('vpn-log-container');
@@ -593,9 +609,32 @@
         const uaModal = document.getElementById('ua-modal');
         const closeUaModal = document.getElementById('close-ua-modal');
 
-        useSocks5Checkbox.addEventListener('change', (e) => {
-            socks5InputGroup.style.display = e.target.checked ? 'flex' : 'none';
-        });
+        // Panel pengaturan hanya untuk jalur yang sedang dipilih, plus rencana
+        // jalur yang akan dipakai batch berikutnya (baris 'Rencana:' di panel).
+        function updateProxyPathUI() {
+            const mode = getProxyMode();
+            psiphonRegionGroup.style.display = mode === 'psiphon' ? 'flex' : 'none';
+            warpPortGroup.style.display = mode === 'warp' ? 'flex' : 'none';
+            // Tanpa proxy, Direct tidak boleh dilepas: tidak ada jalur lain.
+            if (mode === 'none') useDirectInput.checked = true;
+            useDirectInput.disabled = formLocked || mode === 'none';
+            const retry = parseInt(globalRetryInput.value, 10) || 1;
+            const upper = mode.toUpperCase();
+            if (mode === 'none') {
+                pathPlanNow.textContent = `Rencana: semua percobaan lewat Direct (tidak ada proxy dipilih).`;
+                pathPlanNow.style.color = '#a1a1aa';
+            } else if (useDirectInput.checked) {
+                pathPlanNow.textContent = `Rencana: percobaan 1 lewat Direct, percobaan 2..${retry} lewat ${upper}; setelah ada akun yang jadi lewat ${upper}, akun berikutnya mulai dari ${upper} lagi.`;
+                pathPlanNow.style.color = '#a1a1aa';
+            } else {
+                pathPlanNow.textContent = `Rencana: SEMUA percobaan (1..${retry}) lewat ${upper} — Direct tidak dipakai.`;
+                pathPlanNow.style.color = '#fbbf24';
+            }
+        }
+        proxyModeInputs().forEach(r => r.addEventListener('change', () => { updateProxyPathUI(); saveSettings(); }));
+        useDirectInput.addEventListener('change', () => { updateProxyPathUI(); saveSettings(); });
+        globalRetryInput.addEventListener('input', updateProxyPathUI);
+        updateProxyPathUI();
         
         const startBtn            = document.getElementById('start-btn');
         const stopBtn             = document.getElementById('stop-btn');
@@ -608,7 +647,8 @@
         const statusText          = document.getElementById('status-text');
         const progressDetail      = document.getElementById('progress-detail');
         const successCountEl      = document.getElementById('stat-success-count');
-        const failedCountEl       = document.getElementById('stat-failed-count');
+        const limitCountEl        = document.getElementById('stat-limit-count');
+        const errorCountEl        = document.getElementById('stat-error-count');
 
         // History modal
         const historyBtn           = document.getElementById('history-btn');
@@ -858,8 +898,9 @@
                         daemonTimeout: parseInt(daemonTimeoutInput.value) || 30,
                         useVisible: useVisibleCheckbox.checked,
                         useHeadless: !useVisibleCheckbox.checked,
-                        socks5Host: socks5HostInput.value,
                         warpPort: parseInt(warpPortInput.value) || 40000,
+                        proxyMode: getProxyMode(),
+                        useDirect: getUseDirect(),
                         debugProxy: debugProxyCheckbox.checked,
                         aliasWorker: aliasInput.value,
                         urlDropbox: dropboxUrlInput.value,
@@ -869,10 +910,6 @@
                         passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
                         fixedPassword: fixedPasswordInput.value,
                         globalRetry: parseInt(globalRetryInput.value) || 2,
-                        useDirect: useDirectCheckbox.checked,
-                        useWarp: useWarpCheckbox.checked,
-                        useSocks5: useSocks5Checkbox.checked,
-                        usePsiphon: usePsiphonCheckbox.checked,
                         psiphonRegions: getSelectedPsiphonRegions(),
                         enablePreview: document.getElementById('enable-preview').checked
                     })
@@ -939,7 +976,20 @@
             url.hostname = host;   // dashboard bisa dibuka dari mesin lain
             novncLink.href = url.href;
         }
-        useVisibleCheckbox.addEventListener('change', () => { updateVisibleModeUI(); });
+        // Mode terlihat mengubah mesin (camofox dimulai dengan/ tanpa VNC), jadi
+        // perubahannya langsung disimpan ke server (apply mengirim fields lain apa
+        // adanya) — bukan cuma localStorage — supaya tetap aktif setelah
+        // `node server.js` dijalankan ulang.
+        useVisibleCheckbox.addEventListener('change', async () => {
+            updateVisibleModeUI();
+            try {
+                await fetch('/api/settings/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ useHeadless: !useVisibleCheckbox.checked })
+                });
+            } catch (_) { /* localStorage sudah menyimpan */ }
+        });
         updateVisibleModeUI();
 
         // ── Zoom preview browser (1x–4x, relatif terhadap "pas di kotak") ──
@@ -969,12 +1019,6 @@
             if (simpan >= 1 && simpan <= 4) previewZoom.value = String(simpan);
         } catch (_) { }
         applyPreviewZoom();
-
-        function updateWarpPortUI() {
-            warpPortGroup.style.display = useWarpCheckbox.checked ? 'flex' : 'none';
-        }
-        useWarpCheckbox.addEventListener('change', updateWarpPortUI);
-        updateWarpPortUI();
 
         // ── Status mesin lokal (warp-go / psiphon / camofox / daemon) ─
         async function refreshProxyStatus() {
@@ -1042,12 +1086,9 @@
                 emails: emailsListInput.value,
                 domain: autoDomainInput.value,
                 count: autoCountInput.value,
-                useDirect: useDirectCheckbox.checked,
-                useWarp: useWarpCheckbox.checked,
-                useSocks5: useSocks5Checkbox.checked,
-                usePsiphon: usePsiphonCheckbox.checked,
+                proxyMode: getProxyMode(),
+                useDirect: getUseDirect(),
                 psiphonRegions: getSelectedPsiphonRegions(),
-                socks5Host: socks5HostInput.value,
                 passwordMode: pwFixedRadio.checked ? 'fixed' : 'random',
                 fixedPassword: fixedPasswordInput.value,
                 emailMode: emAutoRadio.checked ? 'auto' : 'manual',
@@ -1086,17 +1127,22 @@
                 if (settings.globalTimeout) globalTimeoutInput.value = settings.globalTimeout;
                 if (settings.globalRetry) globalRetryInput.value = settings.globalRetry;
                 if (settings.daemonTimeout) daemonTimeoutInput.value = settings.daemonTimeout;
-                if (settings.useVisible !== undefined) useVisibleCheckbox.checked = !!settings.useVisible;
+                // Server mengirim `useHeadless`; fallback localStorage memakai kunci
+                // `useVisible` (lihat saveSettings) — keduanya harus dibaca.
+                const headless = settings.useHeadless !== undefined
+                    ? !!settings.useHeadless
+                    : (settings.useVisible !== undefined ? !settings.useVisible : undefined);
+                if (headless !== undefined) useVisibleCheckbox.checked = (headless === false);
                 if (settings.warpPort) warpPortInput.value = settings.warpPort;
 
                 updateVisibleModeUI();
                 
-                if (settings.useDirect !== undefined) useDirectCheckbox.checked = settings.useDirect;
-                if (settings.useWarp !== undefined) useWarpCheckbox.checked = settings.useWarp;
-                if (settings.useSocks5 !== undefined) useSocks5Checkbox.checked = settings.useSocks5;
-                if (settings.usePsiphon !== undefined) usePsiphonCheckbox.checked = settings.usePsiphon;
+                setProxyMode(settings.proxyMode
+                    || (settings.useWarp ? 'warp' : (settings.usePsiphon ? 'psiphon' : 'none')));
+                // `useDirect` lama (mesin Playwright) berarti sama: Direct tidak
+                // dipakai. Field tidak ada = Direct tetap pertama (perilaku lama).
+                setUseDirect(settings.useDirect !== false);
                 if (settings.psiphonRegions) setPsiphonRegions(settings.psiphonRegions);
-                if (settings.socks5Host) socks5HostInput.value = settings.socks5Host;
                 
                 if (settings.debugProxy !== undefined) {
                     debugProxyCheckbox.checked = settings.debugProxy;
@@ -1120,16 +1166,14 @@
                 if (settings.enablePreview !== undefined) document.getElementById('enable-preview').checked = settings.enablePreview;
                 updatePasswordModeUI();
                 updateEmailModeUI();
-                socks5InputGroup.style.display = useSocks5Checkbox.checked ? 'flex' : 'none';
-                psiphonRegionGroup.style.display = usePsiphonCheckbox.checked ? 'flex' : 'none';
             }
         }
         
         // Save settings on any change
         const inputsToSave = [
             aliasInput, dropboxUrlInput, emailsListInput, autoDomainInput, autoCountInput, 
-            globalTimeoutInput, globalRetryInput, daemonTimeoutInput, useDirectCheckbox, useWarpCheckbox, 
-            useSocks5Checkbox, usePsiphonCheckbox, socks5HostInput, pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, useVisibleCheckbox, warpPortInput,
+            globalTimeoutInput, globalRetryInput, daemonTimeoutInput,
+            pwFixedRadio, pwRandomRadio, fixedPasswordInput, emManualRadio, emAutoRadio, useVisibleCheckbox, warpPortInput,
             debugProxyCheckbox, idleTimeoutInput, document.getElementById('enable-preview')
         ];
         inputsToSave.forEach(el => el.addEventListener('change', saveSettings));
@@ -1151,6 +1195,32 @@
             } catch (_) { return iso; }
         }
 
+        // Label jalur keluar seperti di log engine ([Jalur keluar] / [Server] Public IP).
+        // Record lama (sebelum kolom ini ada) tidak punya field connection -> '-'.
+        function connectionLabel(c) {
+            if (c === 'warp') return 'WARP';
+            if (c === 'psiphon') return 'Psiphon';
+            if (c === 'socks5') return 'SOCKS5';
+            if (c === 'direct') return 'Direct';
+            return '-';
+        }
+
+        // Status satu record = kosakata yang SAMA dengan kartu live di dashboard:
+        // Sukses / Blocked / Error. 'success' dan 'VERIF' keduanya akun jadi (invarian
+        // yang sama dengan cincin progress dan ringkasan alias) — bedanya hanya ditulis
+        // di title, karena kartu VERIF memang sudah tidak ada di UI. Record lama tanpa
+        // failClass ikut aturan ringkasan: bukan limit => error.
+        function historyStatus(r) {
+            if (r.status === 'failed') {
+                return r.failClass === 'limit'
+                    ? { cls: 'limit', label: 'Blocked', title: 'Batas Dropbox (rate-limit / CAPTCHA) — IP keluar pada baris ini adalah IP yang dicoba' }
+                    : { cls: 'error', label: 'Error', title: 'Kegagalan teknis (timeout / proxy / elemen tidak ditemukan)' };
+            }
+            return r.status === 'VERIF'
+                ? { cls: 'sukses', label: 'Sukses', title: 'Akun jadi, email verifikasi belum terkonfirmasi (VERIF)' }
+                : { cls: 'sukses', label: 'Sukses', title: 'Akun jadi dan terverifikasi' };
+        }
+
         async function loadHistory() {
             historyContent.innerHTML = '<div class="empty-state">Memuat riwayat...</div>';
             try {
@@ -1169,25 +1239,32 @@
                 return;
             }
 
-            // Group by Alias for Summary
+            // Ringkasan per Alias — memakai penghitung yang SAMA dengan kartu live:
+            //   Sukses = akun jadi ('success' + 'VERIF'; VERIF memang akun, hanya
+            //            belum terverifikasi — sama seperti aturan cincin progress)
+            //   Blocked = kegagalan karena batas Dropbox (rate-limit / CAPTCHA)
+            //   Error  = kegagalan teknis
+            // Gagal tidak punya kolom sendiri: ia Blocked + Error, dan itu memang
+            // yang menentukan apakah sebuah email dicoba ulang dengan IP baru.
             const summaryObj = {};
             historyData.forEach(r => {
                 const al = r.alias || '-';
-                if (!summaryObj[al]) summaryObj[al] = { success: 0, failed: 0, verif: 0, total: 0 };
-                summaryObj[al].total++;
-                if (r.status === 'success') summaryObj[al].success++;
-                else if (r.status === 'failed') summaryObj[al].failed++;
-                else if (r.status === 'VERIF') summaryObj[al].verif++;
+                if (!summaryObj[al]) summaryObj[al] = { sukses: 0, limit: 0, error: 0 };
+                if (r.status === 'failed') {
+                    if (r.failClass === 'limit') summaryObj[al].limit++;
+                    else summaryObj[al].error++;
+                } else {
+                    summaryObj[al].sukses++;
+                }
             });
 
             const summaryRows = Object.keys(summaryObj).map(al => {
                 const s = summaryObj[al];
                 return `<tr>
                     <td style="font-weight:600; color:#e4e4e7;">${al}</td>
-                    <td style="color:#34d399;">${s.success}</td>
-                    <td style="color:#fbbf24;">${s.verif}</td>
-                    <td style="color:#f87171;">${s.failed}</td>
-                    <td style="color:#a1a1aa;">${s.total}</td>
+                    <td style="color:#34d399;">${s.sukses}</td>
+                    <td style="color:#fbbf24;">${s.limit}</td>
+                    <td style="color:#f87171;">${s.error}</td>
                 </tr>`;
             }).join('');
 
@@ -1198,9 +1275,8 @@
                         <tr>
                             <th>Alias</th>
                             <th>Sukses</th>
-                            <th>Verif</th>
-                            <th>Gagal</th>
-                            <th>Total</th>
+                            <th>Blocked</th>
+                            <th>Error</th>
                         </tr>
                     </thead>
                     <tbody>${summaryRows}</tbody>
@@ -1218,18 +1294,19 @@
             const endIndex = Math.min(startIndex + historyPageSize, totalRecords);
             const pageData = historyData.slice(startIndex, endIndex);
 
-            const rows = pageData.map(r => `
+            const rows = pageData.map(r => {
+                const st = historyStatus(r);
+                return `
                 <tr>
                     <td style="font-family: monospace; font-size: 0.85rem; color: #38bdf8;">${r.ip || '-'}</td>
                     <td>${formatDate(r.timestamp)}</td>
                     <td>${r.email}</td>
                     <td>${r.password}</td>
-                    <td><span class="badge-${r.status}">${r.status}</span></td>
+                    <td><span class="badge-${st.cls}" title="${st.title}">${st.label}</span></td>
                     <td style="font-size:0.75rem;color:#71717a;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.alias}">${r.alias || '-'}</td>
-                    <td style="color:#fbbf24;">${r.timeouts || 0}</td>
-                    <td style="color:#f87171;">${r.errors || 0}</td>
-                    <td style="font-size:0.72rem;color:#a1a1aa;white-space:nowrap;">${r.ua || '-'}</td>
-                </tr>`).join('');
+                    <td>${connectionLabel(r.connection)}</td>
+                </tr>`;
+            }).join('');
 
             const detailTable = `
                 <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #e4e4e7;">Detail Riwayat (${totalRecords} record)</h3>
@@ -1242,9 +1319,7 @@
                             <th>Password</th>
                             <th>Status</th>
                             <th>Alias</th>
-                            <th>Timeouts</th>
-                            <th>Errors</th>
-                            <th>User Agent</th>
+                            <th>Koneksi</th>
                         </tr>
                     </thead>
                     <tbody>${rows}</tbody>
@@ -1318,6 +1393,27 @@
         let pingInterval;
         let lastPongReceived = Date.now();
 
+        // Exit IP CAMOUFOX — mesin yang benar-benar mendaftar, BUKAN IP browser
+        // yang membuka dashboard (baris lama memakai ipify dari browser ini, jadi
+        // angkanya milik penonton dan beda dengan log engine). Yang ditanya ke
+        // server: GET /api/exit-ip (jalur = pin camofox yang hidup, atau jalur di
+        // pengaturan kalau engine belum jalan). Endpoint yang menjawab + flag warp
+        // ikut dicetak: satu jaringan bisa punya dua jalur keluar sehingga exit IP
+        // bersifat per-tujuan, jadi tanpa itu barisnya menyesatkan.
+        async function logEngineExitIp() {
+            try {
+                const r = await (await fetch('/api/exit-ip')).json();
+                if (!r.ok) {
+                    appendLog('log-info', `[Info] Exit IP Camoufox belum bisa diukur: ${r.reason}`);
+                    return;
+                }
+                const jalur = { direct: 'Direct (IP asli, tanpa proxy)', warp: 'WARP', psiphon: 'Psiphon', socks5: 'SOCKS5' }[r.exitPath] || r.exitPath;
+                const warpFlag = r.warp ? `, warp=${r.warp}` : '';
+                const catatan = r.engineRunning ? '' : ' — engine belum jalan, ini jalur yang akan dipakai batch';
+                appendLog('log-info', `[Info] Exit IP Camoufox: ${r.ip} (${jalur}${warpFlag}, via ${r.endpoint})${catatan}`);
+            } catch (_) { }
+        }
+
         function connectWebSocket() {
             if (socket && socket.readyState === WebSocket.CONNECTING) return;
             
@@ -1325,10 +1421,7 @@
 
             socket.onopen = () => {
                 appendLog('log-success', '[System] Terhubung ke WebSockets server.');
-                fetch('https://api.ipify.org?format=json')
-                    .then(res => res.json())
-                    .then(data => appendLog('log-info', `[Info] Public IP (client): ${data.ip}`))
-                    .catch(() => {});
+                logEngineExitIp();
                     
                 lastPongReceived = Date.now();
                 if (pingInterval) clearInterval(pingInterval);
@@ -1350,7 +1443,7 @@
                     lastPongReceived = Date.now();
                 } else if (data.type === 'sync_state') {
                     if (data.workerStatus) {
-                        updateWorkerStatusDisplay(data.workerStatus);
+                        updateWorkerStatusDisplay(data.workerStatus, !!(data.state && data.state.lastBatchStopped));
                     }
                     if ((data.workerStatus === 'BOOT' || data.workerStatus === 'FINISH') && data.secondsLeft !== undefined && data.secondsLeft > 0 && data.secondsLeft <= 60) {
                         showIdleWarning(data.secondsLeft);
@@ -1363,7 +1456,7 @@
                             data.state.logs.forEach(log => handleLogMessage(log.message));
                         }
                         if (data.state.progress) {
-                            updateProgress(data.state.progress.current, data.state.progress.total, data.state.progress.status, data.state.progress.successCount, data.state.progress.failedCount, data.state.progress.verifCount);
+                            updateProgress(data.state.progress.current, data.state.progress.total, data.state.progress.status, data.state.progress.successCount, data.state.progress.limitCount, data.state.progress.errorCount, data.state.progress.verifCount);
                         }
                         if (data.state.info) {
                             if (data.state.info.alias) infoAlias.innerText = data.state.info.alias;
@@ -1396,7 +1489,7 @@
                     if (data.timeouts !== undefined) infoTimeout.innerText = data.timeouts;
                     if (data.errors !== undefined) infoError.innerText = data.errors;
                 } else if (data.type === 'progress') {
-                    updateProgress(data.current, data.total, data.status, data.successCount, data.failedCount, data.verifCount);
+                    updateProgress(data.current, data.total, data.status, data.successCount, data.limitCount, data.errorCount, data.verifCount);
                 } else if (data.type === 'status') {
                     updateStatus(data.status);
                     // Hide preview when not running
@@ -1408,7 +1501,7 @@
                         }
                     }
                 } else if (data.type === 'worker_status') {
-                    updateWorkerStatusDisplay(data.status);
+                    updateWorkerStatusDisplay(data.status, !!data.stopped);
                 } else if (data.type === 'idle_warning') {
                     showIdleWarning(data.secondsLeft);
                 } else if (data.type === 'idle_warning_cancel') {
@@ -1461,11 +1554,25 @@
             logPanel.scrollTop = logPanel.scrollHeight;
         }
 
+        // Kelas kegagalan sudah ditentukan server (LIMIT_ERROR_PATTERN) dan ditulis
+        // di awalan barisnya: "[FAIL] Blocked ..." vs "[FAIL] Error ...". Kata kunci
+        // generik saja tidak cukup — "🔄 Batas Dropbox terdeteksi" sama sekali tidak
+        // mengandung "error"/"gagal" — padahal warna baris harus ikut kelas yang
+        // dipakai kartu: apa yang dipulihkan dengan IP + profil baru (atau manusia di
+        // noVNC saat visible mode) = amber (.log-warn, kartu Blocked), sisanya merah
+        // (.log-err, kartu Error). Kelas baru = pola ini yang diperluas.
+        const LIMIT_LOG_TOKENS = ['[fail] blocked', 'batas dropbox', 'batas tercapai', 'terlalu banyak percobaan', 'too many attempts', 'captcha', 'rate limit'];
+        const ERROR_LOG_TOKENS = ['[fail] error', 'gagal total (error)', 'device_connect_failed', 'browser_kill_required'];
+
         function handleLogMessage(msg) {
             let className = 'log-info';
             const lower = msg.toLowerCase();
 
-            if (lower.includes('error') || lower.includes('gagal') || lower.includes('⚠️')) {
+            if (LIMIT_LOG_TOKENS.some((token) => lower.includes(token))) {
+                className = 'log-warn';
+            } else if (ERROR_LOG_TOKENS.some((token) => lower.includes(token))) {
+                className = 'log-err';
+            } else if (lower.includes('error') || lower.includes('gagal') || lower.includes('⚠️')) {
                 className = 'log-err';
             } else if (lower.includes('berhasil') || lower.includes('✓') || lower.includes('selesai')) {
                 className = 'log-success';
@@ -1497,32 +1604,50 @@
             vpnLogPanel.scrollTop = vpnLogPanel.scrollHeight;
         }
 
-        function updateProgress(current, total, status, successCount, failedCount, verifCount) {
-            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+        // Cincin progress hanya boleh bergerak untuk email yang SELESAI (akun jadi).
+        // `current` dari server = urutan email yang sedang dikerjakan (untuk teks
+        // "ke-N dari M"), jadi tidak pernah dipakai sebagai pembilang persen.
+        // Yang dihitung selesai: successCount + verifCount — VERIF adalah akun yang
+        // jadi tapi belum terverifikasi dan tercatat sukses di history.json, walaupun
+        // kartunya sudah tidak ada di UI (kartu ketiga = Blocked, keempat = Error).
+        // Blocked (rate-limit / CAPTCHA Dropbox) dan Error (timeout, proxy/daemon gagal,
+        // dst.) tidak menggerakkan cincin: keduanya hanya menaikkan kartunya.
+        // Payload tidak selalu membawa semua counter, jadi nilai terakhir yang
+        // diketahui dipakai sebagai acuan untuk cincin DAN kartu.
+        let progressCounts = { successCount: 0, limitCount: 0, errorCount: 0, verifCount: 0 };
+
+        function updateProgress(current, total, status, successCount, limitCount, errorCount, verifCount) {
+            if (typeof successCount === 'number') progressCounts.successCount = successCount;
+            if (typeof limitCount === 'number') progressCounts.limitCount = limitCount;
+            if (typeof errorCount === 'number') progressCounts.errorCount = errorCount;
+            if (typeof verifCount === 'number') progressCounts.verifCount = verifCount;
+            const selesai = progressCounts.successCount + progressCounts.verifCount;
+
+            const pct = total > 0 ? Math.round((selesai / total) * 100) : 0;
             progressPercentage.innerText = `${pct}%`;
 
             const offset = 376.99 - (376.99 * pct) / 100;
             progressIndicator.style.strokeDashoffset = offset;
 
-            progressDetail.innerText = total > 0
-                ? `Memproses email ke-${current} dari ${total} (${status})`
-                : (status || 'Standby');
+            // Teks status dari server sudah memuat "Memproses email ke-N dari M (…)",
+            // jadi jangan diulang di sini.
+            progressDetail.innerText = status || (total > 0 ? `Memproses ${current} dari ${total}` : 'Standby');
 
-            if (successCount !== undefined) document.getElementById('stat-success-count').innerText = successCount;
-            if (failedCount !== undefined) document.getElementById('stat-failed-count').innerText = failedCount;
-            if (verifCount !== undefined) document.getElementById('stat-verif-count').innerText = verifCount;
+            successCountEl.innerText = progressCounts.successCount;
+            limitCountEl.innerText = progressCounts.limitCount;
+            errorCountEl.innerText = progressCounts.errorCount;
         }
 
         function setFormDisabled(disabled) {
             aliasInput.disabled = disabled;
             emailsListInput.disabled = disabled;
             dropboxUrlInput.disabled = disabled;
-            useDirectCheckbox.disabled = disabled;
-            useWarpCheckbox.disabled = disabled;
-            useSocks5Checkbox.disabled = disabled;
-            usePsiphonCheckbox.disabled = disabled;
+            proxyModeInputs().forEach(r => r.disabled = disabled);
+            // Centang Direct dikunci lewat updateProxyPathUI (form terkunci ATAU
+            // tidak ada proxy dipilih).
+            formLocked = disabled;
+            updateProxyPathUI();
             document.querySelectorAll('#psiphon-regions-wrap input').forEach(cb => cb.disabled = disabled);
-            socks5HostInput.disabled = disabled;
             pwRandomRadio.disabled = disabled;
             pwFixedRadio.disabled = disabled;
             fixedPasswordInput.disabled = disabled;
@@ -1558,25 +1683,32 @@
                 setFormDisabled(false);
             } else if (status === 'stopped') {
                 statusBadge.className = 'status-badge status-idle';
-                statusText.innerText = 'Dihentikan';
+                statusText.innerText = 'Terhenti';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
                 setFormDisabled(false);
             }
         }
 
-        function updateWorkerStatusDisplay(status) {
+        // `stopped` = batch terakhir dihentikan (tombol Hentikan / anggaran rentetan
+        // habis), bukan target tercapai. FINISH dalam keadaan itu dibaca TERHENTI:
+        // FINISH hijau menyiratkan semua akun jadi, padahal target tidak tercapai.
+        // Label yang sama dipakai pill kepala dan badge progress supaya keduanya
+        // cocok dengan teks 'Terhenti' di panel status.
+        function updateWorkerStatusDisplay(status, stopped) {
+            const label = (status === 'FINISH' && stopped) ? 'TERHENTI' : status;
             statusBadge.className = 'status-badge';
-            statusText.innerText = status;
+            statusText.innerText = label;
 
             // Update header pill
             const pill = document.getElementById('worker-status-pill');
             const pillLabel = document.getElementById('worker-status-label');
             if (pill) {
                 pill.className = '';
-                pillLabel.innerText = status;
+                pillLabel.innerText = label;
                 if (status === 'BOOT')       pill.className = 'pill-boot';
                 else if (status === 'PROCESSING') pill.className = 'pill-processing';
+                else if (label === 'TERHENTI')    pill.className = 'pill-idle';
                 else if (status === 'FINISH')     pill.className = 'pill-finish';
                 else                              pill.className = 'pill-idle';
             }
@@ -1592,7 +1724,8 @@
                 stopBtn.disabled = false;
                 setFormDisabled(true);
             } else if (status === 'FINISH') {
-                statusBadge.classList.add('status-success'); // Green
+                // abu-abu seperti Hentikan kalau batch-nya memang dihentikan
+                statusBadge.classList.add(label === 'TERHENTI' ? 'status-idle' : 'status-success');
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
                 setFormDisabled(false);
@@ -1648,21 +1781,8 @@
             const alias        = aliasInput.value.trim();
             const url          = dropboxUrlInput.value.trim();
             const emails       = emailsListInput.value.trim();
-            let useDirect = document.getElementById('use-direct').checked;
-            let useWarp = document.getElementById('use-warp').checked;
-            let useSocks5 = useSocks5Checkbox.checked;
-            let usePsiphon = usePsiphonCheckbox.checked;
-            let socks5Host = socks5HostInput.value.trim();
-
-            if (!useDirect && !useWarp && !useSocks5 && !usePsiphon) {
-                alert('Pilih setidaknya satu tipe koneksi!');
-                return;
-            }
-
-            if (useSocks5 && !socks5Host) {
-                alert('Silakan masukkan Socks5 Host:Port!');
-                return;
-            }
+            const proxyMode    = getProxyMode();
+            const useDirect    = getUseDirect();
 
             const useVisible   = useVisibleCheckbox.checked;
             const useHeadless  = !useVisible;
@@ -1688,14 +1808,15 @@
 
             if (socket && socket.readyState === WebSocket.OPEN) {
                 logPanel.innerHTML = '';
-                successCountEl.innerText = '0';
-                failedCountEl.innerText = '0';
+                // Nol sejak awal klik: ini satu-satunya tempat penghitung di-nol-kan di
+                // sisi klien (server melakukannya pada action 'start'). Hentikan dan akhir
+                // batch sengaja TIDAK mereset, jadi hasil run terakhir tetap terbaca.
+                // Persen cincin hanya bergerak untuk email yang benar-benar selesai
+                // berhasil (lihat updateProgress).
+                updateProgress(0, 0, 'Memulai...', 0, 0, 0, 0);
 
-                // Log client info
-                fetch('https://api.ipify.org?format=json')
-                    .then(res => res.json())
-                    .then(data => appendLog('log-info', `[Info] Public IP (client): ${data.ip}`))
-                    .catch(() => {});
+                // Exit IP Camoufox untuk batch yang baru dimulai (dihitung server).
+                logEngineExitIp();
 
                 appendLog('log-info', `[Dashboard] Mode Email: ${emailMode === 'auto' ? 'Auto Generate (' + count + ' @' + domain + ')' : 'Manual Input'}`);
                 appendLog('log-info', `[Dashboard] Pengaturan: Timeout ${globalTimeout}s, Retry ${globalRetry}x, Daemon ${daemonTimeout}s`);
@@ -1715,11 +1836,8 @@
                     globalTimeout,
                     globalRetry,
                     daemonTimeout: parseInt(document.getElementById('daemon-timeout').value, 10),
-                    useDirect: useDirect,
-                    useWarp: useWarp,
-                    useSocks5: useSocks5,
-                    usePsiphon: usePsiphon,
-                    socks5Host: socks5Host,
+                    proxyMode,
+                    useDirect,
                     useHeadless,
                     useVisible,
                     warpPort,
